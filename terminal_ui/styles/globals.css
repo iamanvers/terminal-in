@@ -1,0 +1,120 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg:      #0A0A0A;
+  --surface: #111111;
+  --border:  #1E1E1E;
+  --accent:  #F7931E;
+  --pos:     #00C853;
+  --neg:     #D32F2F;
+  --text:    #E0E0E0;
+  --muted:   #888888;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 12px;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Panel shared styles */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.panel-header {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.panel-header .accent { color: var(--accent); }
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #1E1E1E transparent;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1E1E1E; border-radius: 2px; }
+
+/* Flash animations */
+@keyframes flash-pos {
+  0%, 100% { background: transparent; }
+  50% { background: rgba(0,200,83,0.15); }
+}
+@keyframes flash-neg {
+  0%, 100% { background: transparent; }
+  50% { background: rgba(211,47,47,0.15); }
+}
+
+.flash-pos { animation: flash-pos 0.4s ease; }
+.flash-neg { animation: flash-neg 0.4s ease; }
+
+/* Ticker marquee */
+@keyframes marquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.ticker-track {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  animation: marquee 45s linear infinite;
+  will-change: transform;
+}
+
+/* Table */
+table { width: 100%; border-collapse: collapse; }
+th {
+  padding: 4px 8px;
+  text-align: right;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+th:first-child { text-align: left; }
+td {
+  padding: 4px 8px;
+  text-align: right;
+  border-bottom: 1px solid #161616;
+  font-variant-numeric: tabular-nums;
+}
+td:first-child { text-align: left; }
+tr:hover td { background: rgba(255,255,255,0.02); }

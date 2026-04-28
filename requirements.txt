@@ -1,0 +1,47 @@
+# TERMINAL//IN — Python dependencies
+# Install: pip install -r requirements.txt
+#
+# NOTE: hmmlearn requires Microsoft C++ Build Tools to compile on Windows.
+#   Install from: https://visualstudio.microsoft.com/visual-cpp-build-tools/
+#   Without it, the regime classifier falls back to heuristic mode (no HMM).
+#   To install after getting Build Tools: pip install hmmlearn>=0.3.2
+#
+# NOTE: FinBERT (news sentiment) requires torch + transformers (~3 GB).
+#   Install separately: pip install -r requirements-nlp.txt
+#   Without it, news sentiment scores as neutral with score=0.0.
+
+# ── Broker ───────────────────────────────────────────────────────────────────
+kiteconnect>=4.2.0
+
+# ── Web framework ────────────────────────────────────────────────────────────
+Flask>=3.0.0
+Flask-SocketIO>=5.3.6
+Flask-Cors>=4.0.0
+python-socketio>=5.11.0
+simple_websocket>=1.0.0     # WebSocket transport for Flask-SocketIO threading mode
+
+# ── Data + math ──────────────────────────────────────────────────────────────
+numpy>=1.26.4
+pandas>=2.1.0
+scipy>=1.12.0
+scikit-learn>=1.4.0
+# hmmlearn>=0.3.2           # OPTIONAL — needs MSVC Build Tools on Windows
+statsmodels>=0.14.1
+
+# ── News ─────────────────────────────────────────────────────────────────────
+requests>=2.31.0
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+python-dotenv>=1.0.1
+
+# ── Testing ──────────────────────────────────────────────────────────────────
+pytest>=8.0.0
+freezegun>=1.4.0
+
+# ── Market data ───────────────────────────────────────────────────────────────
+yfinance>=0.2.38
+
+# ── Analytical metadata store ─────────────────────────────────────────────────
+# DuckDB is used for backtest results, strategy performance history, daily summaries,
+# model training metadata, and agent evaluations. Falls back to no-op if not installed.
+duckdb>=0.10.0
