@@ -152,11 +152,56 @@ export type LearnerParams = {
   updated_at: number
 }
 
+export type JournalEntry = {
+  journal_id: string
+  trade_id: string
+  entry_reason: string | null
+  exit_reason: string | null
+  strategy_rationale: string | null
+  manual_notes: string | null
+  lesson: string | null
+  rating: number | null
+  review_status: string | null
+  created_at: string | null
+  // joined from trades
+  strategy_id: string | null
+  instrument_token: number | null
+  side: 'BUY' | 'SELL' | null
+  entry_price: number | null
+  net_pnl: number | null
+}
+
 export type SettlementEvent = {
   date: string
   positions_closed?: number
   equity?: number
   daily_pnl?: number
+}
+
+export type OrchestratorResult = {
+  symbol: string
+  token: number
+  price: number
+  regime: string
+  side: 'BUY' | 'SELL' | 'NEUTRAL' | 'SKIP'
+  verdict: string
+  confidence: number
+  ev: number
+  rsi: number
+  ret_20d: number
+  suggested_sl: number
+  suggested_target: number
+  atr14?: number
+  rr?: number
+  vol_factor?: number
+  summary: string
+  lenses: Array<{ strategy: string; side: string; confidence: number; detail: string }>
+}
+
+export type OrchestratorState = {
+  scan_count: number
+  last_scan_ts: number
+  results: OrchestratorResult[]
 }
 
 export const api = {
@@ -188,6 +233,10 @@ export const api = {
   analyse: (symbol: string) => get<Record<string, unknown>>(`/strategies/analyse/${encodeURIComponent(symbol)}`),
   learnerParams: () => get<LearnerParams[]>('/strategies/learner_params'),
   portfolioSnapshots: (limit = 90) => get<Record<string, number>[]>(`/portfolio/snapshots?limit=${limit}`),
+  orchestratorState: () => get<OrchestratorState>('/strategies/orchestrator'),
+  orchestratorScan: () =>
+    fetch(`${BASE}/strategies/orchestrator/scan`, { method: 'POST' }).then(r => r.json()),
+  journal: (limit = 50) => get<JournalEntry[]>(`/trades/journal?limit=${limit}`),
   chat: (message: string, context?: Record<string, unknown>) =>
     fetch(`${BASE}/chat`, {
       method: 'POST',

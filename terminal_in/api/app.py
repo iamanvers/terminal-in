@@ -32,9 +32,11 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     analyst = components.get('analyst')
     learner = components.get('learner')
     instruments = components.get('instruments')
+    orchestrator = components.get('orchestrator')
 
     portfolio.init(supervisor, broker, db=db)
-    strategies.init(dsa, analyst, db=db, instruments=instruments, learner=learner)
+    strategies.init(dsa, analyst, db=db, instruments=instruments,
+                    learner=learner, orchestrator=orchestrator)
     trades.init(db)
     risk.init(supervisor)
     market.init(db)

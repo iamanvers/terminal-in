@@ -12,15 +12,17 @@ _analyst = None
 _learner = None
 _db = None
 _instruments = None
+_orchestrator = None
 
 
-def init(dsa, analyst, db=None, instruments=None, learner=None):
-    global _dsa, _analyst, _learner, _db, _instruments
+def init(dsa, analyst, db=None, instruments=None, learner=None, orchestrator=None):
+    global _dsa, _analyst, _learner, _db, _instruments, _orchestrator
     _dsa = dsa
     _analyst = analyst
     _learner = learner
     _db = db
     _instruments = instruments
+    _orchestrator = orchestrator
 
 
 @bp.route('/allocations')
@@ -43,6 +45,22 @@ def learner_params():
     if _learner is None:
         return jsonify([])
     return jsonify(_learner.all_params())
+
+
+@bp.route('/orchestrator')
+def orchestrator_state():
+    """Latest orchestrator scan results — ranked opportunities with EV scores."""
+    if _orchestrator is None:
+        return jsonify({'scan_count': 0, 'last_scan_ts': 0, 'results': []})
+    return jsonify(_orchestrator.get_state())
+
+
+@bp.route('/orchestrator/scan', methods=['POST'])
+def orchestrator_scan():
+    """Trigger an on-demand orchestrator scan."""
+    from terminal_in.bus import bus
+    bus.publish('orchestrator.scan_now', {})
+    return jsonify({'ok': True, 'message': 'scan triggered'})
 
 
 @bp.route('/scorecards/<strategy_id>')

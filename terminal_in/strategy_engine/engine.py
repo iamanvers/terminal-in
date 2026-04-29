@@ -14,6 +14,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 import pandas as pd
 
 from terminal_in.bus import bus
+from terminal_in.agents.control import registry
 from terminal_in.strategy_engine.context import MarketContext
 from terminal_in.strategy_engine.dsa import DSA
 from terminal_in.strategy_engine.regime.classifier import classifier
@@ -56,6 +57,12 @@ class StrategyEngine:
 
         bus.subscribe('regime.update', self._on_regime_update)
         bus.subscribe('event.mask', self._on_event_mask)
+
+        # Register all strategies in the agent registry
+        registry.register('ENGINE', 'system', 'Strategy Engine Loop')
+        for s in ALL_STRATEGIES:
+            registry.register(s.id, 'strategy')
+
         log.info('StrategyEngine initialised with %d strategies', len(ALL_STRATEGIES))
 
     def _on_regime_update(self, payload: dict):
@@ -139,7 +146,11 @@ class StrategyEngine:
             ctx = self._build_context()
             self._dsa.maybe_rebalance(now, ctx.regime)
 
+            registry.record_eval('ENGINE')
             for strategy in ALL_STRATEGIES:
+                if registry.is_paused(strategy.id):
+                    log.debug('Strategy %s is paused — skipping', strategy.id)
+                    continue
                 if ctx.event_mask < 0.5:
                     continue
                 if ctx.regime not in strategy.valid_regimes:
@@ -152,13 +163,16 @@ class StrategyEngine:
 
                 try:
                     signal = strategy.evaluate(ctx)
-                except Exception:
+                    registry.record_eval(strategy.id)
+                except Exception as exc:
+                    registry.record_error(strategy.id, str(exc))
                     log.exception('Strategy %s evaluation error', strategy.id)
                     continue
 
                 if signal is None:
                     continue
 
+                registry.record_signal(strategy.id)
                 # Scale quantity by DSA allocation
                 signal.quantity = max(int(signal.quantity * alloc), 1)
                 signal.metadata['dsa_alloc'] = round(alloc, 3)
@@ -178,6 +192,11 @@ class StrategyEngine:
             'size_multiplier': ctx.size_multiplier,
             'ts': now.isoformat(),
         })
+
+    def force_evaluate(self):
+        """Reset the rate-limit timer and immediately run a full evaluation cycle."""
+        self._last_eval = None
+        self.evaluate()
 
     def run_loop(self, stop_event):
         """Blocking evaluation loop — run in its own thread."""

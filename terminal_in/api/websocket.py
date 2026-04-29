@@ -28,6 +28,7 @@ FORWARD_TOPICS = [
     'settlement.eod_close',
     'settlement.eod_reset',
     'settlement.day_open',
+    'orchestrator.scan_done',
 ]
 
 

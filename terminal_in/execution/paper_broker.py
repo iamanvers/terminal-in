@@ -15,6 +15,7 @@ from threading import Lock
 from typing import Optional
 
 from terminal_in.bus import bus
+from terminal_in.agents.control import registry
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +32,9 @@ class PaperBroker:
         self._equity = config.initial_capital
         self._daily_pnl = 0.0
         self._peak_equity = config.initial_capital
+        self._capital_in_use = 0.0  # sum of (qty × entry_price) for open positions
 
+        registry.register('BROKER', 'system', 'Paper Broker')
         # Restore state from DB so session history survives restarts
         self._restore_from_db()
 
@@ -87,8 +90,13 @@ class PaperBroker:
                     'metadata':     {},
                 }
 
+            # Restore capital in use from open positions
+            for pos in self._positions.values():
+                self._capital_in_use += pos['quantity'] * pos['entry_price']
+
             if open_trades:
-                log.info('PaperBroker: restored %d open positions', len(open_trades))
+                log.info('PaperBroker: restored %d open positions (in_use=%.0f)',
+                         len(open_trades), self._capital_in_use)
             log.info('PaperBroker: equity=%.2f daily_pnl=%.2f peak=%.2f',
                      self._equity, self._daily_pnl, self._peak_equity)
 
@@ -112,6 +120,17 @@ class PaperBroker:
 
         if raw_price <= 0:
             log.warning('PaperBroker: cannot fill — no price for instrument %d', instrument_id)
+            return
+
+        # Capital check: prevent buying beyond available cash
+        notional = qty * raw_price
+        available = self._equity - self._capital_in_use
+        if notional > available * 1.05:  # 5% buffer for price slippage
+            log.warning('PaperBroker: REJECTED — insufficient capital %.0f for notional %.0f',
+                        available, notional)
+            bus.publish('order.rejected', {
+                **payload, 'reason': f'insufficient_capital={available:.0f}',
+            })
             return
 
         slippage = raw_price * SLIPPAGE_PCT * (1 if side == 'BUY' else -1)
@@ -139,6 +158,7 @@ class PaperBroker:
 
         with self._lock:
             self._positions[trade_id] = position
+            self._capital_in_use += qty * fill_price
 
         try:
             self._db.insert_trade({
@@ -246,6 +266,8 @@ class PaperBroker:
                          exit_price: float, reason: str):
         with self._lock:
             self._positions.pop(trade_id, None)
+            freed = pos['quantity'] * pos['entry_price']
+            self._capital_in_use = max(0.0, self._capital_in_use - freed)
 
         slippage = exit_price * SLIPPAGE_PCT * (-1 if pos['side'] == 'BUY' else 1)
         fill_exit = exit_price + slippage
@@ -319,6 +341,18 @@ class PaperBroker:
     @property
     def peak_equity(self) -> float:
         return self._peak_equity
+
+    @property
+    def daily_pnl(self) -> float:
+        return self._daily_pnl
+
+    @property
+    def available_capital(self) -> float:
+        return max(0.0, self._equity - self._capital_in_use)
+
+    @property
+    def capital_in_use(self) -> float:
+        return self._capital_in_use
 
     @property
     def open_positions(self) -> list[dict]:

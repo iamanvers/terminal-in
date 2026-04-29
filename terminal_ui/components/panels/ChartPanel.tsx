@@ -235,15 +235,18 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
     // 2. Always fetch fresh async on top
     loadFresh()
 
-    // 3. Auto-refresh every 30s while market is open; every 5min otherwise
-    const interval = setInterval(loadFresh, marketOpen ? 30_000 : 300_000)
+    // 3. Auto-refresh: 30s if market is open at mount time, 5min if closed.
+    //    isMarketOpen() is evaluated once here; symbol/tf/chartReady changes
+    //    will re-run this effect, re-evaluating the interval at that point.
+    const interval = setInterval(loadFresh, isMarketOpen() ? 30_000 : 300_000)
     return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, tf, chartReady])
 
-  // ── Live tick → realtime candle (no IST gate — works in paper mode 24/7) ───
+  // ── Live tick → realtime candle (market-hours only) ────────────────────────
   useEffect(() => {
     if (!seriesRef.current || tf === '1d') return
+    if (!isMarketOpen()) return   // don't append synthetic post-close bars
     const tick = ticks[SYMBOLS[symbolIdx].token]
     if (!tick?.last_price) return
 

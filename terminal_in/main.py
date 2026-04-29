@@ -114,6 +114,11 @@ def main():
     from terminal_in.agents.strategy_learner import StrategyLearner
     learner = StrategyLearner(db=db, dsa=engine._dsa)
 
+    # ── Trade orchestrator (agentic scan + rank + auto-fire) ──────────────────
+    from terminal_in.agents.orchestrator import TradeOrchestrator
+    orchestrator = TradeOrchestrator(db=db, instruments=instruments, config=cfg, learner=learner)
+    threads.append(Thread(target=orchestrator.run, args=(_stop_event,), daemon=True, name='orchestrator'))
+
     # ── Risk supervisor ───────────────────────────────────────────────────────
     from terminal_in.risk.gate import RiskSupervisor
     supervisor = RiskSupervisor(db=db, config=cfg, learner=learner)
@@ -146,6 +151,7 @@ def main():
         'dsa': engine._dsa,
         'analyst': analyst,
         'learner': learner,
+        'orchestrator': orchestrator,
         'instruments': instruments,
         'jwt_secret': cfg.jwt_secret,
     })

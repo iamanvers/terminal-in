@@ -6,10 +6,10 @@ A Bloomberg-style algorithmic trading terminal for Indian equity markets (NSE/BS
 
 ## What It Does
 
-TERMINAL//IN is a complete algorithmic trading system with three layers:
+TERMINAL//IN is a complete algorithmic trading system across four layers:
 
 **1. Market Intelligence**
-- Live price streaming for 36 NSE instruments (Nifty 50 constituents + indices)
+- Live price streaming for 18 NSE instruments (indices + large-cap equities)
 - Real OHLCV data via yfinance (2-year history, backfilled on startup)
 - Global market context: indices (DOW, S&P, NIKKEI, FTSE), FX rates, commodities, VIX
 - News feed with FinBERT sentiment analysis (positive/negative/neutral)
@@ -27,14 +27,24 @@ TERMINAL//IN is a complete algorithmic trading system with three layers:
   - S9: Hawkes Process Momentum
 - HMM-based 6-state regime classifier (strong_bull → strong_bear → high_vol)
 - Dynamic Strategy Allocator (DSA): monthly rebalance using Bayesian win rate + Sharpe + regime fit
-- M2 Risk Gate: 12-check pre-trade filter (VIX, drawdown, daily loss cap, correlation, event mask)
-- M3 Analyst: Bayesian scorecard per strategy
+- M2 Risk Gate: 12-check pre-trade filter (VIX, drawdown, daily loss cap, signal dedup, correlation, event mask)
+- M3 Analyst: Bayesian scorecard per strategy with adaptive confidence thresholds
 
-**3. Execution & Monitoring**
-- Paper broker: full fill simulation with 0.03% slippage + ₹20/order commission
-- Live broker: Kite Connect REST integration (Zerodha)
-- Per-symbol agentic analysis: RSI-14, EMA-20/50, ATR-14, 52W H/L, strategy lens verdicts
+**3. Agent Orchestrator**
+- `TradeOrchestrator`: multi-lens analysis engine that scans all instruments every 2 minutes
+- Scores setups by Expected Value (EV = confidence × R:R × vol_factor × convergence bonus)
+- Fires top-K signals directly to execution; publishes ranked opportunity list to UI
+- On-demand scan via UI button or API endpoint
+- Learns from past trades via StrategyLearner (Bayesian WR feeds back into confidence weights)
+
+**4. Execution & Paper Trading Cockpit**
+- Paper broker: fill simulation with 0.03% slippage + ₹20/order commission
+- Capital-constrained: orders rejected when notional exceeds available equity
+- Short selling supported (SELL without an open position)
+- Live broker: Kite Connect REST integration (Zerodha) for live mode
+- Per-trade journal: entry reasoning, exit analysis, lessons, rating, review status
 - Real-time WebSocket push to UI via SocketIO
+- EOD settlement: auto-closes all positions at 15:30 IST, snapshots equity, resets daily counters
 
 ---
 
@@ -43,57 +53,62 @@ TERMINAL//IN is a complete algorithmic trading system with three layers:
 ```
 Single Python process, multi-threaded. All components communicate via in-process EventBus.
 
-terminal_in/                   ← Python backend
+terminal_in/                   ← Python backend (48 files)
   main.py                      — entrypoint, wires all threads
   bus.py                       — EventBus singleton (pub/sub + hot-cache)
   db.py                        — SQLite WAL wrapper (thread-safe)
-  data_ingest/                 — tick feed, OHLCV backfill, paper seeder
+  config.py                    — load_config() reads .env
+  data_ingest/                 — tick feed, OHLCV backfill, paper seeder, instrument registry
   news/                        — NewsAPI + FinBERT sentiment
-  strategy_engine/             — 8 strategies, HMM classifier, DSA, engine loop
-  risk/                        — M2 gate, M3 analyst, event calendar
+  strategy_engine/             — 8 strategies, HMM classifier, DSA, engine loop, MarketContext
+  risk/                        — M2 gate (12 checks), M3 analyst, event calendar
   execution/                   — PaperBroker, KiteBroker
+  agents/                      — TradeOrchestrator (EV-ranked multi-lens scan)
   api/                         — Flask + SocketIO, 6 route blueprints
 
-terminal_ui/                   ← Next.js 14 frontend
-  app/page.tsx                 — fixed viewport, 3-column Bloomberg-style layout
+terminal_ui/                   ← Next.js 14 frontend (12 TSX files)
+  app/
+    page.tsx                   — main dashboard: fixed viewport, 3-column layout
+    trade/page.tsx             — trade cockpit: agent panel + positions + order ticket
   components/panels/           — MarketData, Chart, Strategy, Positions, Signals, Chat
 ```
 
-**Why local-only?** The original blueprint used Docker + TimescaleDB + Redis + MinIO. All replaced with SQLite (WAL mode) + Python EventBus + local folders. Total cost: ₹2000/month for Kite Connect in live mode. Zero otherwise.
+**EventBus topics:** `ticks.{token}`, `regime.update`, `strategy.signal`, `order.approved`, `order.rejected`, `trade.opened`, `trade.closed`, `pnl.update`, `scorecard.update`, `news.signal`, `event.mask`, `orchestrator.scan_done`
 
-**EventBus topics:** `ticks.{token}`, `regime.update`, `strategy.signal`, `order.approved`, `order.rejected`, `trade.opened`, `trade.closed`, `pnl.update`, `scorecard.update`, `news.signal`, `event.mask`
+**Why local-only?** The original blueprint used Docker + TimescaleDB + Redis + MinIO. All replaced with SQLite (WAL mode) + Python EventBus + local folders. Total cost: ₹2000/month for Kite Connect in live mode. Zero otherwise.
 
 ---
 
 ## Setup
 
-**Prerequisites:** Python 3.14, Node.js 18+, Windows 11 (or adapt paths)
+**Prerequisites:** Python 3.14, Node.js 18+, Windows 11
 
 ```bash
-# Clone and set up Python venv
+# Python backend
 python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt
 
-# Optional: FinBERT sentiment (3GB, worth it)
+# Optional: FinBERT sentiment (~3GB, improves news signals)
 .venv/Scripts/pip install torch --index-url https://download.pytorch.org/whl/cpu
 .venv/Scripts/pip install transformers
 
 # Optional: HMM classifier (needs C++ Build Tools on Windows)
 .venv/Scripts/pip install hmmlearn>=0.3.2
 
-# Configure .env (copy from .env.example)
-cp .env.example .env
-# Edit: MODE=paper, INITIAL_CAPITAL=1000000, optionally NEWSAPI_KEY
+# Configure environment
+copy .env.example .env
+# Set: MODE=paper, INITIAL_CAPITAL=1000000
 
 # Start backend
 .venv/Scripts/python.exe -m terminal_in.main
 
-# Start UI (in another terminal)
+# Start UI (separate terminal)
 cd terminal_ui && npm install && npm run dev
-# → http://localhost:3000
+# → http://localhost:3000  (main dashboard)
+# → http://localhost:3000/trade  (trade cockpit)
 ```
 
-**Or use the launcher:**
+**Or use the launcher (Windows):**
 ```powershell
 .\start.ps1   # creates venv, installs deps, starts both processes
 ```
@@ -116,74 +131,79 @@ cd terminal_ui && npm install && npm run dev
 
 ---
 
-## Tracked Instruments (36 total)
+## Instruments (18)
 
 **Indices:** NIFTY 50, BANKNIFTY, FINNIFTY, INDIA VIX, NIFTYBEES
-**Large-cap equities (Nifty 50 + SENSEX 30 core):**
-RELIANCE, HDFCBANK, TCS, INFY, ICICIBANK, SBIN, AXISBANK, KOTAKBANK, BAJFINANCE, HINDUNILVR, WIPRO, LT, MARUTI, ASIANPAINT, TATAMOTORS, SUNPHARMA, TATASTEEL, POWERGRID, NTPC, ONGC, TITAN, HCLTECH, TECHM, ADANIPORTS, ULTRACEMCO, NESTLEIND, JSWSTEEL, DRREDDY, BAJAJFINSV, DIVISLAB, HINDALCO
+
+**Large-cap equities:** RELIANCE, HDFCBANK, TCS, INFY, ICICIBANK, SBIN, AXISBANK, KOTAKBANK, BAJFINANCE, HINDUNILVR, WIPRO, ADANIPORTS (+ more via instrument registry)
 
 ---
 
 ## UI Layout
 
+### Main Dashboard (`/`)
 ```
 ┌─────────────────────────────────────────────────────┐
 │  TERMINAL//IN          [ticker marquee]     ● LIVE  │
 ├─────────────────────────────────────────────────────┤
 │  REGIME · EQUITY · P&L · DRAWDOWN · VIX · SIZE     │
 ├──────────────┬──────────────────────┬───────────────┤
-│              │                      │               │
 │  MARKET DATA │    CANDLESTICK       │     CHAT      │
-│  NSE / BSE   │    CHART             │     AI        │
-│  GLOBAL / FX │    EMA 9/21          │               │
-│  COMMOD/RISK │    Volume            │               │
+│  NSE / Global│    EMA 9/21, Volume  │     AI        │
+│  FX / Commod │    1m / 5m / 1d     │               │
 ├──────────────┼──────────────────────┼───────────────┤
-│  STRATEGY    │    OPEN POSITIONS    │  TOP SIGNALS  │
-│  BOOK + DSA  │    Live P&L          │  (deduplicated│
-├──────────────┴──────────────────────┴───────────────┤
-│  SIGNAL FEED  [SIGNALS | NEWS | EVENTS]             │
-└─────────────────────────────────────────────────────┘
+│  STRATEGY    │  OPEN POSITIONS      │  SIGNAL FEED  │
+│  BOOK + DSA  │  Live P&L            │  Signals/News │
+└──────────────┴──────────────────────┴───────────────┘
 ```
 
-Click any ticker → instrument modal (price, RSI/EMA/ATR indicators, strategy lens analysis, sparkline, news)
-Click any global/FX/commod quote → price modal with 90-day sparkline
+### Trade Cockpit (`/trade`)
+```
+┌──────────────────┬───────────────────┬──────────────┐
+│  AGENT COCKPIT   │  OPEN POSITIONS   │ ORDER TICKET │
+│  OPPORTUNITIES   │  Live P&L/SL/Tgt  │ BUY / SELL   │
+│  SIGNAL LOG      │                   │ auto SL/size │
+│  JOURNAL         ├───────────────────┼──────────────┤
+│                  │  CLOSED TRADES    │  LEARNING    │
+│  [SCAN NOW] btn  │  filter + history │  attribution │
+└──────────────────┴───────────────────┴──────────────┘
+Stats strip: EQUITY · DAY P&L · DRAWDOWN · WIN RATE · TOTAL P&L · POSITIONS
+```
+
+---
+
+## Tests
+
+```bash
+.venv/Scripts/pytest tests/ -v
+# 57 tests covering: DB persistence, risk gate (12 checks + signal dedup),
+# paper broker (capital tracking, PnL, SL/target, multi-position)
+```
 
 ---
 
 ## Roadmap
 
-### Module 2 — Trade Execution & Settlement (Paper Trading Cockpit)
-Full paper trading simulation with realistic market mechanics:
-- Manual trade entry alongside automated strategy signals
-- Intraday settlement simulation against real OHLCV prices
-- P&L attribution: strategy vs manual, sector, regime
-- Trade journal with entry/exit reasoning
-- Drawdown analytics and position sizing feedback
-- Feeds performance data back into DSA rebalance cycle
+### ✅ Module 1 — Market Intelligence
+Live data, news sentiment, regime classifier, strategy engine, risk gate, execution. **Complete.**
 
-### Module 3 — Agent Orchestrator Dashboard
-Real-time monitoring of all autonomous strategy agents:
-- Per-agent state: running/paused/error, last signal, last evaluation
-- Live strategy evaluation logs with market context
-- Agent controls: pause, resume, force-evaluate, adjust confidence threshold
-- Signal lineage: see which regime + indicators triggered a specific trade
-- EventBus message inspector (live pub/sub stream)
+### ✅ Module 2 — Trade Execution & Settlement
+Paper trading cockpit, capital constraints, signal dedup, agent orchestrator, trade journal, EOD settlement, learner feedback loop, 57 tests. **Complete.**
+
+### Module 3 — Agent Dashboard & Controls
+Per-agent state monitoring, live strategy evaluation logs, agent pause/resume/force-eval, signal lineage inspector, EventBus message inspector.
 
 ### Module 4 — Strategy Training & Backtesting
-Build more dynamic strategies using ML instead of pure math:
-- Historical backtest runner: replay OHLCV through strategy engine
-- Walk-forward validation to prevent overfitting
-- HMM classifier training UI (accumulate 500+ trading days first)
-- Feature importance analysis: which indicators matter per regime
-- Agent-generated strategies: LLM proposes new strategy rules → backtest → promote
-- Strategy gene pool: combine elements of high-performing strategies
+Historical backtest runner (walk-forward validation), HMM training UI (500+ day threshold), feature importance by regime, LLM-proposed strategy rules via Ollama + phi3:mini, strategy gene pool.
 
 ---
 
 ## Development Notes
 
-- **Paper mode**: All 36 instruments stream synthetic ticks every second from real historical closing prices. Strategies evaluate every 60s. Paper fills execute immediately with slippage simulation.
-- **Live mode**: Set `MODE=live` + valid `KITE_ACCESS_TOKEN`. KiteStreamer opens WebSocket, KiteBroker places real orders.
-- **HMM classifier**: Runs in heuristic mode until 500+ trading days accumulate. Train with: `.venv/Scripts/python -m terminal_in.strategy_engine.regime.train --days 500`
-- **FinBERT**: Optional but recommended. Degrades gracefully to neutral sentiment if not installed.
-- **Port 5000**: Flask API. Port 3000: Next.js UI. No proxy needed; Next.js rewrites `/api/*` → `localhost:5000`.
+- **Paper mode ticks**: Synthetic ticks fire every second from historical close prices (Gaussian micro-vol). Chart tick updates are gated to market hours (09:15–15:30 IST Mon–Fri) to avoid post-close bar pollution.
+- **Signal dedup**: Same instrument is blocked for 5 minutes after approval to prevent strategy flood. Paper mode allows 200 trades/day vs 20 in live.
+- **Capital tracking**: PaperBroker tracks `capital_in_use` (sum of open position notionals). Orders exceeding available equity are hard-rejected.
+- **Live mode**: Set `MODE=live` + valid `KITE_ACCESS_TOKEN`. KiteStreamer opens WebSocket, KiteBroker places real orders via Kite Connect REST.
+- **HMM classifier**: Heuristic mode until 500+ trading days accumulate. Train: `.venv/Scripts/python -m terminal_in.strategy_engine.regime.train --days 500`
+- **FinBERT**: Optional. Degrades gracefully to neutral/0.0 if not installed.
+- **Ports**: Flask API on 5000, Next.js on 3000. Next.js rewrites `/api/*` → `localhost:5000`.

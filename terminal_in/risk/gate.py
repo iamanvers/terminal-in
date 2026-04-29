@@ -14,6 +14,7 @@ from typing import Optional
 import numpy as np
 
 from terminal_in.bus import bus
+from terminal_in.agents.control import kill_switch, registry
 from terminal_in.risk.event_calendar import calendar as event_cal
 
 log = logging.getLogger(__name__)
@@ -21,10 +22,12 @@ log = logging.getLogger(__name__)
 MAX_OPEN_POSITIONS = 10
 MAX_SECTOR_PCT = 0.30
 MAX_CORR = 0.85
-MAX_DAILY_TRADES = 20
+MAX_DAILY_TRADES_LIVE  = 20
+MAX_DAILY_TRADES_PAPER = 200
 VIX_HARD_STOP = 35.0
 VIX_REDUCE_THRESHOLD = 25.0
 MIN_CONFIDENCE = 0.45
+SIGNAL_DEDUP_WINDOW_S = 300  # skip re-entry for same instrument within 5 min
 
 
 @dataclass
@@ -45,11 +48,15 @@ class RiskSupervisor:
         self._peak_equity: float = config.initial_capital
         self._current_equity: float = config.initial_capital
         self._india_vix: float = 15.0
+        self._max_daily_trades = MAX_DAILY_TRADES_LIVE if config.is_live else MAX_DAILY_TRADES_PAPER
+        # Dedup: instrument_token → timestamp of last approved signal
+        self._last_approved: dict[int, float] = {}
 
         bus.subscribe('strategy.signal', self._on_signal)
         bus.subscribe('regime.update', self._on_regime_update)
         bus.subscribe('pnl.update', self._on_pnl_update)
-        log.info('RiskSupervisor initialised')
+        registry.register('GATE', 'system', 'M2 Risk Supervisor')
+        log.info('RiskSupervisor initialised (max_daily_trades=%d)', self._max_daily_trades)
 
     def _on_regime_update(self, payload: dict):
         self._india_vix = float(payload.get('india_vix', self._india_vix))
@@ -65,6 +72,7 @@ class RiskSupervisor:
         self._daily_loss = 0.0
         self._daily_trades = 0
         self._reset_date = date.today()
+        self._last_approved.clear()
         log.info('RiskSupervisor: daily counters reset')
 
     def _reset_daily_counters(self):
@@ -136,6 +144,18 @@ class RiskSupervisor:
 
     def gate(self, signal: dict) -> GateResult:
         checks: dict[str, bool] = {}
+        registry.heartbeat('GATE')
+
+        # 0a. Kill switch — global pause (operator-engaged)
+        checks['kill_switch_ok'] = not kill_switch.global_pause
+        if not checks['kill_switch_ok']:
+            return GateResult(False, checks, 'global_pause_engaged')
+
+        # 0b. Symbol block
+        instrument_token = int(signal.get('instrument_id', 0))
+        checks['symbol_not_blocked'] = not kill_switch.is_blocked(instrument_token)
+        if not checks['symbol_not_blocked']:
+            return GateResult(False, checks, f'symbol_blocked={instrument_token}')
 
         # 1. Event mask — skipped in paper mode (we want continuous signal flow for learning)
         if self._config.is_live:
@@ -167,7 +187,7 @@ class RiskSupervisor:
             return GateResult(False, checks, f'daily_loss_cap={daily_loss_pct:.3f}')
 
         # 5. Daily trade count
-        checks['trade_count_ok'] = self._daily_trades < MAX_DAILY_TRADES
+        checks['trade_count_ok'] = self._daily_trades < self._max_daily_trades
         if not checks['trade_count_ok']:
             return GateResult(False, checks, 'max_daily_trades')
 
@@ -190,20 +210,29 @@ class RiskSupervisor:
             return GateResult(False, checks, f'max_positions={len(open_trades)}')
 
         # 8. Duplicate position check (same instrument already open)
-        instrument_id = signal.get('instrument_id', 0)
-        open_instruments = {t.get('instrument_token') for t in open_trades}
+        instrument_id = int(signal.get('instrument_id', 0))
+        open_instruments = {int(t.get('instrument_token') or 0) for t in open_trades}
         checks['no_duplicate'] = instrument_id not in open_instruments
         if not checks['no_duplicate']:
             return GateResult(False, checks, f'duplicate_instrument={instrument_id}')
 
-        # 9. Margin check (simplified: qty × price < 20% of equity)
+        # 8b. Signal dedup — skip same instrument if approved within SIGNAL_DEDUP_WINDOW_S
+        import time as _time_
+        now_ts = _time_.time()
+        last_ts = self._last_approved.get(instrument_id, 0)
+        checks['signal_fresh'] = (now_ts - last_ts) >= SIGNAL_DEDUP_WINDOW_S
+        if not checks['signal_fresh']:
+            age_s = int(now_ts - last_ts)
+            return GateResult(False, checks, f'signal_too_recent={age_s}s')
+
+        # 9. Margin check — per-trade notional ≤ 30% of equity
         qty = int(signal.get('quantity', 0))
         price_approx = float(signal.get('limit_price') or signal.get('stop_loss') or 0.0)
         notional = qty * price_approx
-        max_notional = self._current_equity * 0.20
-        checks['margin_ok'] = notional <= max_notional or price_approx == 0
+        max_per_trade = self._current_equity * 0.30
+        checks['margin_ok'] = notional <= max_per_trade or price_approx == 0
         if not checks['margin_ok']:
-            return GateResult(False, checks, f'notional_too_large={notional:.0f}')
+            return GateResult(False, checks, f'notional_too_large={notional:.0f}>{max_per_trade:.0f}')
 
         # 10. Sector concentration (placeholder)
         checks['sector_ok'] = True
@@ -222,6 +251,7 @@ class RiskSupervisor:
             checks['vix_reduce'] = False
 
         self._daily_trades += 1
+        self._last_approved[instrument_id] = now_ts
         return GateResult(True, checks)
 
     def _check_correlation(self, signal: dict, open_trades: list) -> bool:

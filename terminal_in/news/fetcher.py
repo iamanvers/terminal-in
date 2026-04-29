@@ -62,10 +62,9 @@ class NewsFetcher:
 
         headline = article.get('title', '') or ''
         body = article.get('description', '') or ''
-        full_text = f'{headline}. {body}'
 
-        result = sentiment.score(full_text)
-        instruments = parser.extract_instruments(full_text)
+        result = sentiment.score(f'{headline}. {body}')
+        instruments = parser.extract_instruments(headline, body)
         impact = parser.classify_impact(result['score'], result['sentiment'])
 
         published_raw = article.get('publishedAt', '')
