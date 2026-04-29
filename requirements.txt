@@ -18,7 +18,7 @@ Flask>=3.0.0
 Flask-SocketIO>=5.3.6
 Flask-Cors>=4.0.0
 python-socketio>=5.11.0
-simple_websocket>=1.0.0     # WebSocket transport for Flask-SocketIO threading mode
+eventlet>=0.35.0            # WSGI server with proper WebSocket support for Flask-SocketIO
 
 # ── Data + math ──────────────────────────────────────────────────────────────
 numpy>=1.26.4

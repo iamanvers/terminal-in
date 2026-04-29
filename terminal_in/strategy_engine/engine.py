@@ -5,9 +5,11 @@ emits signals to 'strategy.signal' topic for the RiskSupervisor to gate.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Optional
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 import pandas as pd
 
@@ -63,7 +65,15 @@ class StrategyEngine:
         self._event_mask = float(payload.get('mask', 1.0))
 
     def _build_context(self) -> MarketContext:
-        now = datetime.now(timezone.utc)
+        now_ist = datetime.now(IST)
+        if self._config and not self._config.is_live:
+            # Paper mode: simulate 10:30 IST so all strategy market-hours gates pass.
+            # Strategies check time(9,15) < now.time() — without this they'd only run
+            # if the machine clock happens to be in 9:15–15:30 IST.
+            today = now_ist.date()
+            now = datetime(today.year, today.month, today.day, 10, 30, tzinfo=IST)
+        else:
+            now = now_ist
 
         # Fetch last prices from bus hot-cache
         last_prices: dict[int, float] = {}

@@ -38,6 +38,8 @@ class DB:
         migrations = [
             'ALTER TABLE trades ADD COLUMN signal_id TEXT',
             'ALTER TABLE trades ADD COLUMN order_id TEXT',
+            'ALTER TABLE trades ADD COLUMN stop_loss REAL',
+            'ALTER TABLE trades ADD COLUMN target REAL',
         ]
         with sqlite3.connect(str(self.path)) as conn:
             for stmt in migrations:
@@ -188,8 +190,9 @@ class DB:
                 '''INSERT OR IGNORE INTO trades
                    (trade_id, signal_id, order_id, strategy_id, instrument_token,
                     side, entry_time, entry_price, quantity,
+                    stop_loss, target,
                     regime_at_entry, confidence, metadata_json, is_paper)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                 (
                     trade['trade_id'],
                     trade.get('signal_id'),
@@ -200,6 +203,8 @@ class DB:
                     entry_time,
                     trade.get('entry_price', 0.0),
                     trade.get('quantity', 0),
+                    float(trade.get('stop_loss') or 0),
+                    float(trade.get('target') or 0),
                     trade.get('regime', trade.get('regime_at_entry')),
                     trade.get('confidence'),
                     json.dumps(meta),
@@ -540,6 +545,22 @@ class DB:
                 ),
             )
 
+    def get_recent_signals(self, limit: int = 40) -> list:
+        """Return recent risk decisions joined with signal lineage for the trade recommendations feed."""
+        with self.conn() as c:
+            rows = c.execute(
+                '''SELECT rd.decision_id, rd.signal_id, rd.strategy_id,
+                          rd.instrument_token, rd.approved, rd.reason, rd.decided_at,
+                          rd.daily_pnl_at_decision, rd.equity_at_decision,
+                          sl.side, sl.confidence, sl.regime, sl.regime_confidence,
+                          sl.trigger_rule, sl.trade_id, sl.trade_pnl, sl.fill_price
+                   FROM risk_decisions rd
+                   LEFT JOIN signal_lineage sl ON sl.signal_id = rd.signal_id
+                   ORDER BY rd.decided_at DESC LIMIT ?''',
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def get_risk_decisions(self, strategy_id: Optional[str] = None,
                            limit: int = 200) -> list:
         q = 'SELECT * FROM risk_decisions WHERE 1=1'
@@ -700,6 +721,33 @@ class DB:
     def get_all_scorecards(self) -> list:
         with self.conn() as c:
             rows = c.execute('SELECT * FROM scorecards ORDER BY strategy_id').fetchall()
+        return [dict(r) for r in rows]
+
+    # ── Strategy learner params ───────────────────────────────────────────────
+
+    def upsert_strategy_params(self, params: dict) -> None:
+        now = int(_time.time() * 1000)
+        with self.conn() as c:
+            c.execute(
+                '''INSERT OR REPLACE INTO strategy_params
+                   (strategy_id, min_confidence, sl_multiplier, target_multiplier,
+                    kelly_fraction, bayes_wr, n_trades, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?)''',
+                (
+                    params['strategy_id'],
+                    float(params.get('min_confidence',    0.45)),
+                    float(params.get('sl_multiplier',     1.5)),
+                    float(params.get('target_multiplier', 3.0)),
+                    float(params.get('kelly_fraction',    0.02)),
+                    float(params.get('bayes_wr',          0.5)),
+                    int(params.get('n_trades',            0)),
+                    params.get('updated_at', now),
+                ),
+            )
+
+    def get_all_strategy_params(self) -> list:
+        with self.conn() as c:
+            rows = c.execute('SELECT * FROM strategy_params ORDER BY strategy_id').fetchall()
         return [dict(r) for r in rows]
 
     # ── Audit ────────────────────────────────────────────────────────────────
@@ -941,4 +989,14 @@ CREATE TABLE IF NOT EXISTS audit_log (
     target_id TEXT,
     payload_json TEXT);
 CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(time DESC);
+
+CREATE TABLE IF NOT EXISTS strategy_params (
+    strategy_id TEXT PRIMARY KEY,
+    min_confidence REAL NOT NULL DEFAULT 0.45,
+    sl_multiplier REAL NOT NULL DEFAULT 1.5,
+    target_multiplier REAL NOT NULL DEFAULT 3.0,
+    kelly_fraction REAL NOT NULL DEFAULT 0.02,
+    bayes_wr REAL NOT NULL DEFAULT 0.5,
+    n_trades INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0);
 """

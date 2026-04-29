@@ -35,9 +35,10 @@ class GateResult:
 
 
 class RiskSupervisor:
-    def __init__(self, db, config):
+    def __init__(self, db, config, learner=None):
         self._db = db
         self._config = config
+        self._learner = learner   # optional StrategyLearner for adaptive confidence
         self._daily_loss: float = 0.0
         self._daily_trades: int = 0
         self._reset_date: Optional[date] = None
@@ -58,6 +59,13 @@ class RiskSupervisor:
         if self._current_equity > self._peak_equity:
             self._peak_equity = self._current_equity
         self._daily_loss = float(payload.get('daily_pnl', self._daily_loss))
+
+    def reset_daily(self):
+        """Called by SettlementService at market open to reset daily counters."""
+        self._daily_loss = 0.0
+        self._daily_trades = 0
+        self._reset_date = date.today()
+        log.info('RiskSupervisor: daily counters reset')
 
     def _reset_daily_counters(self):
         today = date.today()
@@ -129,11 +137,14 @@ class RiskSupervisor:
     def gate(self, signal: dict) -> GateResult:
         checks: dict[str, bool] = {}
 
-        # 1. Event mask
-        mask = event_cal.mask()
-        checks['event_mask'] = mask > 0.1
-        if not checks['event_mask']:
-            return GateResult(False, checks, 'event_blackout')
+        # 1. Event mask — skipped in paper mode (we want continuous signal flow for learning)
+        if self._config.is_live:
+            mask = event_cal.mask()
+            checks['event_mask'] = mask > 0.1
+            if not checks['event_mask']:
+                return GateResult(False, checks, 'event_blackout')
+        else:
+            checks['event_mask'] = True
 
         # 2. VIX hard stop
         checks['vix_hard_stop'] = self._india_vix <= VIX_HARD_STOP
@@ -160,11 +171,17 @@ class RiskSupervisor:
         if not checks['trade_count_ok']:
             return GateResult(False, checks, 'max_daily_trades')
 
-        # 6. Confidence threshold
+        # 6. Confidence threshold — adaptive per strategy via StrategyLearner
+        sid = signal.get('strategy_id', '')
+        min_conf = MIN_CONFIDENCE
+        if self._learner is not None:
+            params = self._learner.get_params(sid)
+            min_conf = float(params.get('min_confidence', MIN_CONFIDENCE))
+
         confidence = float(signal.get('confidence', 0.0))
-        checks['confidence_ok'] = confidence >= MIN_CONFIDENCE
+        checks['confidence_ok'] = confidence >= min_conf
         if not checks['confidence_ok']:
-            return GateResult(False, checks, f'low_confidence={confidence:.2f}')
+            return GateResult(False, checks, f'low_confidence={confidence:.2f}<{min_conf:.2f}')
 
         # 7. Max open positions
         open_trades = self._db.get_open_trades() if self._db else []

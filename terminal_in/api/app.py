@@ -22,7 +22,7 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     app = Flask(__name__, static_folder=None)
     app.config['SECRET_KEY'] = components.get('jwt_secret', 'dev-secret')
 
-    sio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
+    sio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet')
 
     # Init route modules
     db = components.get('db')
@@ -30,10 +30,11 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     broker = components.get('broker')
     dsa = components.get('dsa')
     analyst = components.get('analyst')
+    learner = components.get('learner')
     instruments = components.get('instruments')
 
-    portfolio.init(supervisor, broker)
-    strategies.init(dsa, analyst, db=db, instruments=instruments)
+    portfolio.init(supervisor, broker, db=db)
+    strategies.init(dsa, analyst, db=db, instruments=instruments, learner=learner)
     trades.init(db)
     risk.init(supervisor)
     market.init(db)

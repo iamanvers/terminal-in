@@ -9,14 +9,16 @@ log = logging.getLogger(__name__)
 
 _dsa = None
 _analyst = None
+_learner = None
 _db = None
 _instruments = None
 
 
-def init(dsa, analyst, db=None, instruments=None):
-    global _dsa, _analyst, _db, _instruments
+def init(dsa, analyst, db=None, instruments=None, learner=None):
+    global _dsa, _analyst, _learner, _db, _instruments
     _dsa = dsa
     _analyst = analyst
+    _learner = learner
     _db = db
     _instruments = instruments
 
@@ -33,6 +35,14 @@ def scorecards():
     if _analyst is None:
         return jsonify([])
     return jsonify(_analyst.all_scorecards())
+
+
+@bp.route('/learner_params')
+def learner_params():
+    """Per-strategy adaptive params: confidence threshold, SL/target multipliers, Kelly fraction."""
+    if _learner is None:
+        return jsonify([])
+    return jsonify(_learner.all_params())
 
 
 @bp.route('/scorecards/<strategy_id>')

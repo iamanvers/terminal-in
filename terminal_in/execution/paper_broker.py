@@ -3,8 +3,11 @@ PaperBroker — simulated order execution with realistic fill logic.
 Subscribes to 'order.approved', simulates fill, publishes 'trade.opened' / 'trade.closed'.
 Monitors open positions for SL/target/time_exit against live ticks.
 Writes trade journal entries and updates signal lineage on every fill and close.
+
+Session-persistent: restores open positions and equity from DB on every startup.
 """
 
+import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -27,10 +30,72 @@ class PaperBroker:
         self._lock = Lock()
         self._equity = config.initial_capital
         self._daily_pnl = 0.0
+        self._peak_equity = config.initial_capital
+
+        # Restore state from DB so session history survives restarts
+        self._restore_from_db()
 
         bus.subscribe('order.approved', self._on_order)
         bus.subscribe('ticks.*', self._on_tick)
-        log.info('PaperBroker initialised (capital=%.2f)', self._equity)
+        bus.subscribe('trade.close_requested', self._on_close_requested)
+        log.info('PaperBroker initialised (equity=%.2f, open=%d)', self._equity, len(self._positions))
+
+    # ── Session persistence ───────────────────────────────────────────────────
+
+    def _restore_from_db(self):
+        try:
+            # ── 1. Restore equity from all closed trades ──────────────────────
+            all_trades = self._db.get_trades(limit=10_000)
+            closed = [t for t in all_trades if t.get('exit_price') is not None]
+            realized_pnl = sum(t.get('net_pnl') or 0 for t in closed)
+            self._equity = self._config.initial_capital + realized_pnl
+            self._peak_equity = max(self._equity, self._config.initial_capital)
+
+            # ── 2. Restore today's daily P&L ──────────────────────────────────
+            today_start_ms = int(time.time() * 1000) - 86_400_000
+            today_closed = [t for t in closed if (t.get('exit_time') or 0) >= today_start_ms]
+            self._daily_pnl = sum(t.get('net_pnl') or 0 for t in today_closed)
+
+            # ── 3. Restore open positions ──────────────────────────────────────
+            open_trades = self._db.get_open_trades()
+            for t in open_trades:
+                # SL/target may be in dedicated columns (new) or metadata_json (old)
+                sl = float(t.get('stop_loss') or 0)
+                target = float(t.get('target') or 0)
+                if not sl and not target:
+                    try:
+                        meta = json.loads(t.get('metadata_json') or '{}')
+                        sl = float(meta.get('stop_loss') or 0)
+                        target = float(meta.get('target') or 0)
+                    except Exception:
+                        pass
+
+                self._positions[t['trade_id']] = {
+                    'trade_id':     t['trade_id'],
+                    'signal_id':    t.get('signal_id'),
+                    'strategy_id':  t.get('strategy_id', ''),
+                    'instrument_id': t['instrument_token'],
+                    'side':         t['side'],
+                    'quantity':     t['quantity'],
+                    'entry_price':  t['entry_price'],
+                    'stop_loss':    sl,
+                    'target':       target,
+                    'time_exit':    None,
+                    'opened_at':    t.get('opened_at', ''),
+                    'regime':       t.get('regime_at_entry', ''),
+                    'confidence':   t.get('confidence'),
+                    'metadata':     {},
+                }
+
+            if open_trades:
+                log.info('PaperBroker: restored %d open positions', len(open_trades))
+            log.info('PaperBroker: equity=%.2f daily_pnl=%.2f peak=%.2f',
+                     self._equity, self._daily_pnl, self._peak_equity)
+
+        except Exception:
+            log.exception('PaperBroker: failed to restore from DB')
+
+    # ── Order handling ────────────────────────────────────────────────────────
 
     def _on_order(self, payload: dict):
         side = payload.get('side', 'BUY')
@@ -56,20 +121,20 @@ class PaperBroker:
         signal_id = payload.get('signal_id')
 
         position = {
-            'trade_id': trade_id,
-            'signal_id': signal_id,
-            'strategy_id': payload.get('strategy_id', ''),
+            'trade_id':     trade_id,
+            'signal_id':    signal_id,
+            'strategy_id':  payload.get('strategy_id', ''),
             'instrument_id': instrument_id,
-            'side': side,
-            'quantity': qty,
-            'entry_price': fill_price,
-            'stop_loss': float(payload.get('stop_loss', 0)),
-            'target': float(payload.get('target', 0)),
-            'time_exit': payload.get('time_exit'),
-            'opened_at': datetime.now(timezone.utc).isoformat(),
-            'regime': payload.get('regime', ''),
-            'confidence': payload.get('confidence'),
-            'metadata': payload.get('metadata', {}),
+            'side':         side,
+            'quantity':     qty,
+            'entry_price':  fill_price,
+            'stop_loss':    float(payload.get('stop_loss') or 0),
+            'target':       float(payload.get('target') or 0),
+            'time_exit':    payload.get('time_exit'),
+            'opened_at':    datetime.now(timezone.utc).isoformat(),
+            'regime':       payload.get('regime', ''),
+            'confidence':   payload.get('confidence'),
+            'metadata':     payload.get('metadata', {}),
         }
 
         with self._lock:
@@ -84,7 +149,6 @@ class PaperBroker:
         except Exception:
             log.exception('Failed to persist trade open')
 
-        # Update signal lineage with fill details
         if signal_id:
             try:
                 self._db.update_signal_lineage(
@@ -96,7 +160,6 @@ class PaperBroker:
             except Exception:
                 log.exception('Failed to update signal lineage on fill')
 
-        # Create trade journal entry
         try:
             self._db.upsert_trade_journal({
                 'trade_id': trade_id,
@@ -112,6 +175,25 @@ class PaperBroker:
 
         bus.publish('trade.opened', position)
         log.info('PAPER FILL: %s %s qty=%d @%.2f', side, trade_id, qty, fill_price)
+
+    # ── Manual close ─────────────────────────────────────────────────────────
+
+    def _on_close_requested(self, payload: dict):
+        trade_id = payload.get('trade_id')
+        reason   = payload.get('reason', 'manual')
+        if not trade_id:
+            return
+        with self._lock:
+            pos = self._positions.get(trade_id)
+        if not pos:
+            log.warning('PaperBroker: close_requested for unknown trade_id=%s', trade_id)
+            return
+        instrument_id = pos['instrument_id']
+        cached = bus.get_cached(f'ticks.{instrument_id}')
+        exit_price = float(cached.get('last_price', pos['entry_price'])) if cached else pos['entry_price']
+        self._close_position(trade_id, pos.copy(), exit_price, reason)
+
+    # ── Tick monitoring ───────────────────────────────────────────────────────
 
     def _on_tick(self, payload: dict):
         token = payload.get('instrument_token') or payload.get('token')
@@ -175,27 +257,28 @@ class PaperBroker:
 
         self._daily_pnl += net_pnl
         self._equity += net_pnl
+        if self._equity > self._peak_equity:
+            self._peak_equity = self._equity
 
         closed_at = datetime.now(timezone.utc).isoformat()
         closed_trade = {
             **pos,
-            'exit_price': fill_exit,
+            'exit_price':  fill_exit,
             'exit_reason': reason,
-            'pnl': net_pnl,
-            'closed_at': closed_at,
+            'pnl':         net_pnl,
+            'closed_at':   closed_at,
         }
 
         try:
             self._db.close_trade(trade_id, {
-                'exit_price': fill_exit,
-                'pnl': net_pnl,
+                'exit_price':  fill_exit,
+                'pnl':         net_pnl,
                 'exit_reason': reason,
-                'closed_at': closed_at,
+                'closed_at':   closed_at,
             })
         except Exception:
             log.exception('Failed to persist trade close')
 
-        # Update signal lineage with final P&L
         signal_id = pos.get('signal_id')
         if signal_id:
             try:
@@ -208,7 +291,6 @@ class PaperBroker:
             except Exception:
                 log.exception('Failed to update signal lineage on close')
 
-        # Update trade journal with exit details
         try:
             self._db.upsert_trade_journal({
                 'trade_id': trade_id,
@@ -220,8 +302,8 @@ class PaperBroker:
 
         bus.publish('trade.closed', closed_trade)
         bus.publish('pnl.update', {
-            'equity': self._equity,
-            'daily_pnl': self._daily_pnl,
+            'equity':     self._equity,
+            'daily_pnl':  self._daily_pnl,
         })
 
         log.info('PAPER CLOSE: %s reason=%s pnl=%.2f equity=%.2f',
@@ -233,6 +315,10 @@ class PaperBroker:
     @property
     def equity(self) -> float:
         return self._equity
+
+    @property
+    def peak_equity(self) -> float:
+        return self._peak_equity
 
     @property
     def open_positions(self) -> list[dict]:

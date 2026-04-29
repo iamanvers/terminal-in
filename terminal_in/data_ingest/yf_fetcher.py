@@ -43,8 +43,9 @@ def backfill(db, token_map: dict[int, str], days: int = 365) -> int:
         log.warning('yfinance not installed — skipping OHLCV download. Run: pip install yfinance')
         return 0
 
-    end_dt   = date.today()
-    start_dt = end_dt - timedelta(days=days)
+    # yfinance end is EXCLUSIVE — use tomorrow so today's completed session is included
+    end_dt   = date.today() + timedelta(days=1)
+    start_dt = end_dt - timedelta(days=days + 1)
     count = 0
 
     for token, symbol in token_map.items():

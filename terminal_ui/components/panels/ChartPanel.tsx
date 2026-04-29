@@ -13,7 +13,8 @@ const SYMBOLS = [
 ]
 const TIMEFRAMES = ['1m', '5m', '1d']
 
-// EMA calculation
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function calcEMA(
   bars: { time: unknown; close: number }[],
   period: number,
@@ -29,37 +30,83 @@ function calcEMA(
   return result
 }
 
+function istMinutes(): number {
+  const now = Date.now()
+  const ist = new Date(now + 5.5 * 3600_000)
+  return ist.getUTCHours() * 60 + ist.getUTCMinutes()
+}
+
+function isMarketOpen(): boolean {
+  const now = new Date(Date.now() + 5.5 * 3600_000)
+  const day = now.getUTCDay()
+  if (day === 0 || day === 6) return false           // weekend
+  const mins = now.getUTCHours() * 60 + now.getUTCMinutes()
+  return mins >= 9 * 60 + 15 && mins < 15 * 60 + 30 // 09:15–15:30 IST
+}
+
+// localStorage cache — per symbol+tf, 5-minute TTL during market; 6-hour TTL at close
+const CACHE_TTL_OPEN   = 5  * 60 * 1000
+const CACHE_TTL_CLOSED = 6  * 60 * 60 * 1000
+
+function cacheKey(symbol: string, tf: string) {
+  return `chart_ohlcv_${symbol.replace(/\s/g, '_')}_${tf}`
+}
+
+function readCache(symbol: string, tf: string): Record<string, unknown>[] | null {
+  try {
+    const raw = localStorage.getItem(cacheKey(symbol, tf))
+    if (!raw) return null
+    const { rows, ts } = JSON.parse(raw)
+    const ttl = isMarketOpen() ? CACHE_TTL_OPEN : CACHE_TTL_CLOSED
+    if (Date.now() - ts > ttl) return null
+    return rows
+  } catch { return null }
+}
+
+function writeCache(symbol: string, tf: string, rows: Record<string, unknown>[]) {
+  try {
+    localStorage.setItem(cacheKey(symbol, tf), JSON.stringify({ rows, ts: Date.now() }))
+  } catch { /* quota */ }
+}
+
+// ── Types / Props ─────────────────────────────────────────────────────────────
+
 type Props = {
   symbolIdx?: number
   setSymbolIdx?: (idx: number) => void
 }
 
+// ── Component ─────────────────────────────────────────────────────────────────
+
 export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: externalSetIdx }: Props) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const chartRef    = useRef<any>(null)
+  const chartRef      = useRef<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const seriesRef   = useRef<any>(null)
+  const seriesRef     = useRef<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ema9Ref     = useRef<any>(null)
+  const ema9Ref       = useRef<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ema21Ref    = useRef<any>(null)
+  const ema21Ref      = useRef<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const volRef      = useRef<any>(null)
+  const volRef        = useRef<any>(null)
   const containerRef  = useRef<HTMLDivElement>(null)
+  const loadCtrRef    = useRef(0)      // increments on every fetch; aborts stale results
 
   const [internalIdx, setInternalIdx] = useState(0)
   const symbolIdx    = externalIdx    ?? internalIdx
   const setSymbolIdx = externalSetIdx ?? setInternalIdx
 
-  const [tf, setTf]             = useState('5m')
-  const [hasData, setHasData]   = useState(true)
-  const [chartReady, setChartReady] = useState(false)
+  const [tf,          setTf]        = useState('5m')
+  const [chartReady,  setChartReady] = useState(false)
+  const [loadState,   setLoadState] = useState<'idle' | 'cached' | 'loading' | 'live' | 'error'>('idle')
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null)
   const ticks = useTickMap()
 
   const symbol      = SYMBOLS[symbolIdx].key
   const symbolLabel = SYMBOLS[symbolIdx].label
+  const marketOpen  = isMarketOpen()
 
-  // Init chart once
+  // ── Init chart (once) ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return
     let cancelled = false
@@ -75,35 +122,22 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
         width:  containerRef.current.clientWidth,
         height: containerRef.current.clientHeight,
       })
-
       const series = chart.addCandlestickSeries({
         upColor: '#00C853', downColor: '#D32F2F',
         borderUpColor: '#00C853', borderDownColor: '#D32F2F',
         wickUpColor: '#00C853', wickDownColor: '#D32F2F',
       })
-
-      const ema9 = chart.addLineSeries({
-        color: '#F7931E', lineWidth: 1,
-        priceLineVisible: false, lastValueVisible: false,
-      })
-      const ema21 = chart.addLineSeries({
-        color: '#4488FF', lineWidth: 1,
-        priceLineVisible: false, lastValueVisible: false,
-      })
+      const ema9  = chart.addLineSeries({ color: '#F7931E', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+      const ema21 = chart.addLineSeries({ color: '#4488FF', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
 
       let vol: unknown = null
       try {
         vol = chart.addHistogramSeries({
-          priceFormat: { type: 'volume' },
-          priceScaleId: 'vol',
-          lastValueVisible: false,
-          priceLineVisible: false,
+          priceFormat: { type: 'volume' }, priceScaleId: 'vol',
+          lastValueVisible: false, priceLineVisible: false,
         })
-        chart.priceScale('vol').applyOptions({
-          scaleMargins: { top: 0.82, bottom: 0 },
-          visible: false,
-        })
-      } catch { /* named price scales not supported in this build */ }
+        chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false })
+      } catch { /* named price scales not supported */ }
 
       chartRef.current  = chart
       seriesRef.current = series
@@ -115,10 +149,7 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
 
       const ro = new ResizeObserver(() => {
         if (!containerRef.current) return
-        chart.applyOptions({
-          width:  containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
-        })
+        chart.applyOptions({ width: containerRef.current.clientWidth, height: containerRef.current.clientHeight })
       })
       ro.observe(containerRef.current)
       cleanup = () => { ro.disconnect(); chart.remove() }
@@ -126,90 +157,125 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
     return () => { cancelled = true; cleanup?.(); setChartReady(false) }
   }, [])
 
-  // Update timeVisible when tf changes (daily = date-only, intraday = IST time)
+  // Update timeVisible when tf changes
   useEffect(() => {
     if (!chartReady || !chartRef.current) return
     chartRef.current.applyOptions({ timeScale: { timeVisible: tf !== '1d' } })
   }, [tf, chartReady])
 
-  // Load OHLCV + compute EMAs + volume
+  // ── Core data loader ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!chartReady || !seriesRef.current) return
-    const loadData = async () => {
-      let rows = await api.ohlcv(encodeURIComponent(symbol), tf, 300)
-      // Fallback to 1d if current timeframe has no data (e.g. outside market hours)
-      if (!rows.length && tf !== '1d') {
-        rows = await api.ohlcv(encodeURIComponent(symbol), '1d', 300)
-      }
-      if (!seriesRef.current) return
-      if (!rows.length) { setHasData(false); return }
-      setHasData(true)
-      processRows(rows)
-    }
-    const processRows = (rows: Record<string, unknown>[]) => {
-      if (!seriesRef.current) return
-      // Detect which time key the API returned (handles 1d fallback)
+
+    const myLoad = ++loadCtrRef.current
+
+    function applyRows(rows: Record<string, unknown>[], isStale: boolean) {
+      if (!seriesRef.current || loadCtrRef.current !== myLoad) return
+      if (!rows.length) return
+
       const isDaily = 'bucket_date' in (rows[0] ?? {})
       const timeKey = isDaily ? 'bucket_date' : 'bucket_time'
       const bars = rows
-        .map((r: Record<string, unknown>) => ({
+        .map(r => ({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           time:   (isDaily
-            // Daily: anchor to midnight UTC so the chart shows the correct calendar date
             ? Math.floor(new Date((r[timeKey] as string) + 'T00:00:00Z').getTime() / 1000)
-            // Intraday: shift forward by IST offset (+5:30h) so the chart displays IST times
             : Math.floor(Number(r[timeKey]) / 1000) + 19800) as any,
           open:   Number(r.open), high: Number(r.high),
           low:    Number(r.low),  close: Number(r.close),
           volume: Number(r.volume ?? 0),
         }))
-        .sort((a: { time: number }, b: { time: number }) => a.time - b.time)
+        .sort((a, b) => a.time - b.time)
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       seriesRef.current.setData(bars as any)
       chartRef.current?.timeScale().fitContent()
 
-      // EMAs
       if (ema9Ref.current)  ema9Ref.current.setData(calcEMA(bars, 9))
       if (ema21Ref.current) ema21Ref.current.setData(calcEMA(bars, 21))
-
-      // Volume histogram
       if (volRef.current) {
-        const volData = bars.map((b: { time: unknown; close: number; open: number; volume: number }) => ({
-          time:  b.time,
-          value: b.volume,
-          color: b.close >= b.open ? '#00C85318' : '#D32F2F18',
-        }))
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        volRef.current.setData(volData as any)
+        volRef.current.setData(bars.map((b: any) => ({
+          time: b.time, value: b.volume,
+          color: b.close >= b.open ? '#00C85318' : '#D32F2F18',
+        })) as any)
+      }
+
+      setLoadState(isStale ? 'cached' : (marketOpen ? 'live' : 'idle'))
+      if (!isStale) setLastUpdated(Date.now())
+    }
+
+    async function loadFresh() {
+      setLoadState('loading')
+      try {
+        let rows = await api.ohlcv(encodeURIComponent(symbol), tf, 300)
+        // Fallback to 1d if requested timeframe has no data yet
+        if (!rows.length && tf !== '1d') {
+          rows = await api.ohlcv(encodeURIComponent(symbol), '1d', 300)
+        }
+        if (loadCtrRef.current !== myLoad) return
+        if (rows.length) {
+          writeCache(symbol, tf, rows)
+          applyRows(rows, false)
+        } else {
+          setLoadState('error')
+        }
+      } catch {
+        if (loadCtrRef.current !== myLoad) return
+        setLoadState('error')
       }
     }
-    loadData().catch(() => setHasData(false))
+
+    // 1. Serve cached data instantly (no flicker on symbol/tf switch)
+    const cached = readCache(symbol, tf)
+    if (cached?.length) {
+      applyRows(cached, true)
+    }
+
+    // 2. Always fetch fresh async on top
+    loadFresh()
+
+    // 3. Auto-refresh every 30s while market is open; every 5min otherwise
+    const interval = setInterval(loadFresh, marketOpen ? 30_000 : 300_000)
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, tf, chartReady])
 
-  // Push live tick as realtime candle — only during NSE market hours (IST 09:15–15:30)
+  // ── Live tick → realtime candle (no IST gate — works in paper mode 24/7) ───
   useEffect(() => {
     if (!seriesRef.current || tf === '1d') return
     const tick = ticks[SYMBOLS[symbolIdx].token]
     if (!tick?.last_price) return
 
-    // IST = UTC + 5:30. Compute IST time-of-day to gate live updates.
+    // Build the current-minute bucket in "IST epoch seconds"
     const nowMs   = Date.now()
-    const istMs   = nowMs + 5.5 * 3600_000
-    const istDate = new Date(istMs)
-    const istTotalMinutes = istDate.getUTCHours() * 60 + istDate.getUTCMinutes()
-    const OPEN  = 9 * 60 + 15   // 09:15 IST
-    const CLOSE = 15 * 60 + 30  // 15:30 IST
-    if (istTotalMinutes < OPEN || istTotalMinutes > CLOSE) return
-
     const barTime = Math.floor(nowMs / 1000) - (Math.floor(nowMs / 1000) % 60) + 19800
     try {
       seriesRef.current.update({
-        time: barTime, open: Number(tick.last_price),
-        high: Number(tick.last_price), low: Number(tick.last_price), close: Number(tick.last_price),
+        time:  barTime,
+        open:  Number(tick.last_price),
+        high:  Number(tick.last_price),
+        low:   Number(tick.last_price),
+        close: Number(tick.last_price),
       })
-    } catch { /* series not ready */ }
+    } catch { /* series not yet ready */ }
   }, [ticks, tf, symbolIdx])
+
+  // ── Status badge ─────────────────────────────────────────────────────────────
+  const badge = (() => {
+    if (loadState === 'loading') return { text: 'UPDATING', color: '#888', bg: '#111' }
+    if (loadState === 'error')   return { text: 'NO DATA',  color: '#f87171', bg: '#1a0000' }
+    if (loadState === 'cached')  return { text: 'CACHED',   color: '#fb923c', bg: '#1f1000' }
+    if (marketOpen)              return { text: 'LIVE',     color: '#4ade80', bg: '#001a00' }
+    return { text: 'CLOSED', color: '#555', bg: '#111' }
+  })()
+
+  const age = lastUpdated
+    ? (() => {
+        const s = Math.floor((Date.now() - lastUpdated) / 1000)
+        return s < 60 ? `${s}s ago` : `${Math.floor(s / 60)}m ago`
+      })()
+    : null
 
   return (
     <div className="panel h-full">
@@ -221,7 +287,16 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
             EMA <span style={{ color: '#F7931E' }}>9</span> / <span style={{ color: '#4488FF' }}>21</span>
           </span>
         </span>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* Market / data status badge */}
+          <span style={{
+            fontSize: 8, padding: '1px 5px', borderRadius: 3, letterSpacing: '0.08em',
+            background: badge.bg, color: badge.color,
+            border: `1px solid ${badge.color}44`,
+          }}>
+            {badge.text}{age ? ` · ${age}` : ''}
+          </span>
+
           <select
             value={symbolIdx}
             onChange={e => setSymbolIdx(Number(e.target.value))}
@@ -246,9 +321,14 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
       </div>
       <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
         <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
-        {!hasData && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ color: '#888', fontSize: 11 }}>NO DATA — waiting for OHLCV…</span>
+        {loadState === 'error' && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+            <span style={{ color: '#333', fontSize: 11 }}>NO DATA — waiting for OHLCV…</span>
+          </div>
+        )}
+        {loadState === 'loading' && lastUpdated === null && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+            <span style={{ color: '#333', fontSize: 11 }}>loading…</span>
           </div>
         )}
       </div>

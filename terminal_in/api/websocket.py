@@ -24,6 +24,10 @@ FORWARD_TOPICS = [
     'pnl.update',
     'scorecard.update',
     'news.signal',
+    'learner.params_updated',
+    'settlement.eod_close',
+    'settlement.eod_reset',
+    'settlement.day_open',
 ]
 
 

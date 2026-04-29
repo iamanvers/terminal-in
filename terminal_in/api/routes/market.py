@@ -123,3 +123,17 @@ def last_tick(symbol):
         return jsonify({'error': 'unknown symbol'}), 404
     cached = bus.get_cached(f'ticks.{token}') or {}
     return jsonify(cached)
+
+
+@bp.route('/instruments')
+def instruments():
+    from terminal_in.data_ingest.instruments import registry
+    result = []
+    for inst in registry.get_all():
+        result.append({
+            'symbol': inst['tradingsymbol'],
+            'token':  inst['instrument_token'],
+            'type':   inst.get('instrument_type', 'EQ'),
+        })
+    result.sort(key=lambda x: x['symbol'])
+    return jsonify(result)

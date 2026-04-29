@@ -3,6 +3,9 @@ TERMINAL//IN — main entrypoint.
 Starts all threads: data ingest, news, strategy engine, risk, Flask/SocketIO.
 """
 
+import eventlet
+eventlet.monkey_patch()
+
 import logging
 import signal
 import sys
@@ -86,6 +89,9 @@ def main():
         # Seed synthetic OHLCV so charts have data immediately in paper mode
         from terminal_in.data_ingest.paper_ohlcv import seed as _seed_ohlcv
         _seed_ohlcv(db, list(instruments.values()))
+        # Aggregate live paper ticks into 1m OHLCV bars for intraday charts
+        from terminal_in.data_ingest.paper_tick_agg import PaperTickAggregator
+        _tick_agg = PaperTickAggregator(db=db)
 
     # ── OHLCV historical fill (async, best-effort) ────────────────────────────
     _start_ohlcv_backfill(db, instruments, cfg)
@@ -104,9 +110,13 @@ def main():
     t = Thread(target=engine.run_loop, args=(_stop_event,), daemon=True, name='strategy-engine')
     threads.append(t)
 
+    # ── Strategy learner (adaptive params — must init before gate) ────────────
+    from terminal_in.agents.strategy_learner import StrategyLearner
+    learner = StrategyLearner(db=db, dsa=engine._dsa)
+
     # ── Risk supervisor ───────────────────────────────────────────────────────
     from terminal_in.risk.gate import RiskSupervisor
-    supervisor = RiskSupervisor(db=db, config=cfg)
+    supervisor = RiskSupervisor(db=db, config=cfg, learner=learner)
 
     # ── Trade analyst ─────────────────────────────────────────────────────────
     from terminal_in.risk.m3_analyst import TradeAnalyst
@@ -120,6 +130,11 @@ def main():
         from terminal_in.execution.paper_broker import PaperBroker
         broker = PaperBroker(db=db, config=cfg)
 
+    # ── Settlement service (EOD auto-close + daily P&L reset) ─────────────────
+    from terminal_in.execution.settlement import SettlementService
+    settlement = SettlementService(db=db, broker=broker, supervisor=supervisor, metadata=metadata)
+    threads.append(Thread(target=settlement.run, args=(_stop_event,), daemon=True, name='settlement'))
+
     # ── Flask API ─────────────────────────────────────────────────────────────
     from terminal_in.api.app import create_app
     flask_app, sio = create_app({
@@ -130,6 +145,7 @@ def main():
         'broker': broker,
         'dsa': engine._dsa,
         'analyst': analyst,
+        'learner': learner,
         'instruments': instruments,
         'jwt_secret': cfg.jwt_secret,
     })
@@ -144,7 +160,7 @@ def main():
 
     # Start Flask in main thread (blocks until stop)
     flask_thread = Thread(
-        target=lambda: sio.run(flask_app, host='0.0.0.0', port=5000, use_reloader=False, log_output=False, allow_unsafe_werkzeug=True),
+        target=lambda: sio.run(flask_app, host='0.0.0.0', port=5000, use_reloader=False, log_output=False),
         daemon=True,
         name='flask',
     )

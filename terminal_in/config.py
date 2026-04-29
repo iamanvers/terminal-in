@@ -44,7 +44,7 @@ class Config:
 
     @property
     def sqlite_path(self) -> Path:
-        return Path(os.environ.get('SQLITE_PATH', './data/terminal_runtime.sqlite'))
+        return Path(os.environ.get('SQLITE_PATH', './data/trading.db'))
 
     @property
     def db_path(self) -> Path:
