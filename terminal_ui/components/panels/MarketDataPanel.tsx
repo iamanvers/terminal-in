@@ -116,7 +116,8 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
   const [selected, setSelected]       = useState<Selected>(null)
   const [selectedGlobal, setSelectedGlobal] = useState<GlobalQuote | null>(null)
 
-  // Seed prices from REST on mount — no waiting for WebSocket
+  // Seed prices from REST on mount — no waiting for WebSocket.
+  // When market is closed and live ticks are empty, fall back to last OHLCV close prices.
   useEffect(() => {
     api.allTicks().then(raw => {
       const next: PriceMap = {}
@@ -126,8 +127,24 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
           next[token] = { price: tick.last_price, chg: tick.change ?? 0 }
         }
       }
-      setPrices(next)
-      setLoading(false)
+      const liveCount = Object.keys(next).length
+      if (liveCount >= 5) {
+        setPrices(next)
+        setLoading(false)
+        return
+      }
+      // Fewer than 5 live ticks — market likely closed. Fetch last close prices.
+      return api.lastCloses().then(closes => {
+        const merged = { ...next }
+        for (const [tokenStr, rec] of Object.entries(closes)) {
+          const token = Number(tokenStr)
+          if (!merged[token] && rec.close > 0) {
+            merged[token] = { price: rec.close, chg: 0 }
+          }
+        }
+        setPrices(merged)
+        setLoading(false)
+      })
     }).catch(() => setLoading(false))
   }, [])
 
@@ -152,29 +169,40 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticks, marketOpen])
 
-  // Sparkline history — only during market hours
+  // Sparkline history — throttled to 1 update every 5s during market hours.
+  // This avoids costly array concat on every tick (18 tokens × 4Hz without throttle).
+  const sparklineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const ticksRef = useRef(ticks)
+  ticksRef.current = ticks
+
   useEffect(() => {
     if (!marketOpen) return
-    setPrevPrices(prev => {
-      const next = { ...prev }
-      for (const { token } of NSE_WATCHLIST) {
-        const p = ticks[token]?.last_price
-        if (p && prevTicksRef.current[token] !== p) next[token] = prevTicksRef.current[token] ?? p
-        if (p) prevTicksRef.current[token] = p
-      }
-      return next
-    })
-    setPriceHistory(prev => {
-      const next = { ...prev }
-      for (const { token } of NSE_WATCHLIST) {
-        const p = ticks[token]?.last_price
-        if (!p) continue
-        next[token] = [...(next[token] ?? []), p].slice(-50)
-      }
-      return next
-    })
+    if (sparklineTimerRef.current) return  // already scheduled
+
+    sparklineTimerRef.current = setTimeout(() => {
+      sparklineTimerRef.current = null
+      const t = ticksRef.current
+      setPrevPrices(prev => {
+        const next = { ...prev }
+        for (const { token } of NSE_WATCHLIST) {
+          const p = t[token]?.last_price
+          if (p && prevTicksRef.current[token] !== p) next[token] = prevTicksRef.current[token] ?? p
+          if (p) prevTicksRef.current[token] = p
+        }
+        return next
+      })
+      setPriceHistory(prev => {
+        const next = { ...prev }
+        for (const { token } of NSE_WATCHLIST) {
+          const p = t[token]?.last_price
+          if (!p) continue
+          next[token] = [...(next[token] ?? []), p].slice(-50)
+        }
+        return next
+      })
+    }, 5000)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticks])
+  }, [ticks, marketOpen])
 
   // Fetch global quotes when tab changes
   const fetchGlobal = useCallback(() => {

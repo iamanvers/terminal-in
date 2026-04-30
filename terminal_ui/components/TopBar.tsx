@@ -3,6 +3,7 @@ import React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useTickMap, useConnected } from '@/hooks/useSocket'
+import { api } from '@/lib/api'
 import StatusDot from '@/components/primitives/StatusDot'
 
 const TICKER_TOKENS = [
@@ -60,38 +61,59 @@ function TickerTape() {
   const ticks = useTickMap()
   const marketOpen = isNSEOpen()
 
-  // Snapshot prices at market open — freeze after close
-  const [frozen, setFrozen] = React.useState<Record<number, { price: number; chg: number }>>({})
+  // prices[token] = { price, chg } — seeded from closes on mount, overwritten by live ticks
+  const [prices, setPrices] = React.useState<Record<number, { price: number; chg: number }>>({})
+
+  // On mount: load last close prices so the tape is populated even when market is closed
   React.useEffect(() => {
-    setFrozen(prev => {
+    api.lastCloses().then(closes => {
+      setPrices(prev => {
+        const next = { ...prev }
+        for (const { token } of TICKER_TOKENS) {
+          const rec = closes[String(token)]
+          if (rec && rec.close > 0 && !next[token]) {
+            next[token] = { price: rec.close, chg: 0 }
+          }
+        }
+        return next
+      })
+    }).catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Merge live WebSocket ticks — only update during market hours (or always fill missing)
+  React.useEffect(() => {
+    setPrices(prev => {
       const next = { ...prev }
+      let changed = false
       for (const { token } of TICKER_TOKENS) {
         const p = ticks[token]?.last_price
-        if (p === undefined) continue
-        if (prev[token] === undefined || marketOpen) {
+        if (!p) continue
+        if (!prev[token] || marketOpen) {
           next[token] = { price: p, chg: ticks[token]?.change ?? 0 }
+          changed = true
         }
       }
-      return next
+      return changed ? next : prev
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticks])
 
-  const items = TICKER_TOKENS.map(({ label, token }) => ({
+  const items = React.useMemo(() => TICKER_TOKENS.map(({ label, token }) => ({
     label, token,
-    price: frozen[token]?.price ?? 0,
-    chg:   frozen[token]?.chg   ?? 0,
-  }))
+    price: prices[token]?.price ?? 0,
+    chg:   prices[token]?.chg   ?? 0,
+  })), [prices])
 
   return (
     <div style={{ height: 24, overflow: 'hidden', background: '#0A0A0A', borderBottom: '1px solid #161616', display: 'flex', alignItems: 'center' }}>
       {!marketOpen && (
-        <span style={{ fontSize: 8, color: '#333', letterSpacing: '0.08em', padding: '0 10px', flexShrink: 0, borderRight: '1px solid #161616' }}>
+        <span style={{ fontSize: 8, color: '#2A2A2A', letterSpacing: '0.08em', padding: '0 10px', flexShrink: 0, borderRight: '1px solid #161616' }}>
           CLOSED
         </span>
       )}
-      {/* Two separate map calls with distinct key namespaces — prevents React fiber reuse that causes animation restart */}
-      <div className="ticker-track" style={{ animationPlayState: marketOpen ? 'running' : 'paused' }}>
+      {/* Two identical sets with distinct key namespaces for seamless CSS marquee loop */}
+      <div className="ticker-track">
         {items.map(({ label, token, price, chg }) => (
           <TickerItem key={`a-${token}`} label={label} price={price} chg={chg} />
         ))}

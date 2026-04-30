@@ -40,13 +40,20 @@ class DB:
             'ALTER TABLE trades ADD COLUMN order_id TEXT',
             'ALTER TABLE trades ADD COLUMN stop_loss REAL',
             'ALTER TABLE trades ADD COLUMN target REAL',
+            # Indexes for query performance
+            'CREATE INDEX IF NOT EXISTS idx_trades_exit ON trades(exit_price)',
+            'CREATE INDEX IF NOT EXISTS idx_trades_entry_time ON trades(entry_time)',
+            'CREATE INDEX IF NOT EXISTS idx_trades_strategy ON trades(strategy_id)',
+            'CREATE INDEX IF NOT EXISTS idx_orders_strategy ON orders(strategy_id)',
+            'CREATE INDEX IF NOT EXISTS idx_signal_lineage_signal ON signal_lineage(signal_id)',
+            'CREATE INDEX IF NOT EXISTS idx_risk_decisions_ts ON risk_decisions(decided_at)',
         ]
         with sqlite3.connect(str(self.path)) as conn:
             for stmt in migrations:
                 try:
                     conn.execute(stmt)
                 except sqlite3.OperationalError:
-                    pass  # column already exists
+                    pass  # column already exists / index already exists
 
     @contextmanager
     def conn(self):
@@ -268,6 +275,82 @@ class DB:
                     d['metadata'] = {}
             result.append(d)
         return result
+
+    def get_trade_by_id(self, trade_id: str) -> Optional[dict]:
+        with self.conn() as c:
+            row = c.execute('SELECT * FROM trades WHERE trade_id=?', (trade_id,)).fetchone()
+        return dict(row) if row else None
+
+    def get_closed_trades(self, limit: int = 50, strategy_id: Optional[str] = None) -> list:
+        q = 'SELECT * FROM trades WHERE exit_price IS NOT NULL'
+        params: list = []
+        if strategy_id:
+            q += ' AND strategy_id=?'
+            params.append(strategy_id)
+        q += ' ORDER BY exit_time DESC LIMIT ?'
+        params.append(limit)
+        with self.conn() as c:
+            rows = c.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_trade_stats_sql(self) -> dict:
+        """Compute all trade stats in SQL — no Python-side filtering."""
+        today_ms = int(_time.time() * 1000) - 86_400_000
+        with self.conn() as c:
+            agg = c.execute(
+                '''SELECT
+                     COUNT(*) AS total_closed,
+                     SUM(CASE WHEN net_pnl > 0 THEN 1 ELSE 0 END) AS wins,
+                     SUM(CASE WHEN net_pnl <= 0 THEN 1 ELSE 0 END) AS losses,
+                     COALESCE(SUM(net_pnl), 0) AS total_pnl,
+                     COALESCE(AVG(CASE WHEN net_pnl > 0 THEN net_pnl ELSE NULL END), 0) AS avg_win,
+                     COALESCE(AVG(CASE WHEN net_pnl <= 0 THEN net_pnl ELSE NULL END), 0) AS avg_loss,
+                     COALESCE(MAX(net_pnl), 0) AS best_pnl,
+                     COALESCE(MIN(net_pnl), 0) AS worst_pnl
+                   FROM trades WHERE exit_price IS NOT NULL'''
+            ).fetchone()
+            today = c.execute(
+                '''SELECT COUNT(*) AS today_trades,
+                          COALESCE(SUM(CASE WHEN exit_price IS NOT NULL THEN net_pnl ELSE 0 END), 0) AS today_pnl
+                   FROM trades WHERE entry_time >= ?''',
+                (today_ms,),
+            ).fetchone()
+            by_strat_rows = c.execute(
+                '''SELECT strategy_id,
+                          COUNT(*) AS trades,
+                          SUM(CASE WHEN net_pnl > 0 THEN 1 ELSE 0 END) AS wins,
+                          COALESCE(SUM(net_pnl), 0) AS pnl
+                   FROM trades WHERE exit_price IS NOT NULL
+                   GROUP BY strategy_id''',
+            ).fetchall()
+        agg = dict(agg)
+        today = dict(today)
+        total_closed = agg['total_closed'] or 0
+        wins = agg['wins'] or 0
+        by_strategy = {}
+        for r in by_strat_rows:
+            r = dict(r)
+            sid = r['strategy_id'] or 'MANUAL'
+            by_strategy[sid] = {
+                'trades': r['trades'],
+                'wins': r['wins'],
+                'pnl': round(r['pnl'], 2),
+                'win_rate': round(r['wins'] / r['trades'], 3) if r['trades'] else 0.0,
+            }
+        return {
+            'total_trades':    total_closed,
+            'wins':            wins,
+            'losses':          agg['losses'] or 0,
+            'win_rate':        round(wins / total_closed, 3) if total_closed else 0.0,
+            'total_pnl':       round(agg['total_pnl'], 2),
+            'avg_win':         round(agg['avg_win'], 2),
+            'avg_loss':        round(agg['avg_loss'], 2),
+            'best_trade_pnl':  round(agg['best_pnl'], 2),
+            'worst_trade_pnl': round(agg['worst_pnl'], 2),
+            'today_trades':    today['today_trades'] or 0,
+            'today_pnl':       round(today['today_pnl'], 2),
+            'by_strategy':     by_strategy,
+        }
 
     # ── Orders ───────────────────────────────────────────────────────────────
 

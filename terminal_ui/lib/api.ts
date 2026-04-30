@@ -309,6 +309,7 @@ export const api = {
   allocations: ()         => get<Record<string, number>>('/strategies/allocations'),
   regime: ()              => get<RegimeState>('/market/regime'),
   allTicks: ()            => get<Record<string, Record<string, number>>>('/market/ticks'),
+  lastCloses: ()          => get<Record<string, { close: number; date: string }>>('/market/closes'),
   news: (limit = 30)      => get<NewsItem[]>(`/market/news?limit=${limit}`),
   events: ()              => get<CalendarEvent[]>('/risk/events'),
   trades: (limit = 100)   => get<Trade[]>(`/trades/?limit=${limit}`),

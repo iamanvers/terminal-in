@@ -1,93 +1,111 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { api, type PortfolioSummary, type RegimeState } from '@/lib/api'
+import { api, type RegimeState } from '@/lib/api'
 import { useSocketEvent } from '@/hooks/useSocket'
-import Badge from '@/components/primitives/Badge'
-import clsx from 'clsx'
 
-function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div className="flex flex-col gap-0.5 px-3 py-2 border-r border-border last:border-r-0">
-      <span className="text-[9px] text-muted uppercase tracking-wide">{label}</span>
-      <span className={clsx('text-[13px] font-semibold tabular-nums', color ?? 'text-gray-200')}>
-        {value}
-      </span>
-    </div>
-  )
-}
+// All 6 HMM regimes with their size multipliers, colors, and descriptions.
+const REGIMES = [
+  { name: 'strong_bull', label: 'STRONG BULL', color: '#00E676', mult: 1.2, desc: 'Trending hard up' },
+  { name: 'bull',        label: 'BULL',        color: '#00C853', mult: 1.0, desc: 'Uptrend normal' },
+  { name: 'sideways',    label: 'SIDEWAYS',    color: '#F7931E', mult: 0.7, desc: 'Range-bound' },
+  { name: 'bear',        label: 'BEAR',        color: '#EF5350', mult: 0.5, desc: 'Downtrend' },
+  { name: 'strong_bear', label: 'STRONG BEAR', color: '#B71C1C', mult: 0.3, desc: 'Hard down minimal' },
+  { name: 'high_vol',    label: 'HIGH VOL',    color: '#AB47BC', mult: 0.2, desc: 'VIX elevated' },
+]
 
 export default function RiskDashboardPanel() {
-  const [summary, setSummary] = useState<PortfolioSummary | null>(null)
   const [regime, setRegime] = useState<RegimeState | null>(null)
-  const pnlUpdate = useSocketEvent<Partial<PortfolioSummary> | null>('pnl_update', null)
   const regimeUpdate = useSocketEvent<RegimeState | null>('regime_update', null)
 
-  const [loading, setLoading] = useState(true)
-
   useEffect(() => {
-    Promise.all([api.portfolio(), api.regime()]).then(([p, r]) => {
-      setSummary(p); setRegime(r)
-    }).catch(() => {}).finally(() => setLoading(false))
+    api.regime().catch(() => null).then(r => { if (r) setRegime(r) })
   }, [])
-
-  useEffect(() => {
-    if (pnlUpdate) setSummary(prev => prev ? { ...prev, ...pnlUpdate } : prev)
-  }, [pnlUpdate])
 
   useEffect(() => {
     if (regimeUpdate) setRegime(regimeUpdate)
   }, [regimeUpdate])
 
-  const equity     = summary?.equity ?? 0
-  const dailyPnl   = summary?.daily_pnl ?? 0
-  const drawdown   = summary?.drawdown ?? 0
-  const vix        = summary?.india_vix ?? regime?.india_vix ?? 0
-  const sizeMult   = regime?.size_multiplier ?? 1.0
-  const regimeName = regime?.regime ?? 'unknown'
+  const current = regime?.regime ?? 'unknown'
+  const conf    = regime ? Math.round((regime.confidence ?? 0) * 100) : null
+  const vix     = regime?.india_vix ?? 0
+  const sizeMul = regime?.size_multiplier ?? 1.0
 
-  const ddPct   = (drawdown * 100).toFixed(2)
-  const ddColor = drawdown > 0.15 ? 'text-neg' : drawdown > 0.05 ? 'text-accent' : 'text-pos'
-  const pnlColor = dailyPnl >= 0 ? 'text-pos' : 'text-neg'
-  const vixColor = vix > 25 ? 'text-neg' : vix > 18 ? 'text-accent' : 'text-pos'
-
-  // Single-row strip — no panel-header, fits in 52px
-  if (loading) return (
-    <div style={{ height: '100%', background: '#0D0D0D', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 24 }}>
-      {[80, 64, 72, 56, 48, 52, 60].map((w, i) => (
-        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ height: 6, width: w * 0.6, background: '#1A1A1A', borderRadius: 2 }} />
-          <div style={{ height: 10, width: w, background: '#161616', borderRadius: 2, animation: 'shimmer 1.4s ease-in-out infinite' }} />
-        </div>
-      ))}
-    </div>
-  )
+  const currentDef = REGIMES.find(r => r.name === current)
 
   return (
-    <div style={{ height: '100%', background: '#0D0D0D', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
-      {/* Regime pill on the left */}
-      <div style={{ padding: '0 12px', borderRight: '1px solid #1E1E1E', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, height: '100%' }}>
-        <span style={{ fontSize: 9, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>REGIME</span>
-        <Badge variant="regime" value={regimeName} />
-        {regime && <span style={{ fontSize: 9, color: '#555' }}>{((regime.confidence ?? 0) * 100).toFixed(0)}%</span>}
-      </div>
-      {/* Stats */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', overflowX: 'auto', minWidth: 0 }}>
-        <Stat label="Equity"     value={`₹${equity.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} />
-        <Stat label="Day P&L"    value={`${dailyPnl >= 0 ? '+' : ''}₹${dailyPnl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} color={pnlColor} />
-        <Stat label="Drawdown"   value={`${ddPct}%`} color={ddColor} />
-        <Stat label="India VIX"  value={vix > 0 ? vix.toFixed(2) : '—'} color={vixColor} />
-        <Stat label="Size ×"     value={sizeMult.toFixed(2)} />
-        <Stat label="Positions"  value={String(summary?.open_positions ?? 0)} />
-        <Stat label="Day Trades" value={String(summary?.daily_trades ?? 0)} />
-      </div>
-      {/* Circuit breaker warning */}
-      {drawdown > 0.18 && (
-        <div style={{ padding: '0 16px', flexShrink: 0 }}>
-          <span style={{ color: '#D32F2F', fontSize: 10, fontWeight: 700, animation: 'pulse 1s infinite' }}>
-            ▲ DD {(drawdown * 100).toFixed(1)}% — CIRCUIT
+    <div style={{ height: '100%', background: '#0A0A0A', display: 'flex', alignItems: 'center', overflow: 'hidden', gap: 0 }}>
+
+      {/* Current regime — large pill on the left */}
+      <div style={{
+        padding: '0 16px', height: '100%', flexShrink: 0,
+        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2,
+        borderRight: '1px solid #1A1A1A',
+        background: currentDef ? `${currentDef.color}08` : 'transparent',
+      }}>
+        <span style={{ fontSize: 7, color: '#333', letterSpacing: '.09em' }}>REGIME</span>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <span style={{
+            fontSize: 13, fontWeight: 800, letterSpacing: '.04em',
+            color: currentDef?.color ?? '#888',
+          }}>
+            {currentDef?.label ?? current.replace(/_/g, ' ').toUpperCase()}
           </span>
+          {conf !== null && (
+            <span style={{ fontSize: 8, color: '#555', fontVariantNumeric: 'tabular-nums' }}>{conf}%</span>
+          )}
         </div>
-      )}
+      </div>
+
+      {/* Size multiplier + VIX */}
+      <div style={{ padding: '0 14px', height: '100%', flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, borderRight: '1px solid #1A1A1A' }}>
+        <span style={{ fontSize: 7, color: '#333', letterSpacing: '.09em' }}>SIZE ×</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: currentDef?.color ?? '#888', fontVariantNumeric: 'tabular-nums' }}>
+          {sizeMul.toFixed(2)}
+        </span>
+      </div>
+      <div style={{ padding: '0 14px', height: '100%', flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, borderRight: '1px solid #1A1A1A' }}>
+        <span style={{ fontSize: 7, color: '#333', letterSpacing: '.09em' }}>INDIA VIX</span>
+        <span style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: vix > 25 ? '#EF5350' : vix > 18 ? '#F7931E' : '#888' }}>
+          {vix > 0 ? vix.toFixed(2) : '—'}
+        </span>
+      </div>
+
+      {/* Regime legend — scrollable horizontal, all 6 states with full names */}
+      <div style={{ flex: 1, height: '100%', display: 'flex', alignItems: 'stretch', overflowX: 'auto', minWidth: 0 }}>
+        {REGIMES.map(r => {
+          const active = r.name === current
+          return (
+            <div key={r.name} style={{
+              display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1,
+              padding: '0 14px', flexShrink: 0,
+              borderRight: '1px solid #141414',
+              background: active ? `${r.color}0D` : 'transparent',
+              borderBottom: active ? `2px solid ${r.color}` : '2px solid transparent',
+              transition: 'background .2s',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{
+                  width: active ? 6 : 4, height: active ? 6 : 4, borderRadius: '50%', flexShrink: 0,
+                  background: active ? r.color : '#2A2A2A',
+                  boxShadow: active ? `0 0 5px ${r.color}88` : 'none',
+                  transition: 'all .2s',
+                }} />
+                <span style={{ fontSize: active ? 10 : 8, fontWeight: active ? 800 : 500, color: active ? r.color : '#333', letterSpacing: '.04em', whiteSpace: 'nowrap' }}>
+                  {r.label}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 11 }}>
+                <span style={{ fontSize: 8, color: active ? `${r.color}99` : '#1E1E1E', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                  size ×{r.mult}
+                </span>
+                <span style={{ fontSize: 7, color: active ? '#444' : '#1A1A1A', whiteSpace: 'nowrap' }}>
+                  {r.desc}
+                </span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

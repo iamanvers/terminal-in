@@ -20,14 +20,42 @@ from terminal_in.risk.event_calendar import calendar as event_cal
 log = logging.getLogger(__name__)
 
 MAX_OPEN_POSITIONS = 10
-MAX_SECTOR_PCT = 0.30
+MAX_SECTOR_PCT = 0.40          # max fraction of open positions from one sector
 MAX_CORR = 0.85
 MAX_DAILY_TRADES_LIVE  = 20
 MAX_DAILY_TRADES_PAPER = 200
 VIX_HARD_STOP = 35.0
 VIX_REDUCE_THRESHOLD = 25.0
 MIN_CONFIDENCE = 0.45
-SIGNAL_DEDUP_WINDOW_S = 300  # skip re-entry for same instrument within 5 min
+SIGNAL_DEDUP_WINDOW_S = 300   # skip re-entry for same instrument within 5 min
+
+# Raw index and VIX tokens are not directly tradeable as cash instruments.
+# NIFTY/BANKNIFTY/FINNIFTY are F&O-only; VIX is never tradeable.
+# NIFTYBEES (2800641) is an ETF and IS tradeable — not blocked.
+NON_TRADEABLE = frozenset({264969, 256265, 260105, 257801})
+
+# Instrument token → sector label.  Anything not listed → 'other'.
+_SECTOR_MAP: dict[int, str] = {
+    256265:  'index',      # NIFTY 50
+    260105:  'index',      # BANKNIFTY
+    257801:  'index',      # FINNIFTY
+    264969:  'index',      # INDIA VIX
+    2800641: 'index',      # NIFTYBEES
+    341249:  'financials', # HDFCBANK
+    1270529: 'financials', # ICICIBANK
+    779521:  'financials', # SBIN
+    1510401: 'financials', # AXISBANK
+    492033:  'financials', # KOTAKBANK
+    4267265: 'financials', # BAJFINANCE
+    738561:  'energy',     # RELIANCE
+    2953217: 'it',         # TCS
+    408065:  'it',         # INFY
+    969473:  'it',         # WIPRO
+    356865:  'fmcg',       # HINDUNILVR
+    2939009: 'infra',      # LT
+    3861249: 'infra',      # ADANIPORTS
+    2815745: 'auto',       # MARUTI
+}
 
 
 @dataclass
@@ -157,6 +185,11 @@ class RiskSupervisor:
         if not checks['symbol_not_blocked']:
             return GateResult(False, checks, f'symbol_blocked={instrument_token}')
 
+        # 0c. Non-tradeable instrument (raw indices are F&O only; VIX is never tradeable)
+        checks['tradeable_instrument'] = instrument_token not in NON_TRADEABLE
+        if not checks['tradeable_instrument']:
+            return GateResult(False, checks, f'non_tradeable={instrument_token}')
+
         # 1. Event mask — skipped in paper mode (we want continuous signal flow for learning)
         if self._config.is_live:
             mask = event_cal.mask()
@@ -234,30 +267,62 @@ class RiskSupervisor:
         if not checks['margin_ok']:
             return GateResult(False, checks, f'notional_too_large={notional:.0f}>{max_per_trade:.0f}')
 
-        # 10. Sector concentration (placeholder)
-        checks['sector_ok'] = True
+        # 10. Sector concentration — reject if adding this position would put >40%
+        #     of open positions in the same sector (prevents sector crowding)
+        checks['sector_ok'] = self._check_sector(instrument_id, open_trades)
+        if not checks['sector_ok']:
+            return GateResult(False, checks, f'sector_concentration_limit={MAX_SECTOR_PCT:.0%}')
 
-        # 11. Correlation (simplified — skip if < 3 open positions)
+        # 11. Directional correlation — reject if ≥3 open positions are in the same
+        #     sector AND same direction as this signal (avoids crowded one-sided bets)
         checks['correlation_ok'] = True
         if len(open_trades) >= 3:
             checks['correlation_ok'] = self._check_correlation(signal, open_trades)
             if not checks['correlation_ok']:
-                return GateResult(False, checks, 'high_correlation')
+                return GateResult(False, checks, 'directional_crowding_in_sector')
 
-        # 12. VIX reduce (non-blocking — modifies qty in place)
-        checks['vix_reduce'] = True
-        if self._india_vix > VIX_REDUCE_THRESHOLD:
+        # 12. VIX reduce (non-blocking — modifies qty, does NOT reject)
+        #     vix_size_reduced=True means size was halved due to elevated VIX
+        checks['vix_size_reduced'] = self._india_vix > VIX_REDUCE_THRESHOLD
+        if checks['vix_size_reduced']:
             signal['quantity'] = max(int(qty * 0.5), 1)
-            checks['vix_reduce'] = False
 
         self._daily_trades += 1
         self._last_approved[instrument_id] = now_ts
         return GateResult(True, checks)
 
+    def _check_sector(self, instrument_id: int, open_trades: list) -> bool:
+        """True if adding this instrument stays within the sector concentration limit."""
+        if not open_trades:
+            return True
+        new_sector = _SECTOR_MAP.get(instrument_id, 'other')
+        if new_sector == 'index':
+            return True   # index instruments not subject to sector cap
+        sector_count = sum(
+            1 for t in open_trades
+            if _SECTOR_MAP.get(int(t.get('instrument_token') or 0), 'other') == new_sector
+        )
+        # After adding this trade: (sector_count + 1) / (total + 1)
+        projected_pct = (sector_count + 1) / (len(open_trades) + 1)
+        return projected_pct <= MAX_SECTOR_PCT
+
     def _check_correlation(self, signal: dict, open_trades: list) -> bool:
-        sid = signal.get('strategy_id', '')
-        same_strategy = sum(1 for t in open_trades if t.get('strategy_id') == sid)
-        return same_strategy < 3
+        """
+        True if adding this signal is safe.
+        Rejects when ≥3 open positions share the same sector AND same direction —
+        that indicates a crowded one-sided bet in the same market segment.
+        """
+        new_side   = signal.get('side', 'BUY')
+        new_sector = _SECTOR_MAP.get(int(signal.get('instrument_id', 0)), 'other')
+        if new_sector == 'index':
+            return True
+
+        same_dir_sector = sum(
+            1 for t in open_trades
+            if (t.get('side', '') == new_side
+                and _SECTOR_MAP.get(int(t.get('instrument_token') or 0), 'other') == new_sector)
+        )
+        return same_dir_sector < 3
 
     @property
     def daily_stats(self) -> dict:

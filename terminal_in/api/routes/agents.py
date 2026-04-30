@@ -183,8 +183,7 @@ def lineage(signal_id: str):
                 rec[col.replace('_json', '')] = {}
     # Attach trade outcome if available
     if rec.get('trade_id') and _db:
-        trades = _db.get_trades(limit=1000)
-        match = next((t for t in trades if t.get('trade_id') == rec['trade_id']), None)
+        match = _db.get_trade_by_id(rec['trade_id'])
         if match:
             rec['trade'] = {
                 'entry_price': match.get('entry_price'),

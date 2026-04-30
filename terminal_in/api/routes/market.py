@@ -139,6 +139,31 @@ def ohlcv(symbol):
     return jsonify(result)
 
 
+@bp.route('/closes')
+def last_closes():
+    """Return the most recent daily close price for every registered instrument.
+
+    Used by the UI as a fallback when live ticks are unavailable (market closed).
+    Response: { "<token>": { "close": float, "date": "YYYY-MM-DD" }, ... }
+    """
+    if _db is None:
+        return jsonify({})
+    from terminal_in.data_ingest.instruments import registry
+    result = {}
+    for inst in registry.get_all():
+        token = inst['instrument_token']
+        try:
+            df = _db.get_ohlcv_1d(token=token, limit=2)
+            if not df.empty:
+                result[str(token)] = {
+                    'close': float(df['close'].iloc[-1]),
+                    'date': str(df.index[-1].date()),
+                }
+        except Exception:
+            pass
+    return jsonify(result)
+
+
 @bp.route('/news')
 def news():
     if _db is None:

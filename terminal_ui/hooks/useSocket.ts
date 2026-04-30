@@ -26,18 +26,34 @@ export function useSocketList<T>(event: string, maxLen = 50): T[] {
   return items
 }
 
-// Tick map: token → last payload; merges on each update
+// Tick map: token → last payload.
+// Batches all incoming ticks within a 250ms window into a single state update
+// to prevent one render per tick (18 tokens × 1Hz = 18 re-renders/s otherwise).
 export function useTickMap(): Record<number, Record<string, number>> {
   const [ticks, setTicks] = useState<Record<number, Record<string, number>>>({})
+  const pendingRef = useRef<Record<number, Record<string, number>>>({})
+  const timerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     const socket = getSocket()
     const handler = (payload: Record<string, number>) => {
       const token = payload.instrument_token
       if (!token) return
-      setTicks(prev => ({ ...prev, [token]: payload }))
+      pendingRef.current[token] = payload
+      if (!timerRef.current) {
+        timerRef.current = setTimeout(() => {
+          const batch = pendingRef.current
+          pendingRef.current = {}
+          timerRef.current = null
+          setTicks(prev => ({ ...prev, ...batch }))
+        }, 250)
+      }
     }
     socket.on('ticks', handler)
-    return () => { socket.off('ticks', handler) }
+    return () => {
+      socket.off('ticks', handler)
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+    }
   }, [])
   return ticks
 }
