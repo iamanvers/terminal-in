@@ -1,51 +1,25 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useTickMap } from '@/hooks/useSocket'
 import { api, type GlobalQuote } from '@/lib/api'
 import PriceTag from '@/components/primitives/PriceTag'
 import InstrumentModal from '@/components/panels/InstrumentModal'
 import GlobalModal from '@/components/panels/GlobalModal'
 
-// ── SENSEX 30 constituent tokens (subset of NSE, for BSE tab) ─────────────
+// ── Instrument lists ──────────────────────────────────────────────────────────
 const SENSEX30_TOKENS = new Set([
-  341249,   // HDFCBANK
-  738561,   // RELIANCE
-  1270529,  // ICICIBANK
-  408065,   // INFY
-  2953217,  // TCS
-  492033,   // KOTAKBANK
-  2939009,  // LT
-  779521,   // SBIN
-  1510401,  // AXISBANK
-  4267265,  // BAJFINANCE
-  60417,    // ASIANPAINT
-  1850625,  // HCLTECH
-  2815745,  // MARUTI
-  857857,   // SUNPHARMA
-  897537,   // TITAN
-  969473,   // WIPRO
-  2952193,  // ULTRACEMCO
-  2977281,  // NTPC
-  3834113,  // POWERGRID
-  633601,   // ONGC
-  3001089,  // JSWSTEEL
-  895745,   // TATASTEEL
-  4598529,  // NESTLEIND
-  4268801,  // BAJAJFINSV
-  3861249,  // ADANIPORTS
-  225537,   // DRREDDY
-  356865,   // HINDUNILVR
+  341249, 738561, 1270529, 408065, 2953217, 492033, 2939009, 779521,
+  1510401, 4267265, 60417, 1850625, 2815745, 857857, 897537, 969473,
+  2952193, 2977281, 3834113, 633601, 3001089, 895745, 4598529, 4268801,
+  3861249, 225537, 356865,
 ])
 
-// ── NSE watchlist ──────────────────────────────────────────────────────────
 const NSE_WATCHLIST = [
-  // Indices
   { label: 'NIFTY 50',   token: 256265  },
   { label: 'BANKNIFTY',  token: 260105  },
   { label: 'FINNIFTY',   token: 257801  },
   { label: 'INDIA VIX',  token: 264969  },
   { label: 'NIFTYBEES',  token: 2800641 },
-  // Nifty 50 equities
   { label: 'RELIANCE',   token: 738561  },
   { label: 'HDFCBANK',   token: 341249  },
   { label: 'TCS',        token: 2953217 },
@@ -87,21 +61,22 @@ const TAB_CATEGORY: Record<Tab, string | null> = {
 
 function isNSEOpen(): boolean {
   const d = new Date(Date.now() + 5.5 * 3600_000)
+  const day = d.getUTCDay()
+  if (day === 0 || day === 6) return false
   const m = d.getUTCHours() * 60 + d.getUTCMinutes()
   return m >= 9 * 60 + 15 && m <= 15 * 60 + 30
 }
 
+type PriceMap = Record<number, { price: number; chg: number }>
 type Selected = { token: number; label: string } | null
-type SelectedGlobal = GlobalQuote | null
 
+// ── Sparkline ─────────────────────────────────────────────────────────────────
 function Sparkline({ prices, up }: { prices: number[]; up: boolean }) {
   if (prices.length < 3) return <span style={{ display: 'inline-block', width: 44 }} />
   const min = Math.min(...prices), max = Math.max(...prices)
   const range = max - min || 1
   const w = 44, h = 16
-  const pts = prices
-    .map((p, i) => `${(i / (prices.length - 1)) * w},${h - ((p - min) / range) * h}`)
-    .join(' ')
+  const pts = prices.map((p, i) => `${(i / (prices.length - 1)) * w},${h - ((p - min) / range) * h}`).join(' ')
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
       <polyline points={pts} fill="none" stroke={up ? '#00C853' : '#D32F2F'} strokeWidth="1.2" />
@@ -109,76 +84,104 @@ function Sparkline({ prices, up }: { prices: number[]; up: boolean }) {
   )
 }
 
-type Props = {
-  onChartSelect?: (symbolIdx: number) => void
+// ── Skeleton row ──────────────────────────────────────────────────────────────
+function SkeletonRow() {
+  return (
+    <tr>
+      <td><div style={{ height: 8, width: 64, background: '#1A1A1A', borderRadius: 3, animation: 'shimmer 1.4s ease-in-out infinite' }} /></td>
+      <td><div style={{ height: 8, width: 44, background: '#161616', borderRadius: 3 }} /></td>
+      <td><div style={{ height: 8, width: 52, background: '#1A1A1A', borderRadius: 3, animation: 'shimmer 1.4s ease-in-out infinite' }} /></td>
+      <td><div style={{ height: 8, width: 36, background: '#161616', borderRadius: 3 }} /></td>
+    </tr>
+  )
 }
 
-export default function MarketDataPanel({ onChartSelect }: Props) {
+const SHIMMER_CSS = `
+@keyframes shimmer {
+  0%,100% { opacity:.4 }
+  50%      { opacity:.8 }
+}
+`
+
+// ── Component ─────────────────────────────────────────────────────────────────
+export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (idx: number) => void }) {
   const ticks = useTickMap()
-  const [tab, setTab]       = useState<Tab>('NSE')
-  const [prevPrices,   setPrevPrices]   = useState<Record<number, number>>({})
+  const [tab, setTab] = useState<Tab>('NSE')
+  const [prices, setPrices]           = useState<PriceMap>({})   // REST-seeded + WS updated
+  const [prevPrices, setPrevPrices]   = useState<Record<number, number>>({})
   const [priceHistory, setPriceHistory] = useState<Record<number, number[]>>({})
-  const [displayPrices, setDisplayPrices] = useState<Record<number, { price: number; chg: number }>>({})
+  const [loading, setLoading]         = useState(true)           // initial REST load
   const [globalQuotes, setGlobalQuotes] = useState<GlobalQuote[]>([])
   const [globalLoading, setGlobalLoading] = useState(false)
-  const [selected, setSelected]             = useState<Selected>(null)
-  const [selectedGlobal, setSelectedGlobal] = useState<SelectedGlobal>(null)
+  const [selected, setSelected]       = useState<Selected>(null)
+  const [selectedGlobal, setSelectedGlobal] = useState<GlobalQuote | null>(null)
 
-  // Freeze displayed prices outside market hours — initial snapshot on first tick, then live during market
+  // Seed prices from REST on mount — no waiting for WebSocket
   useEffect(() => {
-    const open = isNSEOpen()
-    setDisplayPrices(prev => {
+    api.allTicks().then(raw => {
+      const next: PriceMap = {}
+      for (const [tokenStr, tick] of Object.entries(raw)) {
+        const token = Number(tokenStr)
+        if (tick.last_price > 0) {
+          next[token] = { price: tick.last_price, chg: tick.change ?? 0 }
+        }
+      }
+      setPrices(next)
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [])
+
+  // Merge live WebSocket ticks into prices (only update if market open OR first fill)
+  const marketOpen = isNSEOpen()
+  const prevTicksRef = useRef<Record<number, number>>({})
+
+  useEffect(() => {
+    setPrices(prev => {
+      const next = { ...prev }
+      let changed = false
+      for (const { token } of NSE_WATCHLIST) {
+        const p = ticks[token]?.last_price
+        if (!p) continue
+        if (prev[token] === undefined || marketOpen) {
+          next[token] = { price: p, chg: ticks[token]?.change ?? 0 }
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticks, marketOpen])
+
+  // Sparkline history — only during market hours
+  useEffect(() => {
+    if (!marketOpen) return
+    setPrevPrices(prev => {
       const next = { ...prev }
       for (const { token } of NSE_WATCHLIST) {
         const p = ticks[token]?.last_price
-        if (p === undefined) continue
-        if (prev[token] === undefined || open) {
-          next[token] = { price: p, chg: ticks[token]?.change ?? 0 }
-        }
+        if (p && prevTicksRef.current[token] !== p) next[token] = prevTicksRef.current[token] ?? p
+        if (p) prevTicksRef.current[token] = p
+      }
+      return next
+    })
+    setPriceHistory(prev => {
+      const next = { ...prev }
+      for (const { token } of NSE_WATCHLIST) {
+        const p = ticks[token]?.last_price
+        if (!p) continue
+        next[token] = [...(next[token] ?? []), p].slice(-50)
       }
       return next
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticks])
 
-  // Update sparkline history on each tick — gated to NSE market hours (IST 09:15–15:30)
-  useEffect(() => {
-    const istMs = Date.now() + 5.5 * 3600_000
-    const istDate = new Date(istMs)
-    const istMinutes = istDate.getUTCHours() * 60 + istDate.getUTCMinutes()
-    const isMarketOpen = istMinutes >= 9 * 60 + 15 && istMinutes <= 15 * 60 + 30
-
-    if (!isMarketOpen) return
-
-    const nextPrev: Record<number, number> = {}
-    let prevChanged = false
-    setPriceHistory(prev => {
-      const merged = { ...prev }
-      for (const { token } of NSE_WATCHLIST) {
-        const price = ticks[token]?.last_price
-        if (price) {
-          if (prevPrices[token] !== undefined && prevPrices[token] !== price) {
-            nextPrev[token] = prevPrices[token]
-            prevChanged = true
-          }
-          const h = merged[token] ?? []
-          merged[token] = [...h, price].slice(-50)
-        }
-      }
-      return merged
-    })
-    if (prevChanged) setPrevPrices(prev => ({ ...prev, ...nextPrev }))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticks])
-
-  // Fetch global quotes when switching away from NSE
+  // Fetch global quotes when tab changes
   const fetchGlobal = useCallback(() => {
     if (globalLoading) return
     setGlobalLoading(true)
-    api.globalQuotes().then(data => {
-      setGlobalQuotes(data)
-      setGlobalLoading(false)
-    }).catch(() => setGlobalLoading(false))
+    api.globalQuotes().then(data => { setGlobalQuotes(data); setGlobalLoading(false) })
+      .catch(() => setGlobalLoading(false))
   }, [globalLoading])
 
   useEffect(() => {
@@ -189,28 +192,34 @@ export default function MarketDataPanel({ onChartSelect }: Props) {
     ? globalQuotes.filter(q => q.category === TAB_CATEGORY[tab])
     : []
 
+  const SKELETON_COUNT = 8
+
   return (
     <div className="panel h-full">
+      <style dangerouslySetInnerHTML={{ __html: SHIMMER_CSS }} />
+
       {/* Tab bar */}
       <div style={{ display: 'flex', borderBottom: '1px solid #1E1E1E', background: '#0D0D0D', flexShrink: 0 }}>
         {TABS.map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            style={{
-              flex: 1, padding: '5px 0', fontSize: 9, fontWeight: 600,
-              letterSpacing: '0.06em', background: 'none', border: 'none', cursor: 'pointer',
-              color:            tab === t ? '#F7931E'   : '#444',
-              borderBottom:     tab === t ? '2px solid #F7931E' : '2px solid transparent',
-            }}
-          >
-            {t}
-          </button>
+          <button key={t} onClick={() => setTab(t)} style={{
+            flex: 1, padding: '5px 0', fontSize: 9, fontWeight: 600,
+            letterSpacing: '0.06em', background: 'none', border: 'none', cursor: 'pointer',
+            color: tab === t ? '#F7931E' : '#444',
+            borderBottom: tab === t ? '2px solid #F7931E' : '2px solid transparent',
+          }}>{t}</button>
         ))}
       </div>
 
+      {/* Market-closed notice */}
+      {!marketOpen && (
+        <div style={{ padding: '3px 8px', background: '#0A0A0A', borderBottom: '1px solid #141414', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#333', display: 'inline-block' }} />
+          <span style={{ fontSize: 8, color: '#2A2A2A', letterSpacing: '.06em' }}>NSE CLOSED · last close prices</span>
+        </div>
+      )}
+
       <div className="panel-body">
-        {/* ── NSE live ─────────────────────────────────────────── */}
+        {/* ── NSE ─────────────────────────────────────────────────── */}
         {tab === 'NSE' && (
           <table>
             <thead>
@@ -222,44 +231,42 @@ export default function MarketDataPanel({ onChartSelect }: Props) {
               </tr>
             </thead>
             <tbody>
-              {NSE_WATCHLIST.map(({ label, token }) => {
-                const dp    = displayPrices[token]
-                const price = dp?.price ?? 0
-                const prev  = prevPrices[token]
-                const chg   = dp?.chg ?? 0
-                const hist  = priceHistory[token] ?? []
-                return (
-                  <tr
-                    key={token}
-                    onClick={() => setSelected({ token, label })}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <td className="text-[11px] text-gray-300">{label}</td>
-                    <td style={{ padding: '2px 4px' }}>
-                      <Sparkline prices={hist} up={chg >= 0} />
-                    </td>
-                    <td>
-                      {price > 0
-                        ? <PriceTag value={price} prev={prev} />
-                        : <span className="text-muted">—</span>}
-                    </td>
-                    <td className={chg >= 0 ? 'text-pos' : 'text-neg'}>
-                      {price > 0 ? `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%` : '—'}
-                    </td>
-                  </tr>
-                )
-              })}
+              {loading
+                ? Array.from({ length: SKELETON_COUNT }).map((_, i) => <SkeletonRow key={i} />)
+                : NSE_WATCHLIST.map(({ label, token }) => {
+                    const dp    = prices[token]
+                    const price = dp?.price ?? 0
+                    const prev  = prevPrices[token]
+                    const chg   = dp?.chg ?? 0
+                    const hist  = priceHistory[token] ?? []
+                    return (
+                      <tr key={token} onClick={() => setSelected({ token, label })} style={{ cursor: 'pointer' }}>
+                        <td className="text-[11px] text-gray-300">{label}</td>
+                        <td style={{ padding: '2px 4px' }}>
+                          <Sparkline prices={hist} up={chg >= 0} />
+                        </td>
+                        <td>
+                          {price > 0
+                            ? <PriceTag value={price} prev={prev} />
+                            : <span className="text-muted">—</span>}
+                        </td>
+                        <td className={chg >= 0 ? 'text-pos' : 'text-neg'}>
+                          {price > 0 ? `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%` : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })
+              }
             </tbody>
           </table>
         )}
 
-        {/* ── BSE — SENSEX level + SENSEX 30 stocks ────────────── */}
+        {/* ── BSE ─────────────────────────────────────────────────── */}
         {tab === 'BSE' && (() => {
           const sensex = globalQuotes.find(q => q.label === 'SENSEX')
           const sensexStocks = NSE_WATCHLIST.filter(w => SENSEX30_TOKENS.has(w.token))
           return (
             <>
-              {/* SENSEX index header */}
               <div style={{ padding: '8px 10px', borderBottom: '1px solid #1A1A1A', display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span style={{ fontSize: 10, color: '#F7931E', fontWeight: 700, letterSpacing: '0.06em' }}>SENSEX</span>
                 {sensex ? (
@@ -274,11 +281,10 @@ export default function MarketDataPanel({ onChartSelect }: Props) {
                   </>
                 ) : (
                   <button onClick={fetchGlobal} style={{ fontSize: 8, color: '#F7931E', background: 'none', border: '1px solid #333', borderRadius: 3, padding: '2px 8px', cursor: 'pointer' }}>
-                    LOAD
+                    {globalLoading ? '…' : 'LOAD'}
                   </button>
                 )}
               </div>
-              {/* SENSEX 30 constituents — live tick data */}
               <table>
                 <thead>
                   <tr>
@@ -289,35 +295,40 @@ export default function MarketDataPanel({ onChartSelect }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {sensexStocks.map(({ label, token }) => {
-                    const dp    = displayPrices[token]
-                    const price = dp?.price ?? 0
-                    const prev  = prevPrices[token]
-                    const chg   = dp?.chg ?? 0
-                    const hist  = priceHistory[token] ?? []
-                    return (
-                      <tr key={token} onClick={() => setSelected({ token, label })} style={{ cursor: 'pointer' }}>
-                        <td className="text-[11px] text-gray-300">{label}</td>
-                        <td style={{ padding: '2px 4px' }}><Sparkline prices={hist} up={chg >= 0} /></td>
-                        <td>
-                          {price > 0 ? <PriceTag value={price} prev={prev} /> : <span className="text-muted">—</span>}
-                        </td>
-                        <td className={chg >= 0 ? 'text-pos' : 'text-neg'}>
-                          {price > 0 ? `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%` : '—'}
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {loading
+                    ? Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
+                    : sensexStocks.map(({ label, token }) => {
+                        const dp    = prices[token]
+                        const price = dp?.price ?? 0
+                        const prev  = prevPrices[token]
+                        const chg   = dp?.chg ?? 0
+                        const hist  = priceHistory[token] ?? []
+                        return (
+                          <tr key={token} onClick={() => setSelected({ token, label })} style={{ cursor: 'pointer' }}>
+                            <td className="text-[11px] text-gray-300">{label}</td>
+                            <td style={{ padding: '2px 4px' }}><Sparkline prices={hist} up={chg >= 0} /></td>
+                            <td>{price > 0 ? <PriceTag value={price} prev={prev} /> : <span className="text-muted">—</span>}</td>
+                            <td className={chg >= 0 ? 'text-pos' : 'text-neg'}>
+                              {price > 0 ? `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%` : '—'}
+                            </td>
+                          </tr>
+                        )
+                      })
+                  }
                 </tbody>
               </table>
             </>
           )
         })()}
 
-        {/* ── Global / FX / Commod / Risk ──────────────────────── */}
+        {/* ── Global / FX / Commod / Risk ──────────────────────────── */}
         {tab !== 'NSE' && tab !== 'BSE' && (
           globalLoading && filteredGlobal.length === 0
-            ? <p style={{ color: '#444', fontSize: 10, textAlign: 'center', marginTop: 20 }}>Fetching via yfinance…</p>
+            ? (
+              <table><thead><tr><th>{tab}</th><th>Price</th><th>Chg%</th></tr></thead>
+                <tbody>{Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}</tbody>
+              </table>
+            )
             : filteredGlobal.length === 0
               ? (
                 <div style={{ textAlign: 'center', marginTop: 20 }}>
@@ -341,9 +352,7 @@ export default function MarketDataPanel({ onChartSelect }: Props) {
                       <tr key={q.symbol} onClick={() => setSelectedGlobal(q)} style={{ cursor: 'pointer' }}>
                         <td className="text-[11px] text-gray-300">{q.label}</td>
                         <td className="text-gray-200">
-                          {tab === 'FX'
-                            ? q.price.toFixed(4)
-                            : q.price.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                          {tab === 'FX' ? q.price.toFixed(4) : q.price.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                         </td>
                         <td className={q.change >= 0 ? 'text-pos' : 'text-neg'}>
                           {q.change >= 0 ? '+' : ''}{q.change.toFixed(2)}%
@@ -364,18 +373,11 @@ export default function MarketDataPanel({ onChartSelect }: Props) {
       </div>
 
       {selected && (
-        <InstrumentModal
-          token={selected.token}
-          label={selected.label}
-          onClose={() => setSelected(null)}
-          onChartSelect={onChartSelect}
-        />
+        <InstrumentModal token={selected.token} label={selected.label}
+          onClose={() => setSelected(null)} onChartSelect={onChartSelect} />
       )}
       {selectedGlobal && (
-        <GlobalModal
-          quote={selectedGlobal}
-          onClose={() => setSelectedGlobal(null)}
-        />
+        <GlobalModal quote={selectedGlobal} onClose={() => setSelectedGlobal(null)} />
       )}
     </div>
   )

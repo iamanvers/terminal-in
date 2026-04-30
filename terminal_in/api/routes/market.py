@@ -1,12 +1,51 @@
 """Market data, regime, and news endpoints."""
 
 import json as _json
+import time as _time_mod
+from datetime import datetime, timezone, timedelta
 
 from flask import Blueprint, jsonify, request
 
 bp = Blueprint('market', __name__, url_prefix='/api/market')
 
 _db = None
+
+# ── In-process OHLCV response cache ──────────────────────────────────────────
+# Keyed by (symbol, tf, limit). 10s TTL during market, 5min outside.
+_ohlcv_cache: dict = {}
+
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _is_nse_open() -> bool:
+    t = datetime.now(_IST)
+    if t.weekday() >= 5:
+        return False
+    m = t.hour * 60 + t.minute
+    return 9 * 60 + 15 <= m <= 15 * 60 + 30
+
+
+def _cache_ttl() -> int:
+    return 10 if _is_nse_open() else 300
+
+
+def _cache_get(key: str):
+    entry = _ohlcv_cache.get(key)
+    if not entry:
+        return None
+    ts, data = entry
+    if _time_mod.time() - ts > _cache_ttl():
+        del _ohlcv_cache[key]
+        return None
+    return data
+
+
+def _cache_set(key: str, data):
+    # Prune old entries to cap memory (~200 keys max)
+    if len(_ohlcv_cache) > 200:
+        oldest = min(_ohlcv_cache, key=lambda k: _ohlcv_cache[k][0])
+        del _ohlcv_cache[oldest]
+    _ohlcv_cache[key] = (_time_mod.time(), data)
 
 
 def init(db):
@@ -21,16 +60,39 @@ def regime():
     return jsonify(cached)
 
 
+@bp.route('/ticks')
+def all_ticks():
+    """Return all current tick snapshots from EventBus hot cache."""
+    from terminal_in.bus import bus
+    from terminal_in.data_ingest.instruments import registry
+    result = {}
+    for inst in registry.get_all():
+        token = inst['instrument_token']
+        cached = bus.get_cached(f'ticks.{token}')
+        if cached:
+            result[str(token)] = cached
+    return jsonify(result)
+
+
 @bp.route('/ohlcv/<symbol>')
 def ohlcv(symbol):
     if _db is None:
         return jsonify([])
+
+    timeframe = request.args.get('tf', '1d')
+    limit = int(request.args.get('limit', 200))
+
+    # Check in-process cache first
+    cache_key = f'{symbol}:{timeframe}:{limit}'
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
     from terminal_in.data_ingest.instruments import registry
     token = registry.token(symbol)
     if token is None:
-        return jsonify([])  # unknown symbol → empty, not 404
-    timeframe = request.args.get('tf', '1d')
-    limit = int(request.args.get('limit', 200))
+        return jsonify([])
+
     if timeframe == '1d':
         df = _db.get_ohlcv_1d(token=token, limit=limit)
         if df.empty:
@@ -38,27 +100,43 @@ def ohlcv(symbol):
         df = df.reset_index()
         df['bucket_date'] = df['bucket_date'].dt.strftime('%Y-%m-%d')
     else:
-        # Fetch more 1m bars when resampling to coarser timeframe
         minutes = int(timeframe.rstrip('m')) if timeframe != '1m' else 1
-        fetch_limit = limit * minutes
-        df = _db.get_ohlcv_1m(token=token, limit=min(fetch_limit, 5000))
+        fetch_limit = min(limit * minutes * 2, 10000)  # fetch extra to cover filtering
+        df = _db.get_ohlcv_1m(token=token, limit=fetch_limit)
         if df.empty:
             return jsonify([])
+
+        # ── Filter to NSE market hours (IST 09:15–15:30, Mon–Fri) ────────────
+        # df.index is UTC-aware DatetimeIndex
+        df_ist = df.tz_convert('Asia/Kolkata')
+        tod = df_ist.index.hour * 60 + df_ist.index.minute
+        dow = df_ist.index.dayofweek  # 0=Mon … 4=Fri
+        market_mask = (tod >= 9 * 60 + 15) & (tod <= 15 * 60 + 30) & (dow < 5)
+        df = df[market_mask]
+        if df.empty:
+            return jsonify([])
+
         if timeframe != '1m':
-            # minutes already computed above
             try:
                 df = df.resample(f'{minutes}min').agg(
                     {'open': 'first', 'high': 'max', 'low': 'min',
                      'close': 'last', 'volume': 'sum'}
                 ).dropna()
             except Exception:
-                pass  # fall back to raw 1m
+                pass
+
+        # Trim to requested limit after resampling
+        if len(df) > limit:
+            df = df.iloc[-limit:]
+
         import pandas as pd
         df = df.reset_index()
-        # Robust ms conversion across pandas versions (2.x returns ms-res datetimes)
         epoch = pd.Timestamp('1970-01-01', tz='UTC')
         df['bucket_time'] = (df['bucket_time'] - epoch) // pd.Timedelta('1ms')
-    return jsonify(df.to_dict(orient='records'))
+
+    result = df.to_dict(orient='records')
+    _cache_set(cache_key, result)
+    return jsonify(result)
 
 
 @bp.route('/news')
@@ -87,15 +165,16 @@ def global_quotes():
 
 @bp.route('/global_history')
 def global_history():
-    """Return 90-day daily OHLCV for any yfinance ticker (for global quote mini-charts)."""
+    """Return 90-day daily OHLCV for any yfinance ticker."""
     symbol = request.args.get('symbol', '')
     if not symbol:
         return jsonify([])
     try:
         import yfinance as yf
-        from datetime import date, timedelta
+        from datetime import date
         end = date.today()
-        start = end - timedelta(days=90)
+        from datetime import timedelta as td
+        start = end - td(days=90)
         hist = yf.Ticker(symbol).history(start=start.isoformat(), end=end.isoformat(), interval='1d', auto_adjust=True)
         if hist.empty:
             return jsonify([])

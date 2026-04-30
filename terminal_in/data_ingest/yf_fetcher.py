@@ -19,7 +19,7 @@ YF_MAP: dict[str, str] = {
     'FINNIFTY':          'NIFTY_FIN_SERVICE.NS',
     'INDIA VIX':         '^INDIAVIX',
     'NIFTYBEES':         'NIFTYBEES.NS',
-    'TATAMOTORS':        'TATAMOTORS.BO',  # yfinance uses BSE ticker for this
+    'TATAMOTORS':        'TATAMOTORS.NS',
 }
 
 
@@ -79,5 +79,59 @@ def backfill(db, token_map: dict[int, str], days: int = 365) -> int:
                 count += 1
         except Exception:
             log.warning('yfinance fetch failed for %s (%s)', symbol, ticker_str)
+
+    return count
+
+
+def backfill_intraday(db, token_map: dict[int, str], interval: str = '5m') -> int:
+    """
+    Download intraday bars from yfinance and store in ohlcv_1m table.
+    interval='5m' fetches last 60 days; interval='1m' fetches last 7 days.
+    Uses INSERT OR REPLACE so real bars overwrite any synthetic GBM seeds.
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        return 0
+
+    period_map = {'1m': '7d', '5m': '60d', '15m': '60d', '30m': '60d'}
+    period = period_map.get(interval, '60d')
+    count = 0
+
+    # Skip index symbols that don't have intraday data on yfinance
+    SKIP_YF = {'^INDIAVIX'}
+
+    for token, symbol in token_map.items():
+        ticker_str = _yf_ticker(symbol)
+        if ticker_str in SKIP_YF:
+            continue
+        try:
+            tk = yf.Ticker(ticker_str)
+            hist = tk.history(period=period, interval=interval, auto_adjust=True)
+            if hist.empty:
+                log.debug('No intraday data for %s (%s)', symbol, ticker_str)
+                continue
+
+            bars = []
+            for ts, row in hist.iterrows():
+                try:
+                    ts_ms = int(ts.timestamp() * 1000)
+                except Exception:
+                    ts_ms = int(ts.value // 1_000_000)
+                bars.append({
+                    'bucket_time':      ts_ms,
+                    'instrument_token': token,
+                    'open':   round(float(row['Open']),  4),
+                    'high':   round(float(row['High']),  4),
+                    'low':    round(float(row['Low']),   4),
+                    'close':  round(float(row['Close']), 4),
+                    'volume': int(row.get('Volume', 0) or 0),
+                })
+            if bars:
+                db.insert_ohlcv_1m_batch(bars)
+                log.info('yfinance intraday %s (%s) %s — stored %d bars', symbol, ticker_str, interval, len(bars))
+                count += 1
+        except Exception as exc:
+            log.debug('intraday backfill failed %s (%s): %s', symbol, ticker_str, exc)
 
     return count

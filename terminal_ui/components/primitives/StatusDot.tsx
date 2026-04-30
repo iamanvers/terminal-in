@@ -1,15 +1,17 @@
-import clsx from 'clsx'
+'use client'
+import { useConnStatus } from '@/hooks/useSocket'
 
-type Props = { connected: boolean }
-
-export default function StatusDot({ connected }: Props) {
+export default function StatusDot({ connected: _ }: { connected?: boolean }) {
+  const status = useConnStatus()
+  const color  = status === 'connected' ? '#00C853' : status === 'reconnecting' ? '#F7931E' : '#E53935'
+  const label  = status === 'connected' ? 'LIVE' : status === 'reconnecting' ? 'RECONNECTING…' : 'DISCONNECTED'
   return (
-    <span className="flex items-center gap-1.5">
-      <span className={clsx(
-        'inline-block w-1.5 h-1.5 rounded-full',
-        connected ? 'bg-pos animate-pulse' : 'bg-neg',
-      )} />
-      <span className="text-muted text-[9px]">{connected ? 'LIVE' : 'DISCONNECTED'}</span>
+    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <span style={{
+        width: 6, height: 6, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0,
+        animation: status === 'connected' ? 'pulse 2s ease-in-out infinite' : status === 'reconnecting' ? 'blink .9s ease-in-out infinite' : 'none',
+      }} />
+      <span style={{ fontSize: 9, color, letterSpacing: '.06em' }}>{label}</span>
     </span>
   )
 }

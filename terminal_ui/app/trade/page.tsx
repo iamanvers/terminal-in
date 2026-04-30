@@ -1,18 +1,72 @@
 'use client'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  api,
-  type Instrument, type JournalEntry, type LearnerParams, type OrchestratorResult, type OrchestratorState,
-  type PortfolioSummary, type Position, type SignalRec, type Trade, type TradeStats,
+  api, type Instrument, type JournalEntry, type LearnerParams,
+  type OrchestratorResult, type OrchestratorState, type PortfolioSummary,
+  type Position, type Scorecard, type SignalRec, type Trade, type TradeStats,
 } from '@/lib/api'
 import { useSocketEvent, useTickMap } from '@/hooks/useSocket'
-import Badge from '@/components/primitives/Badge'
+
+// ── Palette ───────────────────────────────────────────────────────────────────
+const C = {
+  bg: '#070707', card: '#0C0C0C', panel: '#0D0D0D',
+  border: '#161616', border2: '#1E1E1E',
+  text: '#D0D0D0', sub: '#888', muted: '#444', dim: '#222',
+  green: '#00C853', red: '#E53935', amber: '#F7931E',
+  blue: '#1E88E5', purple: '#AB47BC',
+}
+
+const CSS = `
+@keyframes flash-up   { 0%{background:#00C85330}100%{background:transparent} }
+@keyframes flash-down { 0%{background:#E5393530}100%{background:transparent} }
+.flash-up   { animation: flash-up   0.7s ease-out }
+.flash-down { animation: flash-down 0.7s ease-out }
+::-webkit-scrollbar { width:3px;height:3px }
+::-webkit-scrollbar-track { background:#080808 }
+::-webkit-scrollbar-thumb { background:#1E1E1E;border-radius:2px }
+`
+const StyleTag = () => <style dangerouslySetInnerHTML={{ __html: CSS }} />
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+function inr(v: number, dec = 0) {
+  return '₹' + Math.abs(v).toLocaleString('en-IN', { maximumFractionDigits: dec, minimumFractionDigits: dec })
+}
+function Pnl({ v, dec = 0, size = 11 }: { v: number | null | undefined; dec?: number; size?: number }) {
+  if (v == null) return <span style={{ color: C.dim }}>—</span>
+  const col = v > 0 ? C.green : v < 0 ? C.red : C.muted
+  return <span style={{ color: col, fontSize: size, fontVariantNumeric: 'tabular-nums' }}>
+    {v >= 0 ? '+' : '−'}{inr(Math.abs(v), dec)}
+  </span>
+}
+function Pct({ v }: { v: number | null | undefined }) {
+  if (v == null) return <span style={{ color: C.dim }}>—</span>
+  const col = v > 0 ? C.green : v < 0 ? C.red : C.muted
+  return <span style={{ color: col, fontSize: 10, fontVariantNumeric: 'tabular-nums' }}>
+    {v >= 0 ? '+' : ''}{v.toFixed(2)}%
+  </span>
+}
+function ageFmt(ms: number): string {
+  const s = Math.floor((Date.now() - ms) / 1000)
+  if (s < 60) return `${s}s`
+  if (s < 3600) return `${Math.floor(s/60)}m`
+  if (s < 86400) return `${Math.floor(s/3600)}h${Math.floor((s%3600)/60)}m`
+  return `${Math.floor(s/86400)}d`
+}
+function tsFmt(ms: number) {
+  return new Date(ms).toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+function durFmt(entryMs: number, exitMs: number | undefined): string {
+  if (!exitMs) return ageFmt(entryMs)
+  const s = Math.floor((exitMs - entryMs) / 1000)
+  if (s < 60) return `${s}s`
+  if (s < 3600) return `${Math.floor(s/60)}m`
+  return `${Math.floor(s/3600)}h${Math.floor((s%3600)/60)}m`
+}
 
 type TokenMap = Record<number, string>
+function useSym(token: number, map: TokenMap) { return map[token] ?? `#${token}` }
 
-function useInstrumentMap(): { instruments: Instrument[]; tokenMap: TokenMap } {
+function useInstrumentMap() {
   const [instruments, setInstruments] = useState<Instrument[]>([])
   useEffect(() => { api.instruments().then(setInstruments).catch(() => {}) }, [])
   const tokenMap: TokenMap = {}
@@ -20,266 +74,653 @@ function useInstrumentMap(): { instruments: Instrument[]; tokenMap: TokenMap } {
   return { instruments, tokenMap }
 }
 
-function sym(token: number, map: TokenMap) { return map[token] ?? `#${token}` }
-
-function age(openedMs: number): string {
-  const s = Math.floor((Date.now() - openedMs) / 1000)
-  if (s < 60)    return `${s}s`
-  if (s < 3600)  return `${Math.floor(s/60)}m`
-  if (s < 86400) return `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`
-  return `${Math.floor(s/86400)}d`
-}
-
-function fmtINR(n: number, dec = 0) {
-  return '₹' + Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: dec, minimumFractionDigits: dec })
-}
-
-function PnlSpan({ v, prefix = '' }: { v: number | null | undefined; prefix?: string }) {
-  if (v == null) return <span style={{ color: '#444' }}>—</span>
-  const color = v > 0 ? '#4ade80' : v < 0 ? '#f87171' : '#555'
-  return <span style={{ color }}>{prefix}{v >= 0 ? '+' : '-'}{fmtINR(v)}</span>
-}
-
-function ReasonBadge({ reason }: { reason: string | null | undefined }) {
-  if (!reason) return <span style={{ color: '#444', fontSize: 10 }}>—</span>
-  const cfg: Record<string, { bg: string; fg: string }> = {
-    stop_loss:      { bg: '#3b0000', fg: '#f87171' },
-    target:         { bg: '#002b00', fg: '#4ade80' },
-    time_exit:      { bg: '#001f3b', fg: '#60a5fa' },
-    manual:         { bg: '#1f1000', fg: '#fb923c' },
-    eod_settlement: { bg: '#1a0a2e', fg: '#a78bfa' },
-  }
-  const c = cfg[reason] ?? { bg: '#1a1a1a', fg: '#888' }
-  return (
-    <span style={{ background: c.bg, color: c.fg, padding: '1px 5px', borderRadius: 3, fontSize: 10, whiteSpace: 'nowrap' }}>
-      {reason.replace(/_/g, ' ')}
-    </span>
-  )
-}
-
-// EV color: 0-1 = grey, 1-2 = yellow, 2+ = green
-function evColor(ev: number) {
-  if (ev >= 2.0) return '#4ade80'
-  if (ev >= 1.2) return '#fbbf24'
-  return '#555'
-}
-
-function SidePill({ side }: { side: string }) {
-  const isBuy = side === 'BUY'
-  const isSell = side === 'SELL'
-  if (!isBuy && !isSell) return <span style={{ color: '#444', fontSize: 10 }}>{side}</span>
+// ── Primitives ────────────────────────────────────────────────────────────────
+function Side({ v }: { v: string }) {
+  const buy = v === 'BUY'
   return (
     <span style={{
-      fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3,
-      background: isBuy ? '#052e16' : '#3b0000',
-      color: isBuy ? '#4ade80' : '#f87171',
-      border: `1px solid ${isBuy ? '#14532d' : '#7f1d1d'}`,
-    }}>{side}</span>
+      fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 2,
+      background: buy ? '#001a08' : '#1a0004',
+      color: buy ? C.green : C.red,
+      border: `1px solid ${buy ? '#00C85333' : '#E5393533'}`,
+      letterSpacing: '.05em',
+    }}>{v}</span>
   )
 }
 
-// ── Stats Strip ───────────────────────────────────────────────────────────────
+function ReasBadge({ r }: { r: string | null | undefined }) {
+  if (!r) return <span style={{ color: C.dim, fontSize: 9 }}>—</span>
+  const MAP: Record<string, [string, string]> = {
+    stop_loss: ['#2a0000', C.red], target: ['#002a0a', C.green],
+    time_exit: ['#00112a', C.blue], manual: ['#1a0d00', C.amber],
+    eod_settlement: ['#140022', C.purple],
+  }
+  const [bg, fg] = MAP[r] ?? ['#111', C.muted]
+  return <span style={{ fontSize: 9, background: bg, color: fg, padding: '1px 5px', borderRadius: 2, whiteSpace: 'nowrap' }}>
+    {r.replace(/_/g, ' ')}
+  </span>
+}
 
-function StatsStrip({ summary, stats }: { summary: PortfolioSummary | null; stats: TradeStats | null }) {
+function DistBar({ pct, col, w = 52 }: { pct: number; col: string; w?: number }) {
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <div style={{ width: w, height: 3, background: '#181818', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ width: `${Math.max(0, Math.min(100, pct))}%`, height: '100%', background: col, borderRadius: 2 }} />
+      </div>
+    </div>
+  )
+}
+
+function MetricCard({ label, value, sub, color }: { label: string; value: React.ReactNode; sub?: string; color?: string }) {
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 4, padding: '7px 10px' }}>
+      <div style={{ fontSize: 8, color: C.dim, letterSpacing: '.08em', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: color ?? C.text, lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 8, color: C.muted, marginTop: 3 }}>{sub}</div>}
+    </div>
+  )
+}
+
+// ── Account Bar ───────────────────────────────────────────────────────────────
+function AccountBar({
+  summary, stats, unrealized,
+}: {
+  summary: PortfolioSummary | null
+  stats: TradeStats | null
+  unrealized: number
+}) {
   const eq      = summary?.equity ?? 0
-  const peak    = summary?.peak_equity ?? eq
   const dayPnl  = summary?.daily_pnl ?? 0
   const dd      = summary?.drawdown ?? 0
   const wr      = stats?.win_rate ?? 0
-  const openPos = summary?.open_positions ?? 0
-  const vix     = summary?.india_vix ?? 0
+  const realized = (stats?.total_pnl ?? 0) - unrealized
 
-  const cards = [
-    { label: 'EQUITY',    val: <span style={{ color: '#e5e5e5', fontWeight: 700 }}>{fmtINR(eq)}</span>,             sub: `Peak ${fmtINR(peak)}` },
-    { label: 'DAY P&L',   val: <PnlSpan v={dayPnl} />,                                                              sub: `${stats?.today_trades ?? 0} trades` },
-    { label: 'DRAWDOWN',  val: <span style={{ color: dd > 0.10 ? '#f87171' : dd > 0.05 ? '#fbbf24' : '#555' }}>-{(dd*100).toFixed(2)}%</span>, sub: 'max 20%' },
-    { label: 'WIN RATE',  val: <span style={{ color: wr >= 0.5 ? '#4ade80' : '#f87171', fontWeight: 700 }}>{(wr*100).toFixed(0)}%</span>,        sub: `${stats?.wins ?? 0}W / ${stats?.losses ?? 0}L` },
-    { label: 'TOTAL P&L', val: <PnlSpan v={stats?.total_pnl ?? null} />,                                            sub: `${stats?.total_trades ?? 0} closed` },
-    { label: 'POSITIONS', val: <span style={{ color: openPos >= 8 ? '#f87171' : '#e5e5e5', fontWeight: 700 }}>{openPos}/10</span>,               sub: `VIX ${vix.toFixed(1)}` },
+  const chips = [
+    { label: 'EQUITY',    v: <span style={{ fontWeight: 700 }}>{inr(eq)}</span>,              c: C.text,  sub: `peak ${inr(summary?.peak_equity ?? eq)}` },
+    { label: 'UNREAL',    v: <Pnl v={unrealized} />,                                           c: unrealized >= 0 ? C.green : C.red, sub: `${summary?.open_positions ?? 0} positions` },
+    { label: 'REALIZED',  v: <Pnl v={realized} />,                                             c: realized >= 0 ? C.green : C.red,  sub: `${stats?.total_trades ?? 0} closed` },
+    { label: 'DAY P&L',   v: <Pnl v={dayPnl} />,                                              c: dayPnl >= 0 ? C.green : C.red, sub: `${stats?.today_trades ?? 0} trades today` },
+    { label: 'WIN RATE',  v: `${(wr*100).toFixed(1)}%`,                                        c: wr >= 0.6 ? C.green : wr >= 0.4 ? C.amber : C.red, sub: `${stats?.wins ?? 0}W / ${stats?.losses ?? 0}L` },
+    { label: 'DRAWDOWN',  v: `${(dd*100).toFixed(2)}%`,                                        c: dd > 0.10 ? C.red : dd > 0.05 ? C.amber : C.muted, sub: 'limit 20%' },
+    { label: 'INDIA VIX', v: (summary?.india_vix ?? 0).toFixed(1),                              c: (summary?.india_vix ?? 0) > 25 ? C.red : (summary?.india_vix ?? 0) > 18 ? C.amber : C.text, sub: 'volatility index' },
   ]
 
   return (
-    <div style={{ display: 'flex', gap: 6, flexShrink: 0, padding: '6px 0' }}>
-      {cards.map(c => (
-        <div key={c.label} style={{ flex: 1, background: '#111', border: '1px solid #1e1e1e', borderRadius: 4, padding: '6px 10px' }}>
-          <div style={{ fontSize: 9, color: '#444', letterSpacing: '0.1em', marginBottom: 3 }}>{c.label}</div>
-          <div style={{ fontSize: 16, lineHeight: 1 }}>{c.val}</div>
-          <div style={{ fontSize: 9, color: '#333', marginTop: 3 }}>{c.sub}</div>
+    <div style={{ display: 'flex', alignItems: 'stretch', background: '#090909', borderBottom: `1px solid ${C.border}`, flexShrink: 0, height: 52 }}>
+      {/* Mode badge */}
+      <div style={{ padding: '0 16px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 2, minWidth: 70 }}>
+        <span style={{ fontSize: 8, fontWeight: 700, color: C.amber, letterSpacing: '.1em', background: '#1A0D00', border: `1px solid ${C.amber}33`, borderRadius: 3, padding: '1px 6px' }}>PAPER</span>
+        <span style={{ fontSize: 7, color: C.dim, letterSpacing: '.06em' }}>SIMULATION</span>
+      </div>
+      {chips.map(c => (
+        <div key={c.label} style={{ flex: 1, padding: '0 12px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
+          <span style={{ fontSize: 7, color: C.dim, letterSpacing: '.07em' }}>{c.label}</span>
+          <span style={{ fontSize: 13, lineHeight: 1, color: c.c, fontVariantNumeric: 'tabular-nums' }}>{c.v}</span>
+          <span style={{ fontSize: 8, color: C.muted }}>{c.sub}</span>
         </div>
       ))}
     </div>
   )
 }
 
-// ── Agent Cockpit ─────────────────────────────────────────────────────────────
-
-function AgentCockpit({
-  tokenMap,
-  onFire,
+// ── Left Rail ─────────────────────────────────────────────────────────────────
+function LeftRail({
+  filter, onFilter, stats, scorecards,
 }: {
-  tokenMap: TokenMap
-  onFire: (r: OrchestratorResult) => void
+  filter: string
+  onFilter: (s: string) => void
+  stats: TradeStats | null
+  scorecards: Scorecard[]
 }) {
+  const byStrat = stats?.by_strategy ? Object.entries(stats.by_strategy).sort((a, b) => b[1].pnl - a[1].pnl) : []
+  const maxPnl = Math.max(...byStrat.map(([, r]) => Math.abs(r.pnl)), 1)
+
+  const STRATS = ['ALL', ...byStrat.map(([id]) => id).filter(Boolean)]
+
+  // EOD countdown
+  const nowIST = () => {
+    const d = new Date(Date.now() + 5.5*3600_000)
+    const h = d.getUTCHours(), m = d.getUTCMinutes()
+    const close = 15*60+30, now = h*60+m
+    if (now < 9*60+15) return `opens in ${Math.floor((9*60+15-now)/60)}h${(9*60+15-now)%60}m`
+    if (now <= close)   return `EOD in ${Math.floor((close-now)/60)}h${(close-now)%60}m`
+    return 'post-market'
+  }
+
+  return (
+    <div style={{ width: 190, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto' }}>
+      {/* Strategy filter */}
+      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{ padding: '7px 10px', borderBottom: `1px solid ${C.border}`, fontSize: 8, color: C.dim, letterSpacing: '.08em', fontWeight: 700 }}>FILTER BY STRATEGY</div>
+        {STRATS.map(s => (
+          <button key={s} onClick={() => onFilter(s)} style={{
+            width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '6px 10px', background: filter === s ? '#F7931E0A' : 'transparent',
+            borderLeft: `2px solid ${filter === s ? C.amber : 'transparent'}`,
+            border: 'none', cursor: 'pointer', fontSize: 9, fontWeight: filter === s ? 700 : 400,
+            color: filter === s ? C.amber : C.sub, letterSpacing: '.04em',
+          }}>
+            <span>{s}</span>
+            {s !== 'ALL' && stats?.by_strategy?.[s] && (
+              <Pnl v={stats.by_strategy[s].pnl} size={9} />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Attribution bars */}
+      {byStrat.length > 0 && (
+        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, padding: '8px 10px' }}>
+          <div style={{ fontSize: 8, color: C.dim, letterSpacing: '.08em', fontWeight: 700, marginBottom: 8 }}>ALPHA ATTRIBUTION</div>
+          {byStrat.map(([sid, rec]) => (
+            <div key={sid} style={{ marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                <span style={{ fontSize: 9, color: C.text, fontWeight: 600 }}>{sid}</span>
+                <span style={{ fontSize: 8, color: rec.win_rate >= 0.5 ? C.green : C.red }}>{(rec.win_rate*100).toFixed(0)}% WR</span>
+              </div>
+              <div style={{ height: 4, background: '#111', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{
+                  width: `${Math.abs(rec.pnl) / maxPnl * 100}%`,
+                  height: '100%', borderRadius: 2,
+                  background: rec.pnl >= 0 ? C.green : C.red,
+                }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
+                <span style={{ fontSize: 8, color: C.muted }}>{rec.trades} trades</span>
+                <Pnl v={rec.pnl} size={8} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Risk summary */}
+      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, padding: '8px 10px' }}>
+        <div style={{ fontSize: 8, color: C.dim, letterSpacing: '.08em', fontWeight: 700, marginBottom: 8 }}>SESSION</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 8, color: C.muted }}>Today trades</span>
+            <span style={{ fontSize: 9, color: C.text }}>{stats?.today_trades ?? 0}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 8, color: C.muted }}>Today P&L</span>
+            <Pnl v={stats?.today_pnl ?? null} size={9} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 8, color: C.muted }}>Best trade</span>
+            <Pnl v={stats?.best_trade_pnl ?? null} size={9} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 8, color: C.muted }}>Worst trade</span>
+            <Pnl v={stats?.worst_trade_pnl ?? null} size={9} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 8, color: C.muted }}>Avg win</span>
+            <Pnl v={stats?.avg_win ?? null} size={9} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 8, color: C.muted }}>Avg loss</span>
+            <Pnl v={stats?.avg_loss ?? null} size={9} />
+          </div>
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 5, display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 8, color: C.muted }}>{nowIST()}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Positions Blotter ─────────────────────────────────────────────────────────
+const PCOLS = '130px 46px 56px 40px 70px 70px 70px 56px 80px 60px 48px 36px'
+
+function PositionsTable({
+  positions, ticks, tokenMap, filter, onSelect, selectedId, onClose,
+}: {
+  positions: Position[]
+  ticks: ReturnType<typeof useTickMap>
+  tokenMap: TokenMap
+  filter: string
+  onSelect: (id: string) => void
+  selectedId: string | null
+  onClose: (id: string) => void
+}) {
+  const [closing, setClosing] = useState<Set<string>>(new Set())
+  const prevPrices = useRef<Record<number, number>>({})
+  const [flashMap, setFlashMap] = useState<Record<string, 'up' | 'down'>>({})
+
+  // Flash effect when live price changes
+  useEffect(() => {
+    const next: Record<string, 'up' | 'down'> = {}
+    for (const pos of positions) {
+      const cur = ticks[pos.instrument_id]?.last_price
+      const prev = prevPrices.current[pos.instrument_id]
+      if (cur != null && prev != null && cur !== prev) {
+        next[pos.trade_id] = cur > prev ? 'up' : 'down'
+      }
+      if (cur != null) prevPrices.current[pos.instrument_id] = cur
+    }
+    if (Object.keys(next).length > 0) {
+      setFlashMap(next)
+      setTimeout(() => setFlashMap({}), 700)
+    }
+  }, [ticks, positions])
+
+  async function close(id: string) {
+    setClosing(p => new Set(p).add(id))
+    try { await api.closePosition(id) } catch { /* ignore */ }
+    finally { setClosing(p => { const s = new Set(p); s.delete(id); return s }) }
+  }
+
+  const rows = filter === 'ALL' ? positions : positions.filter(p => p.strategy_id === filter)
+
+  const TH = ({ children, align = 'left' }: { children?: React.ReactNode; align?: string }) => (
+    <span style={{ fontSize: 8, color: C.dim, letterSpacing: '.07em', textAlign: align as never }}>{children}</span>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '6px 10px', borderBottom: `1px solid ${C.border}`, flexShrink: 0, gap: 8 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: C.text, letterSpacing: '.06em' }}>OPEN POSITIONS</span>
+        <span style={{ fontSize: 9, color: rows.length > 7 ? C.red : C.muted }}>{rows.length}/10</span>
+        {rows.length > 0 && (
+          <span style={{ fontSize: 9, color: C.muted, marginLeft: 4 }}>
+            Unreal:&nbsp;
+            <Pnl v={rows.reduce((s, p) => {
+              const live = ticks[p.instrument_id]?.last_price
+              if (!live) return s
+              return s + (p.side === 'BUY' ? 1 : -1) * (live - p.entry_price) * p.quantity
+            }, 0)} />
+          </span>
+        )}
+      </div>
+      {/* Header */}
+      <div style={{ display: 'grid', gridTemplateColumns: PCOLS, gap: 0, padding: '4px 10px', background: '#080808', flexShrink: 0 }}>
+        <TH>INSTRUMENT</TH><TH>SIDE</TH><TH>STRAT</TH><TH align="right">QTY</TH>
+        <TH align="right">ENTRY</TH><TH align="right">CMP</TH><TH align="right">UNREAL</TH>
+        <TH>%</TH><TH>SL DIST ▸</TH><TH>TGT DIST ▸</TH><TH align="right">AGE</TH><TH></TH>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {rows.length === 0 ? (
+          <div style={{ textAlign: 'center', color: C.dim, fontSize: 10, padding: 32 }}>No open positions</div>
+        ) : rows.map(pos => {
+          const live  = ticks[pos.instrument_id]?.last_price ?? null
+          const sign  = pos.side === 'BUY' ? 1 : -1
+          const unr   = live != null ? sign * (live - pos.entry_price) * pos.quantity : null
+          const unrPct = live != null ? sign * (live / pos.entry_price - 1) * 100 : null
+          const toSL  = live != null && pos.stop_loss ? (pos.side === 'BUY' ? (live - pos.stop_loss) / live * 100 : (pos.stop_loss - live) / live * 100) : null
+          const toTgt = live != null && pos.target ? (pos.side === 'BUY' ? (pos.target - live) / live * 100 : (live - pos.target) / live * 100) : null
+          const openMs = pos.opened_at ? new Date(pos.opened_at).getTime() : Date.now()
+          const sel = selectedId === pos.trade_id
+          const flash = flashMap[pos.trade_id]
+          const isClosing = closing.has(pos.trade_id)
+
+          return (
+            <div key={pos.trade_id}
+              className={flash === 'up' ? 'flash-up' : flash === 'down' ? 'flash-down' : ''}
+              onClick={() => onSelect(pos.trade_id)}
+              style={{
+                display: 'grid', gridTemplateColumns: PCOLS, gap: 0, padding: '6px 10px',
+                borderBottom: `1px solid ${C.border}`, cursor: 'pointer', alignItems: 'center',
+                background: sel ? '#F7931E08' : (unr != null && unr > 0) ? '#00C8530A' : (unr != null && unr < 0) ? '#E539350A' : 'transparent',
+                borderLeft: `2px solid ${sel ? C.amber : (unr != null && unr > 0) ? '#00C85333' : (unr != null && unr < 0) ? '#E5393533' : 'transparent'}`,
+                opacity: isClosing ? 0.4 : 1,
+              }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{useSym(pos.instrument_id, tokenMap)}</span>
+              <Side v={pos.side} />
+              <span style={{ fontSize: 9, color: C.amber }}>{pos.strategy_id}</span>
+              <span style={{ fontSize: 10, color: C.sub, textAlign: 'right' }}>{pos.quantity}</span>
+              <span style={{ fontSize: 10, color: C.muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pos.entry_price.toFixed(2)}</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: C.text, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{live?.toFixed(2) ?? '—'}</span>
+              <span style={{ textAlign: 'right' }}><Pnl v={unr} /></span>
+              <Pct v={unrPct} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {toSL != null && <>
+                  <DistBar pct={toSL / 3 * 100} col={toSL < 0.5 ? C.red : toSL < 1.5 ? C.amber : C.green} />
+                  <span style={{ fontSize: 8, color: toSL < 0.5 ? C.red : C.muted }}>{toSL.toFixed(2)}%</span>
+                </>}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {toTgt != null && <>
+                  <DistBar pct={(1 - toTgt / 5) * 100} col={toTgt < 1 ? C.green : C.blue} />
+                  <span style={{ fontSize: 8, color: toTgt < 1 ? C.green : C.muted }}>{toTgt.toFixed(2)}%</span>
+                </>}
+              </div>
+              <span style={{ fontSize: 9, color: C.muted, textAlign: 'right' }}>{ageFmt(openMs)}</span>
+              <button onClick={e => { e.stopPropagation(); !isClosing && close(pos.trade_id) }} disabled={isClosing}
+                style={{ fontSize: 9, padding: '2px 5px', borderRadius: 2, border: `1px solid ${C.red}44`, background: '#1A0404', color: C.red, cursor: 'pointer' }}>
+                {isClosing ? '…' : '✕'}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Trade History ──────────────────────────────────────────────────────────────
+const HCOLS = '56px 120px 46px 56px 70px 70px 80px 50px 90px'
+
+function TradeHistory({
+  trades, tokenMap, filter, onSelect, selectedId,
+}: {
+  trades: Trade[]
+  tokenMap: TokenMap
+  filter: string
+  onSelect: (id: string) => void
+  selectedId: string | null
+}) {
+  const [search, setSearch] = useState('')
+
+  const rows = trades
+    .filter(t => filter === 'ALL' || t.strategy_id === filter)
+    .filter(t => !search || (tokenMap[t.instrument_token] ?? '').toLowerCase().includes(search.toLowerCase()) || (t.strategy_id ?? '').toLowerCase().includes(search.toLowerCase()))
+
+  const TH = ({ children, align = 'left' }: { children?: React.ReactNode; align?: string }) => (
+    <span style={{ fontSize: 8, color: C.dim, letterSpacing: '.07em', textAlign: align as never }}>{children}</span>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '6px 10px', borderBottom: `1px solid ${C.border}`, flexShrink: 0, gap: 8 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: C.text, letterSpacing: '.06em' }}>CLOSED TRADES</span>
+        <span style={{ fontSize: 9, color: C.muted }}>{rows.length}</span>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="filter…"
+          style={{ marginLeft: 'auto', background: '#090909', border: `1px solid ${C.border}`, color: C.sub, fontSize: 9, padding: '2px 7px', borderRadius: 3, width: 80 }} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: HCOLS, gap: 0, padding: '4px 10px', background: '#080808', flexShrink: 0 }}>
+        <TH>TIME</TH><TH>INSTRUMENT</TH><TH>SIDE</TH><TH>STRAT</TH>
+        <TH align="right">ENTRY</TH><TH align="right">EXIT</TH><TH align="right">P&L</TH><TH>DUR</TH><TH>REASON</TH>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {rows.length === 0
+          ? <div style={{ textAlign: 'center', color: C.dim, fontSize: 10, padding: 24 }}>No closed trades</div>
+          : rows.map(t => {
+            const sel = selectedId === t.trade_id
+            const entMs = typeof t.entry_time === 'number' ? t.entry_time : new Date(t.entry_time ?? 0).getTime()
+            const extMs = typeof t.exit_time === 'number' ? t.exit_time : (t.exit_time ? new Date(t.exit_time).getTime() : undefined)
+            return (
+              <div key={t.trade_id} onClick={() => onSelect(t.trade_id)}
+                style={{
+                  display: 'grid', gridTemplateColumns: HCOLS, gap: 0, padding: '5px 10px',
+                  borderBottom: `1px solid ${C.border}`, cursor: 'pointer', alignItems: 'center',
+                  background: sel ? '#F7931E08' : 'transparent',
+                  borderLeft: `2px solid ${sel ? C.amber : (t.net_pnl ?? 0) > 0 ? '#00C85322' : '#E5393522'}`,
+                }}>
+                <span style={{ fontSize: 8, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{extMs ? tsFmt(extMs) : '—'}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: C.text }}>{useSym(t.instrument_token, tokenMap)}</span>
+                <Side v={t.side} />
+                <span style={{ fontSize: 9, color: C.amber }}>{t.strategy_id}</span>
+                <span style={{ fontSize: 10, color: C.muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{t.entry_price.toFixed(2)}</span>
+                <span style={{ fontSize: 10, color: C.muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{t.exit_price?.toFixed(2) ?? '—'}</span>
+                <span style={{ textAlign: 'right' }}><Pnl v={t.net_pnl} /></span>
+                <span style={{ fontSize: 9, color: C.muted }}>{durFmt(entMs, extMs)}</span>
+                <ReasBadge r={t.exit_reason} />
+              </div>
+            )
+          })
+        }
+      </div>
+    </div>
+  )
+}
+
+// ── Book View ─────────────────────────────────────────────────────────────────
+function BookView({ positions, trades, ticks, tokenMap, filter, selectedId, onSelect }: {
+  positions: Position[]; trades: Trade[]; ticks: ReturnType<typeof useTickMap>
+  tokenMap: TokenMap; filter: string; selectedId: string | null
+  onSelect: (id: string, kind: 'position' | 'trade') => void
+}) {
+  const [closing, setClosing] = useState<Set<string>>(new Set())
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 6 }}>
+      <div style={{ flex: '0 0 calc(55% - 3px)', minHeight: 0, overflow: 'hidden' }}>
+        <PositionsTable positions={positions} ticks={ticks} tokenMap={tokenMap} filter={filter}
+          onSelect={id => onSelect(id, 'position')} selectedId={selectedId}
+          onClose={async id => { setClosing(p => new Set(p).add(id)); try { await api.closePosition(id) } catch { /**/ } finally { setClosing(p => { const s = new Set(p); s.delete(id); return s }) } }}
+        />
+      </div>
+      <div style={{ flex: '0 0 calc(45% - 3px)', minHeight: 0, overflow: 'hidden' }}>
+        <TradeHistory trades={trades} tokenMap={tokenMap} filter={filter}
+          onSelect={id => onSelect(id, 'trade')} selectedId={selectedId} />
+      </div>
+    </div>
+  )
+}
+
+// ── Equity Curve ─────────────────────────────────────────────────────────────
+function EquityCurve({ snapshots }: { snapshots: Record<string, number>[] }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  if (snapshots.length < 2) return (
+    <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dim, fontSize: 10 }}>Accumulating equity data…</div>
+  )
+  const eqs = snapshots.map(s => s.equity)
+  const min = Math.min(...eqs), max = Math.max(...eqs)
+  const range = max - min || 1
+  const W = 1000, H = 80
+  const pts = eqs.map((e, i) => `${(i / (eqs.length - 1)) * W},${H - ((e - min) / range) * (H - 8)}`)
+  const pathD = pts.join(' ')
+  const fillD = `M${pts[0]} L${pts.slice(1).join(' L')} L${W},${H} L0,${H} Z`
+  const isUp = eqs[eqs.length - 1] >= eqs[0]
+  const col = isUp ? C.green : C.red
+  return (
+    <div ref={containerRef} style={{ width: '100%', height: 80 }}>
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="eqg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={col} stopOpacity=".25" />
+            <stop offset="100%" stopColor={col} stopOpacity=".02" />
+          </linearGradient>
+        </defs>
+        <path d={fillD} fill="url(#eqg)" />
+        <polyline points={pathD} fill="none" stroke={col} strokeWidth="1.5" />
+      </svg>
+    </div>
+  )
+}
+
+// ── Performance View ──────────────────────────────────────────────────────────
+function PerformanceView({ stats, scorecards, snapshots }: {
+  stats: TradeStats | null; scorecards: Scorecard[]; snapshots: Record<string, number>[]
+}) {
+  const byStrat = stats?.by_strategy ? Object.entries(stats.by_strategy).sort((a, b) => b[1].pnl - a[1].pnl) : []
+
+  const metrics = [
+    { l: 'TOTAL P&L',    v: <Pnl v={stats?.total_pnl ?? null} size={18} />,                       sub: `${stats?.total_trades ?? 0} closed trades` },
+    { l: 'WIN RATE',     v: <span style={{ color: (stats?.win_rate ?? 0) >= 0.5 ? C.green : C.red, fontWeight: 700 }}>{((stats?.win_rate ?? 0)*100).toFixed(1)}%</span>, sub: `${stats?.wins ?? 0}W  ${stats?.losses ?? 0}L` },
+    { l: 'EXPECTANCY',   v: <Pnl v={scorecards.length ? scorecards.reduce((s,sc) => s + sc.expectancy, 0) / scorecards.length : null} size={18} />, sub: 'avg per trade' },
+    { l: 'AVG WIN',      v: <Pnl v={stats?.avg_win ?? null} size={18} />,                          sub: 'per winning trade' },
+    { l: 'AVG LOSS',     v: <Pnl v={stats?.avg_loss ?? null} size={18} />,                         sub: 'per losing trade' },
+    { l: 'BEST TRADE',   v: <Pnl v={stats?.best_trade_pnl ?? null} size={18} />,                   sub: 'single trade max' },
+    { l: 'TODAY P&L',    v: <Pnl v={stats?.today_pnl ?? null} size={18} />,                        sub: `${stats?.today_trades ?? 0} trades today` },
+    { l: 'WORST TRADE',  v: <Pnl v={stats?.worst_trade_pnl ?? null} size={18} />,                  sub: 'single trade min' },
+  ]
+
+  return (
+    <div style={{ height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Equity curve */}
+      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{ padding: '6px 10px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.text }}>EQUITY CURVE</span>
+          <span style={{ fontSize: 9, color: C.muted }}>{snapshots.length} snapshots</span>
+          {snapshots.length >= 2 && (
+            <span style={{ marginLeft: 'auto', fontSize: 9, color: C.muted }}>
+              <Pnl v={(snapshots.at(-1)?.equity ?? 0) - (snapshots[0]?.equity ?? 0)} size={9} />
+            </span>
+          )}
+        </div>
+        <div style={{ padding: '8px 10px' }}>
+          <EquityCurve snapshots={snapshots} />
+        </div>
+      </div>
+
+      {/* Metrics grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+        {metrics.map(m => (
+          <MetricCard key={m.l} label={m.l} value={m.v} sub={m.sub} />
+        ))}
+      </div>
+
+      {/* Strategy scorecards */}
+      {scorecards.length > 0 && (
+        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{ padding: '6px 10px', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.text }}>STRATEGY SCORECARDS</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#080808' }}>
+                  {['STRATEGY','TRADES','WIN RATE','BAYES WR','EXPECTANCY','AVG WIN','AVG LOSS','TOTAL P&L'].map(h => (
+                    <th key={h} style={{ fontSize: 8, color: C.dim, letterSpacing: '.07em', padding: '5px 10px', fontWeight: 400, textAlign: 'left', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {scorecards.sort((a, b) => b.total_pnl - a.total_pnl).map(sc => (
+                  <tr key={sc.strategy_id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                    <td style={{ padding: '6px 10px', fontSize: 10, fontWeight: 700, color: C.amber }}>{sc.strategy_id}</td>
+                    <td style={{ padding: '6px 10px', fontSize: 10, color: C.sub }}>{sc.total_trades}</td>
+                    <td style={{ padding: '6px 10px', fontSize: 10, color: sc.win_rate >= 0.5 ? C.green : C.red }}>{(sc.win_rate*100).toFixed(1)}%</td>
+                    <td style={{ padding: '6px 10px', fontSize: 10, color: sc.bayesian_wr >= 0.5 ? C.green : C.red }}>{(sc.bayesian_wr*100).toFixed(1)}%</td>
+                    <td style={{ padding: '6px 10px' }}><Pnl v={sc.expectancy} size={10} /></td>
+                    <td style={{ padding: '6px 10px' }}><Pnl v={sc.avg_win} size={10} /></td>
+                    <td style={{ padding: '6px 10px' }}><Pnl v={sc.avg_loss} size={10} /></td>
+                    <td style={{ padding: '6px 10px' }}><Pnl v={sc.total_pnl} size={10} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Attribution detail */}
+      {byStrat.length > 0 && (
+        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{ padding: '6px 10px', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.text }}>STRATEGY ATTRIBUTION</div>
+          <div style={{ padding: '10px' }}>
+            {byStrat.map(([sid, rec]) => {
+              const pnlAbs = Math.abs(rec.pnl)
+              const maxAbs = Math.max(...byStrat.map(([, r]) => Math.abs(r.pnl)), 1)
+              return (
+                <div key={sid} style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: C.amber, minWidth: 36 }}>{sid}</span>
+                      <span style={{ fontSize: 9, color: C.muted }}>{rec.trades} trades</span>
+                      <span style={{ fontSize: 9, color: rec.win_rate >= 0.5 ? C.green : C.red }}>{(rec.win_rate*100).toFixed(0)}% WR</span>
+                    </div>
+                    <Pnl v={rec.pnl} size={11} />
+                  </div>
+                  <div style={{ height: 5, background: '#111', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ width: `${pnlAbs / maxAbs * 100}%`, height: '100%', background: rec.pnl >= 0 ? C.green : C.red, borderRadius: 2 }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Signals View (Orchestrator + Signal Feed) ─────────────────────────────────
+function SignalsView({ tokenMap }: { tokenMap: TokenMap }) {
   const [state,    setState]   = useState<OrchestratorState | null>(null)
   const [signals,  setSignals] = useState<SignalRec[]>([])
-  const [journal,  setJournal] = useState<JournalEntry[]>([])
   const [scanning, setScanning] = useState(false)
-  const [tab,      setTab]     = useState<'opps' | 'signals' | 'journal'>('opps')
+  const [tab, setTab] = useState<'opps' | 'signals'>('opps')
 
-  const scanDone = useSocketEvent<OrchestratorState & { fired: number; top_results: OrchestratorResult[] } | null>('orchestrator_scan_done', null)
-  const liveApproved = useSocketEvent<Record<string, unknown> | null>('order_approved', null)
-  const liveRejected = useSocketEvent<Record<string, unknown> | null>('order_rejected', null)
+  const scanDone = useSocketEvent<(OrchestratorState & { fired: number; top_results: OrchestratorResult[] }) | null>('orchestrator_scan_done', null)
+  const approved = useSocketEvent<Record<string, unknown> | null>('order_approved', null)
+  const rejected = useSocketEvent<Record<string, unknown> | null>('order_rejected', null)
 
   useEffect(() => {
     api.orchestratorState().then(setState).catch(() => {})
-    api.signals(30).then(setSignals).catch(() => {})
-    api.journal(40).then(setJournal).catch(() => {})
+    api.signals(50).then(setSignals).catch(() => {})
   }, [])
 
-  // Live scan results — replace state instantly
   useEffect(() => {
     if (!scanDone) return
     setScanning(false)
     setState({ scan_count: scanDone.scan_count, last_scan_ts: scanDone.last_scan_ts, results: scanDone.top_results ?? [] })
   }, [scanDone])
 
-  // Refresh journal when a trade closes (new journal entry created by broker)
-  const tradeClosed = useSocketEvent<{ trade_id: string } | null>('trade_closed', null)
-  useEffect(() => {
-    if (!tradeClosed) return
-    api.journal(40).then(setJournal).catch(() => {})
-  }, [tradeClosed])
-
-  // Signal feed: deduplicate by instrument_token (keep latest per symbol)
-  function addSignal(rec: SignalRec) {
+  function ingestSignal(raw: Record<string, unknown>, ok: boolean) {
+    const token = Number(raw.instrument_id ?? raw.instrument_token ?? 0)
     setSignals(prev => {
-      const filtered = prev.filter(r => r.instrument_token !== rec.instrument_token)
-      return [rec, ...filtered].slice(0, 40)
+      const filtered = prev.filter(r => r.instrument_token !== token)
+      return [{
+        decision_id: String(Date.now()), signal_id: String(raw.signal_id ?? ''),
+        strategy_id: String(raw.strategy_id ?? ''), instrument_token: token,
+        symbol: tokenMap[token] ?? null, approved: ok ? 1 : 0,
+        reason: ok ? null : String(raw.reason ?? ''), decided_at: Date.now(),
+        side: (raw.side as 'BUY' | 'SELL') ?? null,
+        confidence: Number(raw.confidence ?? 0), regime: String(raw.regime ?? ''),
+        regime_confidence: null, trigger_rule: null, trade_id: null, trade_pnl: null, fill_price: null,
+      }, ...filtered].slice(0, 60)
     })
   }
+  useEffect(() => { if (approved) ingestSignal(approved, true)  }, [approved, tokenMap])
+  useEffect(() => { if (rejected) ingestSignal(rejected, false) }, [rejected, tokenMap])
 
-  useEffect(() => {
-    if (!liveApproved) return
-    const token = Number(liveApproved.instrument_id ?? liveApproved.instrument_token ?? 0)
-    addSignal({
-      decision_id: String(Date.now()), signal_id: String(liveApproved.signal_id ?? ''),
-      strategy_id: String(liveApproved.strategy_id ?? ''), instrument_token: token,
-      symbol: tokenMap[token] ?? null, approved: 1, reason: null, decided_at: Date.now(),
-      side: (liveApproved.side as 'BUY' | 'SELL') ?? null,
-      confidence: Number(liveApproved.confidence ?? 0), regime: String(liveApproved.regime ?? ''),
-      regime_confidence: null, trigger_rule: null, trade_id: null, trade_pnl: null, fill_price: null,
-    })
-  }, [liveApproved, tokenMap])
-
-  useEffect(() => {
-    if (!liveRejected) return
-    const token = Number(liveRejected.instrument_id ?? liveRejected.instrument_token ?? 0)
-    addSignal({
-      decision_id: String(Date.now()), signal_id: String(liveRejected.signal_id ?? ''),
-      strategy_id: String(liveRejected.strategy_id ?? ''), instrument_token: token,
-      symbol: tokenMap[token] ?? null, approved: 0, reason: String(liveRejected.reason ?? ''),
-      decided_at: Date.now(), side: (liveRejected.side as 'BUY' | 'SELL') ?? null,
-      confidence: Number(liveRejected.confidence ?? 0), regime: String(liveRejected.regime ?? ''),
-      regime_confidence: null, trigger_rule: null, trade_id: null, trade_pnl: null, fill_price: null,
-    })
-  }, [liveRejected, tokenMap])
-
-  async function triggerScan() {
+  async function scan() {
     setScanning(true)
     await api.orchestratorScan().catch(() => {})
-    // WS event (scanDone effect) will call setScanning(false) when results arrive.
-    // Hard timeout fallback after 10s in case the WS event is lost.
-    setTimeout(() => setScanning(false), 10_000)
+    setTimeout(() => setScanning(false), 12_000)
   }
 
-  const lastScanAge = state?.last_scan_ts
-    ? (() => { const s = Math.floor((Date.now() - state.last_scan_ts) / 1000); return s < 60 ? `${s}s ago` : `${Math.floor(s/60)}m ago` })()
-    : 'never'
-
-  const results = state?.results ?? []
+  const results   = state?.results ?? []
   const tradeable = results.filter(r => r.side !== 'NEUTRAL' && r.side !== 'SKIP' && r.ev >= 1.2)
   const watching  = results.filter(r => r.side === 'NEUTRAL' || r.ev < 1.2)
+  const lastAge   = state?.last_scan_ts ? (() => { const s = Math.floor((Date.now() - state.last_scan_ts)/1000); return s < 60 ? `${s}s` : `${Math.floor(s/60)}m` })() + ' ago' : 'never'
 
   return (
-    <div className="panel h-full" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      {/* Header */}
-      <div className="panel-header justify-between" style={{ flexShrink: 0 }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span className="accent">▸</span>
-          <span>AGENT COCKPIT</span>
-          <span style={{ fontSize: 8, padding: '2px 5px', borderRadius: 3, background: '#001a00', color: '#4ade80', border: '1px solid #14532d', letterSpacing: '0.1em' }}>⚡ AUTO</span>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 6 }}>
+      {/* Scan header */}
+      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, padding: '7px 12px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: C.text }}>ORCHESTRATOR</span>
+        <span style={{ fontSize: 9, color: C.muted }}>scan #{state?.scan_count ?? 0} · {lastAge}</span>
+        <span style={{ fontSize: 9, color: tradeable.length > 0 ? C.green : C.muted }}>
+          {tradeable.length > 0 ? `⚡ ${tradeable.length} setups` : 'no setups'}
         </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span style={{ fontSize: 9, color: '#444' }}>scan #{state?.scan_count ?? 0} · {lastScanAge}</span>
-          <button onClick={triggerScan} disabled={scanning} style={{
-            fontSize: 9, padding: '2px 8px', borderRadius: 3, cursor: scanning ? 'wait' : 'pointer',
-            background: scanning ? '#111' : '#1a1f0a', border: `1px solid ${scanning ? '#2a2a2a' : '#4ade80'}`,
-            color: scanning ? '#444' : '#4ade80',
-          }}>
-            {scanning ? '⟳ scanning…' : '⟳ SCAN NOW'}
-          </button>
+        <button onClick={scan} disabled={scanning} style={{
+          marginLeft: 'auto', fontSize: 9, padding: '3px 12px', borderRadius: 3,
+          background: scanning ? '#0A0A0A' : '#001A08', border: `1px solid ${scanning ? C.border : C.green}`,
+          color: scanning ? C.muted : C.green, cursor: scanning ? 'wait' : 'pointer', fontWeight: 700, letterSpacing: '.06em',
+        }}>{scanning ? '⟳ SCANNING…' : '⟳ SCAN NOW'}</button>
+        <div style={{ display: 'flex', gap: 0 }}>
+          {(['opps','signals'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{
+              fontSize: 9, padding: '3px 10px', background: tab === t ? '#1A1A1A' : 'transparent',
+              border: 'none', color: tab === t ? C.text : C.muted, cursor: 'pointer', fontWeight: tab === t ? 700 : 400,
+              borderBottom: `2px solid ${tab === t ? C.amber : 'transparent'}`,
+            }}>
+              {t === 'opps' ? `OPPORTUNITIES${tradeable.length > 0 ? ` (${tradeable.length})` : ''}` : `SIGNALS (${signals.length})`}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 2, padding: '4px 8px', borderBottom: '1px solid #1a1a1a', flexShrink: 0 }}>
-        {(['opps', 'signals', 'journal'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            fontSize: 9, padding: '2px 8px', borderRadius: 3, border: 'none', cursor: 'pointer',
-            background: tab === t ? '#1a1a1a' : 'transparent',
-            color: tab === t ? '#e5e5e5' : '#444',
-            fontWeight: tab === t ? 700 : 400, letterSpacing: '0.08em',
-          }}>
-            {t === 'opps'
-              ? `OPPORTUNITIES ${tradeable.length > 0 ? `(${tradeable.length})` : ''}`
-              : t === 'signals'
-                ? `SIGNAL LOG (${signals.length})`
-                : `JOURNAL (${journal.length})`}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab content */}
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+      {/* Content */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {tab === 'opps' ? (
-          <div style={{ padding: '4px 0' }}>
-            {results.length === 0 ? (
-              <p style={{ color: '#333', fontSize: 11, textAlign: 'center', marginTop: 16 }}>
-                {scanning
-                  ? '⟳ Scanning all instruments…'
-                  : state?.scan_count
-                    ? 'All instruments NEUTRAL — no setups above EV threshold'
-                    : 'No scan yet — click SCAN NOW'}
-              </p>
-            ) : (
-              <>
-                {tradeable.length > 0 && (
-                  <div style={{ padding: '4px 8px 2px', fontSize: 9, color: '#4ade80', letterSpacing: '0.08em' }}>
-                    TOP SETUPS
-                  </div>
-                )}
-                {tradeable.map(r => <OppRow key={r.symbol} r={r} onFire={onFire} />)}
-                {watching.length > 0 && (
-                  <div style={{ padding: '8px 8px 2px', fontSize: 9, color: '#444', letterSpacing: '0.08em', borderTop: tradeable.length ? '1px solid #161616' : 'none', marginTop: tradeable.length ? 4 : 0 }}>
-                    WATCHING
-                  </div>
-                )}
-                {watching.map(r => <OppRow key={r.symbol} r={r} onFire={onFire} dim />)}
-              </>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {results.length === 0 && (
+              <div style={{ textAlign: 'center', color: C.dim, fontSize: 10, padding: 32 }}>
+                {scanning ? '⟳ Scanning all instruments…' : 'No scan yet — click SCAN NOW or wait for auto-scan'}
+              </div>
             )}
-          </div>
-        ) : tab === 'signals' ? (
-          <div style={{ padding: '4px 0' }}>
-            {signals.length === 0
-              ? <p style={{ color: '#333', fontSize: 11, textAlign: 'center', marginTop: 16 }}>No signals yet</p>
-              : signals.map(s => <SignalRow key={s.decision_id} s={s} tokenMap={tokenMap} />)
-            }
+            {tradeable.map(r => <OppCard key={r.symbol} r={r} />)}
+            {watching.length > 0 && tradeable.length > 0 && <div style={{ fontSize: 8, color: C.dim, padding: '8px 0 4px', letterSpacing: '.07em', borderTop: `1px solid ${C.border}` }}>WATCHING ({watching.length})</div>}
+            {watching.map(r => <OppCard key={r.symbol} r={r} dim />)}
           </div>
         ) : (
-          <div style={{ padding: '4px 0' }}>
-            {journal.length === 0
-              ? <p style={{ color: '#333', fontSize: 11, textAlign: 'center', marginTop: 16 }}>No journal entries yet</p>
-              : journal.map(j => <JournalRow key={j.journal_id} j={j} tokenMap={tokenMap} />)
+          <div>
+            {signals.length === 0
+              ? <div style={{ textAlign: 'center', color: C.dim, fontSize: 10, padding: 32 }}>No signals yet</div>
+              : signals.map(s => <SigRow key={s.decision_id} s={s} tokenMap={tokenMap} />)
             }
           </div>
         )}
@@ -288,737 +729,396 @@ function AgentCockpit({
   )
 }
 
-function OppRow({ r, onFire, dim = false }: { r: OrchestratorResult; onFire: (r: OrchestratorResult) => void; dim?: boolean }) {
-  const isActive = r.side !== 'NEUTRAL' && r.side !== 'SKIP' && r.ev >= 1.2
-  const isBuy  = r.side === 'BUY'
-  const isSell = r.side === 'SELL'
-  const accent = isBuy ? '#4ade80' : isSell ? '#f87171' : '#444'
-
+function OppCard({ r, dim = false }: { r: OrchestratorResult; dim?: boolean }) {
+  const isBuy  = r.side === 'BUY', isSell = r.side === 'SELL'
+  const active = (isBuy || isSell) && r.ev >= 1.2
+  const col    = isBuy ? C.green : isSell ? C.red : C.muted
   return (
     <div style={{
-      borderLeft: `2px solid ${isActive ? accent : '#1e1e1e'}`,
-      margin: '2px 8px',
-      padding: '5px 7px',
-      borderRadius: '0 3px 3px 0',
-      background: '#0d0d0d',
-      opacity: dim ? 0.55 : 1,
+      background: C.panel, border: `1px solid ${active ? col + '33' : C.border}`,
+      borderLeft: `3px solid ${active ? col : C.border}`, borderRadius: 4,
+      padding: '8px 12px', opacity: dim ? 0.5 : 1, marginBottom: 4,
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#e5e5e5' }}>{r.symbol}</span>
-          {isActive && <SidePill side={r.side} />}
-          {!isActive && <span style={{ fontSize: 10, color: '#444' }}>{r.verdict}</span>}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{r.symbol}</span>
+          {active && <Side v={r.side} />}
+          <span style={{ fontSize: 9, color: C.muted }}>₹{r.price.toFixed(0)}</span>
         </div>
-        <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-          {isActive && (
-            <span style={{ fontSize: 10, fontWeight: 700, color: evColor(r.ev) }}>
-              EV {r.ev.toFixed(2)}
-            </span>
-          )}
-          {isActive && (
-            <button
-              onClick={() => onFire(r)}
-              style={{
-                fontSize: 9, padding: '2px 7px', borderRadius: 3, cursor: 'pointer',
-                background: isBuy ? '#052e16' : '#3b0000',
-                border: `1px solid ${isBuy ? '#14532d' : '#7f1d1d'}`,
-                color: isBuy ? '#4ade80' : '#f87171',
-                fontWeight: 700, letterSpacing: '0.06em',
-              }}
-            >FIRE</button>
-          )}
-        </div>
+        {active && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: r.ev >= 2 ? C.green : r.ev >= 1.5 ? C.amber : C.muted }}>EV {r.ev.toFixed(2)}</span>
+            <span style={{ fontSize: 9, color: C.sub }}>R:R {r.rr?.toFixed(1) ?? '—'}</span>
+          </div>
+        )}
       </div>
-      {isActive && (
-        <div style={{ marginTop: 3, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 9, color: '#888' }}>₹{r.price.toFixed(0)}</span>
-          <span style={{ fontSize: 9, color: '#555' }}>conf {(r.confidence * 100).toFixed(0)}%</span>
-          <span style={{ fontSize: 9, color: '#555' }}>R:R {r.rr?.toFixed(1) ?? '—'}</span>
-          <span style={{ fontSize: 9, color: '#555' }}>RSI {r.rsi}</span>
-          {r.lenses?.length > 0 && (
-            <span style={{ fontSize: 9, color: '#666' }}>
-              {r.lenses.map(l => l.strategy).join('+')}
-            </span>
-          )}
+      {active && (
+        <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 9, color: C.muted }}>conf {(r.confidence*100).toFixed(0)}%</span>
+          <span style={{ fontSize: 9, color: C.muted }}>regime {r.regime}</span>
+          <span style={{ fontSize: 9, color: C.muted }}>RSI {r.rsi}</span>
+          <span style={{ fontSize: 9, color: C.muted }}>SL {r.suggested_sl > 0 ? inr(r.suggested_sl, 0) : '—'}</span>
+          <span style={{ fontSize: 9, color: C.muted }}>Tgt {r.suggested_target > 0 ? inr(r.suggested_target, 0) : '—'}</span>
+          {r.lenses?.length > 0 && <span style={{ fontSize: 9, color: C.dim }}>{r.lenses.map(l => l.strategy).join('＋')}</span>}
         </div>
       )}
-      {!isActive && r.side === 'NEUTRAL' && (
-        <div style={{ fontSize: 9, color: '#333', marginTop: 2 }}>
-          RSI {r.rsi} · {r.ret_20d > 0 ? '+' : ''}{r.ret_20d?.toFixed(1)}% 20d
-        </div>
-      )}
+      {!active && <div style={{ fontSize: 9, color: C.dim, marginTop: 2 }}>RSI {r.rsi} · {r.ret_20d > 0 ? '+' : ''}{r.ret_20d?.toFixed(1)}% 20d · {r.verdict}</div>}
     </div>
   )
 }
 
-function SignalRow({ s, tokenMap }: { s: SignalRec; tokenMap: TokenMap }) {
-  const label   = s.symbol ?? tokenMap[s.instrument_token] ?? `#${s.instrument_token}`
-  const conf    = s.confidence ? `${(s.confidence * 100).toFixed(0)}%` : ''
-  const ts      = new Date(s.decided_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  const approved = s.approved === 1
-
+function SigRow({ s, tokenMap }: { s: SignalRec; tokenMap: TokenMap }) {
+  const label = s.symbol ?? tokenMap[s.instrument_token] ?? `#${s.instrument_token}`
+  const ok    = s.approved === 1
   return (
     <div style={{
-      borderLeft: `2px solid ${approved ? '#16a34a' : '#444'}`,
-      margin: '2px 8px', padding: '4px 6px',
-      borderRadius: '0 3px 3px 0', background: '#0d0d0d',
+      display: 'grid', gridTemplateColumns: '52px 14px 100px 56px 56px 1fr',
+      gap: 8, padding: '5px 10px', borderBottom: `1px solid ${C.border}`,
+      alignItems: 'center', background: ok ? '#00C8530A' : 'transparent',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: '#e5e5e5' }}>{label}</span>
-        <span style={{ fontSize: 9, color: '#333' }}>{ts}</span>
-      </div>
-      <div style={{ display: 'flex', gap: 4, marginTop: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-        {s.side && <SidePill side={s.side} />}
-        <span style={{ fontSize: 10, color: '#666' }}>{s.strategy_id}</span>
-        {conf && <span style={{ fontSize: 9, color: '#555' }}>conf {conf}</span>}
-        {approved
-          ? <span style={{ fontSize: 9, color: '#4ade80' }}>⚡ fired</span>
-          : <span style={{ fontSize: 9, color: '#555' }}>✗ {s.reason?.replace(/_/g, ' ')}</span>}
-      </div>
+      <span style={{ fontSize: 8, color: C.dim, fontVariantNumeric: 'tabular-nums' }}>{tsFmt(s.decided_at)}</span>
+      <span style={{ fontSize: 10, color: ok ? C.green : C.red, fontWeight: 700 }}>{ok ? '✓' : '✗'}</span>
+      <span style={{ fontSize: 10, fontWeight: 700, color: C.text }}>{label}</span>
+      {s.side ? <Side v={s.side} /> : <span />}
+      <span style={{ fontSize: 9, color: C.amber }}>{s.strategy_id}</span>
+      <span style={{ fontSize: 9, color: ok ? C.muted : C.red, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {ok ? `conf ${((s.confidence ?? 0)*100).toFixed(0)}% · ${s.regime ?? ''}` : s.reason ?? 'rejected'}
+      </span>
     </div>
   )
 }
 
-function JournalRow({ j, tokenMap }: { j: JournalEntry; tokenMap: TokenMap }) {
-  const label   = j.instrument_token ? (tokenMap[j.instrument_token] ?? `#${j.instrument_token}`) : '—'
-  const pnl     = j.net_pnl ?? null
-  const pnlPos  = pnl != null && pnl > 0
-  const status  = j.review_status ?? 'pending'
-  const statusColor = status === 'reviewed' ? '#4ade80' : status === 'pending' ? '#fbbf24' : '#555'
-  const rating  = j.rating ? '★'.repeat(Math.min(5, j.rating)) + '☆'.repeat(Math.max(0, 5 - j.rating)) : null
+// ── Trade Inspector (Right Rail) ──────────────────────────────────────────────
+function TradeInspector({
+  kind, id, positions, trades, ticks, tokenMap, onClose, instruments, equity,
+}: {
+  kind: 'position' | 'trade' | 'order' | null
+  id: string | null
+  positions: Position[]
+  trades: Trade[]
+  ticks: ReturnType<typeof useTickMap>
+  tokenMap: TokenMap
+  onClose: () => void
+  instruments: Instrument[]
+  equity: number
+}) {
+  const [orderTab, setOrderTab] = useState(false)
+
+  const pos   = kind === 'position' ? positions.find(p => p.trade_id === id) : null
+  const trade = kind === 'trade'    ? trades.find(t => t.trade_id === id)    : null
+  const showOrder = kind === 'order' || orderTab
+
+  const live  = pos ? ticks[pos.instrument_id]?.last_price ?? null : null
+  const sign  = pos?.side === 'BUY' ? 1 : -1
+  const unr   = pos && live != null ? sign * (live - pos.entry_price) * pos.quantity : null
+  const unrPct = pos && live != null ? sign * (live / pos.entry_price - 1) * 100 : null
+  const toSL  = pos && live != null && pos.stop_loss ? Math.abs(live - pos.stop_loss) / live * 100 * (pos.side === 'BUY' ? 1 : -1) * (live > pos.stop_loss ? 1 : -1) : null
+  const toTgt = pos && live != null && pos.target ? Math.abs(pos.target - live) / live * 100 : null
+
+  const [prefill, setPrefill] = useState<{ symbol: string; side: 'BUY'|'SELL'; sl?: number; target?: number } | null>(null)
 
   return (
-    <div style={{
-      borderLeft: `2px solid ${pnlPos ? '#16a34a' : pnl != null && pnl < 0 ? '#7f1d1d' : '#1e1e1e'}`,
-      margin: '2px 8px', padding: '5px 7px',
-      borderRadius: '0 3px 3px 0', background: '#0d0d0d',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#e5e5e5' }}>{label}</span>
-          {j.side && <SidePill side={j.side} />}
-          {j.strategy_id && <span style={{ fontSize: 9, color: '#555' }}>{j.strategy_id}</span>}
-        </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          {pnl != null && <PnlSpan v={pnl} />}
-          <span style={{ fontSize: 8, color: statusColor, letterSpacing: '0.06em' }}>{status.toUpperCase()}</span>
-        </div>
+    <div style={{ width: 270, display: 'flex', flexDirection: 'column', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '7px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        <span style={{ fontSize: 9, color: C.muted, letterSpacing: '.07em', fontWeight: 700, flex: 1 }}>
+          {showOrder ? 'ORDER TICKET' : kind === 'position' ? 'POSITION DETAIL' : kind === 'trade' ? 'TRADE DETAIL' : 'ORDER TICKET'}
+        </span>
+        {!showOrder && <button onClick={() => setOrderTab(true)} style={{ fontSize: 9, color: C.amber, background: 'none', border: `1px solid ${C.amber}33`, borderRadius: 3, padding: '2px 7px', cursor: 'pointer', marginRight: 6 }}>⊕ ORDER</button>}
+        {showOrder && kind !== 'order' && <button onClick={() => setOrderTab(false)} style={{ fontSize: 9, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', marginRight: 6 }}>← BACK</button>}
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 12 }}>✕</button>
       </div>
-      {j.entry_reason && (
-        <div style={{ fontSize: 9, color: '#666', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          ↳ {j.entry_reason}
-        </div>
-      )}
-      {j.exit_reason && (
-        <div style={{ fontSize: 9, color: '#555', marginTop: 1 }}>
-          <ReasonBadge reason={j.exit_reason} />
-        </div>
-      )}
-      {(j.lesson || j.manual_notes) && (
-        <div style={{ fontSize: 9, color: '#4b5563', marginTop: 3, fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {j.lesson || j.manual_notes}
-        </div>
-      )}
-      {rating && (
-        <div style={{ fontSize: 9, color: '#854d0e', marginTop: 2 }}>{rating}</div>
-      )}
-    </div>
-  )
-}
 
-// ── Open Positions ─────────────────────────────────────────────────────────────
-
-function OpenPositions({ tokenMap, refresh }: { tokenMap: TokenMap; refresh: number }) {
-  const [positions, setPositions] = useState<Position[]>([])
-  const [closing,   setClosing]   = useState<Set<string>>(new Set())
-  const ticks       = useTickMap()
-  const tradeOpened = useSocketEvent<Position | null>('trade_opened', null)
-  const tradeClosed = useSocketEvent<{ trade_id: string } | null>('trade_closed', null)
-
-  const load = useCallback(() => {
-    api.positions().then(setPositions).catch(() => {})
-  }, [])
-
-  useEffect(() => { load() }, [refresh, load])
-  useEffect(() => {
-    if (tradeOpened) setPositions(prev => [tradeOpened, ...prev.filter(p => p.trade_id !== tradeOpened.trade_id)])
-  }, [tradeOpened])
-  useEffect(() => {
-    if (tradeClosed) {
-      setPositions(prev => prev.filter(p => p.trade_id !== tradeClosed.trade_id))
-      setClosing(prev => { const s = new Set(prev); s.delete(tradeClosed.trade_id); return s })
-    }
-  }, [tradeClosed])
-
-  async function closePos(tradeId: string) {
-    setClosing(prev => new Set(prev).add(tradeId))
-    try { await api.closePosition(tradeId) }
-    catch { setClosing(prev => { const s = new Set(prev); s.delete(tradeId); return s }) }
-  }
-
-  return (
-    <div className="panel h-full" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <div className="panel-header justify-between">
-        <span><span className="accent">▸</span> OPEN POSITIONS</span>
-        <span style={{ fontSize: 10, color: '#444' }}>{positions.length}/10</span>
-      </div>
-      <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        {positions.length === 0
-          ? <p style={{ color: '#333', textAlign: 'center', marginTop: 12, fontSize: 11 }}>No open positions</p>
-          : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Symbol</th><th>Side</th><th>Qty</th>
-                  <th>Entry</th><th>Live</th><th>Unreal</th><th>%</th>
-                  <th>→SL</th><th>→Tgt</th><th>Age</th><th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {positions.map(pos => {
-                  const tick   = ticks[pos.instrument_id]
-                  const live   = tick?.last_price ?? null
-                  const sign   = pos.side === 'BUY' ? 1 : -1
-                  const unr    = live != null ? sign * (live - pos.entry_price) * pos.quantity : null
-                  const unrPct = live != null ? sign * (live / pos.entry_price - 1) * 100 : null
-                  const toSl   = live != null && pos.stop_loss
-                    ? (pos.side === 'BUY' ? (live - pos.stop_loss) / live * 100 : (pos.stop_loss - live) / live * 100) : null
-                  const toTgt  = live != null && pos.target
-                    ? (pos.side === 'BUY' ? (pos.target - live) / live * 100 : (live - pos.target) / live * 100) : null
-                  const openedMs = pos.opened_at ? new Date(pos.opened_at).getTime() : Date.now()
-                  const isClos   = closing.has(pos.trade_id)
-                  const label    = sym(pos.instrument_id, tokenMap)
-
-                  return (
-                    <tr key={pos.trade_id} style={{ opacity: isClos ? 0.4 : 1 }}>
-                      <td style={{ color: '#e5e5e5', fontWeight: 600 }}>{label}</td>
-                      <td><Badge variant="side" value={pos.side} /></td>
-                      <td>{pos.quantity}</td>
-                      <td style={{ color: '#888' }}>{pos.entry_price.toFixed(2)}</td>
-                      <td style={{ color: '#ccc' }}>{live?.toFixed(2) ?? '—'}</td>
-                      <td><PnlSpan v={unr} /></td>
-                      <td style={{ color: (unrPct ?? 0) >= 0 ? '#4ade80' : '#f87171', fontSize: 10 }}>
-                        {unrPct != null ? `${unrPct >= 0 ? '+' : ''}${unrPct.toFixed(2)}%` : '—'}
-                      </td>
-                      <td style={{ color: toSl != null && toSl < 0.5 ? '#f87171' : '#666', fontSize: 10 }}>
-                        {toSl != null ? `${toSl.toFixed(2)}%` : '—'}
-                      </td>
-                      <td style={{ color: '#4ade80', fontSize: 10 }}>
-                        {toTgt != null ? `${toTgt.toFixed(2)}%` : '—'}
-                      </td>
-                      <td style={{ color: '#555', fontSize: 10 }}>{age(openedMs)}</td>
-                      <td>
-                        <button onClick={() => !isClos && closePos(pos.trade_id)} disabled={isClos}
-                          style={{ padding: '2px 6px', fontSize: 10, cursor: isClos ? 'wait' : 'pointer',
-                                   background: '#1a0000', border: '1px solid #7f1d1d', color: '#f87171', borderRadius: 3 }}>
-                          {isClos ? '…' : '✕'}
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )
-        }
+      <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px' }}>
+        {showOrder ? (
+          <InlineOrderTicket instruments={instruments} equity={equity} prefill={prefill} ticks={ticks} />
+        ) : pos ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{useSym(pos.instrument_id, tokenMap)}</span>
+              <Side v={pos.side} />
+              <span style={{ fontSize: 9, color: C.amber, fontWeight: 600 }}>{pos.strategy_id}</span>
+            </div>
+            <div style={{ background: '#080808', borderRadius: 4, padding: '10px' }}>
+              <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 2 }}><Pnl v={unr} size={20} /></div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <Pct v={unrPct} />
+                <span style={{ fontSize: 9, color: C.muted }}>{pos.quantity} shares</span>
+              </div>
+            </div>
+            {[
+              ['Entry price', pos.entry_price.toFixed(2)],
+              ['Live price', live?.toFixed(2) ?? '—'],
+              ['Quantity', pos.quantity],
+              ['Stop loss', pos.stop_loss?.toFixed(2) ?? '—'],
+              ['Target', pos.target?.toFixed(2) ?? '—'],
+              ['Dist to SL', toSL != null ? `${toSL.toFixed(2)}%` : '—'],
+              ['Dist to Tgt', toTgt != null ? `${toTgt.toFixed(2)}%` : '—'],
+              ['Regime', pos.regime ?? '—'],
+              ['Age', pos.opened_at ? ageFmt(new Date(pos.opened_at).getTime()) : '—'],
+            ].map(([k, v]) => (
+              <div key={String(k)} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: 9, color: C.muted }}>{k}</span>
+                <span style={{ fontSize: 9, color: C.text, fontVariantNumeric: 'tabular-nums' }}>{String(v)}</span>
+              </div>
+            ))}
+            <button onClick={() => { setPrefill({ symbol: useSym(pos.instrument_id, tokenMap), side: pos.side === 'BUY' ? 'SELL' : 'BUY' }); setOrderTab(true) }}
+              style={{ marginTop: 4, padding: '7px', width: '100%', fontSize: 10, fontWeight: 700, borderRadius: 3, cursor: 'pointer', background: pos.side === 'BUY' ? '#1A0004' : '#001A08', color: pos.side === 'BUY' ? C.red : C.green, border: `1px solid ${pos.side === 'BUY' ? C.red + '44' : C.green + '44'}` }}>
+              CLOSE POSITION
+            </button>
+          </div>
+        ) : trade ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{useSym(trade.instrument_token, tokenMap)}</span>
+              <Side v={trade.side} />
+              <span style={{ fontSize: 9, color: C.amber }}>{trade.strategy_id}</span>
+            </div>
+            <div style={{ background: '#080808', borderRadius: 4, padding: '10px' }}>
+              <div style={{ fontSize: 20, fontWeight: 700 }}><Pnl v={trade.net_pnl} size={20} /></div>
+            </div>
+            {[
+              ['Entry', trade.entry_price.toFixed(2)],
+              ['Exit', trade.exit_price?.toFixed(2) ?? '—'],
+              ['Qty', trade.quantity],
+              ['Duration', trade.exit_time ? durFmt(trade.entry_time, typeof trade.exit_time === 'number' ? trade.exit_time : new Date(trade.exit_time).getTime()) : '—'],
+              ['Exit reason', trade.exit_reason ?? '—'],
+              ['Regime', trade.regime_at_entry ?? '—'],
+              ['Confidence', trade.confidence != null ? `${(trade.confidence*100).toFixed(0)}%` : '—'],
+            ].map(([k, v]) => (
+              <div key={String(k)} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: 9, color: C.muted }}>{k}</span>
+                <span style={{ fontSize: 9, color: C.text, fontVariantNumeric: 'tabular-nums' }}>{String(v)}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   )
 }
 
-// ── Closed Trades ─────────────────────────────────────────────────────────────
-
-function ClosedTrades({ tokenMap, refresh }: { tokenMap: TokenMap; refresh: number }) {
-  const [trades, setTrades]  = useState<Trade[]>([])
-  const [filter, setFilter]  = useState('')
-  const tradeClosed = useSocketEvent<Trade | null>('trade_closed', null)
-
-  useEffect(() => { api.tradesClosed(80).then(setTrades).catch(() => {}) }, [refresh])
-  useEffect(() => {
-    if (tradeClosed) setTrades(prev => [tradeClosed, ...prev].slice(0, 80))
-  }, [tradeClosed])
-
-  const rows = filter
-    ? trades.filter(t =>
-        (t.strategy_id?.toLowerCase().includes(filter.toLowerCase())) ||
-        (tokenMap[t.instrument_token]?.toLowerCase().includes(filter.toLowerCase()))
-      )
-    : trades
-
-  function duration(t: Trade) {
-    if (!t.exit_time || !t.entry_time) return '—'
-    const s = Math.floor((t.exit_time - t.entry_time) / 1000)
-    if (s < 60)   return `${s}s`
-    if (s < 3600) return `${Math.floor(s/60)}m`
-    return `${Math.floor(s/3600)}h`
-  }
-
-  return (
-    <div className="panel h-full" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <div className="panel-header justify-between">
-        <span><span className="accent">▸</span> CLOSED TRADES</span>
-        <input value={filter} onChange={e => setFilter(e.target.value)}
-          placeholder="filter…"
-          style={{ background: '#111', border: '1px solid #1e1e1e', color: '#666', fontSize: 10, padding: '2px 6px', borderRadius: 3, width: 90 }} />
-      </div>
-      <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        {rows.length === 0
-          ? <p style={{ color: '#333', textAlign: 'center', marginTop: 12, fontSize: 11 }}>No closed trades</p>
-          : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Symbol</th><th>Side</th><th>Qty</th>
-                  <th>Entry</th><th>Exit</th><th>P&L</th>
-                  <th>Dur</th><th>Reason</th><th>Strat</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(t => (
-                  <tr key={t.trade_id}>
-                    <td style={{ color: '#e5e5e5', fontWeight: 600 }}>{sym(t.instrument_token, tokenMap)}</td>
-                    <td><Badge variant="side" value={t.side} /></td>
-                    <td>{t.quantity}</td>
-                    <td style={{ color: '#888' }}>{t.entry_price.toFixed(2)}</td>
-                    <td style={{ color: '#888' }}>{t.exit_price?.toFixed(2) ?? '—'}</td>
-                    <td><PnlSpan v={t.net_pnl} /></td>
-                    <td style={{ color: '#555', fontSize: 10 }}>{duration(t)}</td>
-                    <td><ReasonBadge reason={t.exit_reason} /></td>
-                    <td style={{ color: '#555', fontSize: 10 }}>{t.strategy_id}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )
-        }
-      </div>
-    </div>
-  )
-}
-
-// ── Order Ticket ──────────────────────────────────────────────────────────────
-
-function OrderTicket({
-  instruments, tokenMap, prefill, equity, onFilled,
+// ── Inline Order Ticket ───────────────────────────────────────────────────────
+function InlineOrderTicket({
+  instruments, equity, prefill, ticks,
 }: {
   instruments: Instrument[]
-  tokenMap: TokenMap
-  prefill: { symbol: string; side: 'BUY' | 'SELL'; sl?: number; target?: number } | null
   equity: number
-  onFilled: () => void
+  prefill: { symbol: string; side: 'BUY'|'SELL'; sl?: number; target?: number } | null
+  ticks: ReturnType<typeof useTickMap>
 }) {
-  const [symbol,  setSymbol]  = useState('')
-  const [search,  setSearch]  = useState('')
-  const [side,    setSide]    = useState<'BUY' | 'SELL'>('BUY')
+  const [sym2,    setSym]     = useState(prefill?.symbol ?? '')
+  const [search,  setSearch]  = useState(prefill?.symbol ?? '')
+  const [side,    setSide]    = useState<'BUY'|'SELL'>(prefill?.side ?? 'BUY')
   const [qty,     setQty]     = useState('')
-  const [sl,      setSl]      = useState('')
-  const [target,  setTarget]  = useState('')
-  const [lp,      setLp]      = useState('')
+  const [sl,      setSl]      = useState(prefill?.sl?.toFixed(2) ?? '')
+  const [target,  setTarget]  = useState(prefill?.target?.toFixed(2) ?? '')
   const [loading, setLoading] = useState(false)
   const [msg,     setMsg]     = useState<{ ok: boolean; text: string } | null>(null)
   const [confirm, setConfirm] = useState(false)
-  const ticks = useTickMap()
 
   useEffect(() => {
     if (!prefill) return
-    setSymbol(prefill.symbol); setSearch(prefill.symbol); setSide(prefill.side)
-    if (prefill.sl)     setSl(prefill.sl.toFixed(2))
+    setSym(prefill.symbol); setSearch(prefill.symbol); setSide(prefill.side)
+    if (prefill.sl) setSl(prefill.sl.toFixed(2))
     if (prefill.target) setTarget(prefill.target.toFixed(2))
-    setMsg(null); setConfirm(false)
   }, [prefill])
 
-  const eqInstruments = instruments.filter(i => i.type === 'EQ' || i.type === 'INDEX')
-  const filtered = search ? eqInstruments.filter(i => i.symbol.toLowerCase().startsWith(search.toLowerCase())) : eqInstruments
-  const showDrop = search.length > 0 && filtered.length > 0 && filtered[0].symbol !== search
+  const inst   = instruments.find(i => i.symbol === sym2)
+  const live   = inst ? ticks[inst.token]?.last_price : null
+  const filt   = search ? instruments.filter(i => i.type !== 'VIX' && i.symbol.toLowerCase().startsWith(search.toLowerCase())) : []
+  const showD  = filt.length > 0 && filt[0].symbol !== search
 
-  const selInst    = eqInstruments.find(i => i.symbol === symbol)
-  const livePrice  = selInst ? ticks[selInst.token]?.last_price : null
-
-  function autoSL(pct: number) {
-    if (!livePrice) return
-    const p = lp ? parseFloat(lp) : livePrice
-    setSl((side === 'BUY' ? p * (1 - pct) : p * (1 + pct)).toFixed(2))
-  }
-  function autoTarget(pct: number) {
-    if (!livePrice) return
-    const p = lp ? parseFloat(lp) : livePrice
-    setTarget((side === 'BUY' ? p * (1 + pct) : p * (1 - pct)).toFixed(2))
-  }
-  function autoSize() {
-    if (!livePrice) return
-    const p    = lp ? parseFloat(lp) : livePrice
-    const cap  = Math.min(equity * 0.05, 100_000)
-    setQty(String(Math.max(1, Math.floor(cap / p))))
+  function autoSz() {
+    if (!live) return
+    const cap = Math.min(equity * 0.05, 100_000)
+    setQty(String(Math.max(1, Math.floor(cap / live))))
   }
 
-  const notional = livePrice && qty ? (parseFloat(qty) || 0) * livePrice : null
-  const slPrice  = sl     ? parseFloat(sl)     : null
-  const risk     = slPrice && livePrice && qty ? Math.abs((livePrice - slPrice) * (parseFloat(qty) || 0)) : null
-  const rrText   = slPrice && target && livePrice
-    ? (() => {
-        const r = Math.abs(livePrice - slPrice)
-        const w = Math.abs(parseFloat(target) - livePrice)
-        return r > 0 ? `R:R ${(w/r).toFixed(1)}` : ''
-      })() : ''
+  const notional = live && qty ? parseFloat(qty) * live : null
+  const rr = sl && target && live ? (() => {
+    const r = Math.abs(live - parseFloat(sl)), w = Math.abs(parseFloat(target) - live)
+    return r > 0 ? `R:R ${(w/r).toFixed(1)}` : ''
+  })() : ''
 
   async function submit() {
-    if (!symbol || !qty || !confirm) { setConfirm(true); return }
+    if (!sym2 || !qty) return
+    if (!confirm) { setConfirm(true); return }
     setLoading(true); setMsg(null); setConfirm(false)
     try {
-      const res = await api.manualOrder({
-        symbol, side,
-        quantity:    parseInt(qty),
-        stop_loss:   sl     ? parseFloat(sl)     : undefined,
-        target:      target ? parseFloat(target) : undefined,
-        limit_price: lp     ? parseFloat(lp)     : undefined,
-      })
-      if (res.ok) {
-        setMsg({ ok: true, text: `Filled: ${side} ${qty}× ${symbol}` })
-        setQty(''); setSl(''); setTarget(''); setLp(''); setSearch(''); setSymbol('')
-        onFilled()
-      } else {
-        setMsg({ ok: false, text: res.error ?? 'Order rejected' })
-      }
-    } catch {
-      setMsg({ ok: false, text: 'Network error' })
-    } finally { setLoading(false) }
+      const res = await api.manualOrder({ symbol: sym2, side, quantity: parseInt(qty), stop_loss: sl ? parseFloat(sl) : undefined, target: target ? parseFloat(target) : undefined })
+      if (res.ok) { setMsg({ ok: true, text: `Filled ${side} ${qty}× ${sym2}` }); setQty(''); setSl(''); setTarget('') }
+      else setMsg({ ok: false, text: res.error ?? 'Rejected' })
+    } catch { setMsg({ ok: false, text: 'Network error' }) }
+    finally { setLoading(false) }
   }
 
-  const inp = {
-    width: '100%', background: '#161616', border: '1px solid #242424',
-    color: '#e5e5e5', fontSize: 12, padding: '4px 7px', borderRadius: 3,
-    boxSizing: 'border-box' as const,
-  }
+  const inp = { width: '100%', background: '#090909', border: `1px solid ${C.border}`, color: C.text, fontSize: 11, padding: '4px 7px', borderRadius: 3, boxSizing: 'border-box' as const }
 
   return (
-    <div className="panel h-full" style={{ display: 'flex', flexDirection: 'column' }}>
-      <div className="panel-header justify-between">
-        <span><span className="accent">▸</span> ORDER TICKET</span>
-        {livePrice != null && symbol && (
-          <span style={{ fontSize: 11, color: '#4ade80' }}>{symbol} ₹{livePrice.toFixed(2)}</span>
-        )}
-      </div>
-      <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6, flex: 1, overflow: 'auto' }}>
-        {/* Symbol */}
-        <div style={{ position: 'relative' }}>
-          <label style={{ fontSize: 9, color: '#444', display: 'block', marginBottom: 2 }}>SYMBOL</label>
-          <input value={search} onChange={e => { setSearch(e.target.value); setSymbol('') }}
-            placeholder="type to search…" style={{ ...inp, color: symbol ? '#4ade80' : '#e5e5e5' }} />
-          {showDrop && (
-            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
-                          background: '#161616', border: '1px solid #2a2a2a', borderRadius: 3,
-                          maxHeight: 140, overflow: 'auto' }}>
-              {filtered.slice(0, 10).map(i => (
-                <div key={i.token} onClick={() => { setSymbol(i.symbol); setSearch(i.symbol) }}
-                  style={{ padding: '4px 8px', fontSize: 11, cursor: 'pointer', color: '#ccc' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#1e1e1e')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                  {i.symbol} <span style={{ fontSize: 9, color: '#444' }}>{i.type}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Side */}
-        <div style={{ display: 'flex', gap: 6 }}>
-          {(['BUY', 'SELL'] as const).map(s => (
-            <button key={s} onClick={() => { setSide(s); setSl(''); setTarget('') }}
-              style={{
-                flex: 1, padding: '5px 0', fontSize: 11, fontWeight: 700,
-                borderRadius: 3, cursor: 'pointer', border: 'none', letterSpacing: '0.08em',
-                background: side === s ? (s === 'BUY' ? '#14532d' : '#7f1d1d') : '#1a1a1a',
-                color: side === s ? (s === 'BUY' ? '#4ade80' : '#f87171') : '#444',
-              }}
-            >{s}</button>
-          ))}
-        </div>
-
-        {/* Qty */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-            <label style={{ fontSize: 9, color: '#444' }}>QTY</label>
-            <button onClick={autoSize} disabled={!livePrice}
-              style={{ fontSize: 9, color: '#555', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-              auto-size
-            </button>
-          </div>
-          <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} placeholder="0" style={inp} />
-          {notional != null && (
-            <div style={{ fontSize: 9, color: '#444', marginTop: 2 }}>
-              {fmtINR(notional)} notional{risk != null ? ` · Risk ${fmtINR(risk)}` : ''}{rrText ? ` · ${rrText}` : ''}
-            </div>
-          )}
-        </div>
-
-        {/* SL */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-            <label style={{ fontSize: 9, color: '#f87171' }}>STOP LOSS</label>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {[0.5, 1, 1.5, 2].map(p => (
-                <button key={p} onClick={() => autoSL(p / 100)} disabled={!livePrice}
-                  style={{ fontSize: 8, color: '#555', background: 'none', border: '1px solid #1e1e1e', cursor: 'pointer', padding: '1px 4px', borderRadius: 2 }}>
-                  -{p}%
-                </button>
-              ))}
-            </div>
-          </div>
-          <input type="number" value={sl} onChange={e => setSl(e.target.value)} placeholder="0"
-            style={{ ...inp, color: '#f87171' }} />
-        </div>
-
-        {/* Target */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-            <label style={{ fontSize: 9, color: '#4ade80' }}>TARGET</label>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {[1, 2, 3, 5].map(p => (
-                <button key={p} onClick={() => autoTarget(p / 100)} disabled={!livePrice}
-                  style={{ fontSize: 8, color: '#555', background: 'none', border: '1px solid #1e1e1e', cursor: 'pointer', padding: '1px 4px', borderRadius: 2 }}>
-                  +{p}%
-                </button>
-              ))}
-            </div>
-          </div>
-          <input type="number" value={target} onChange={e => setTarget(e.target.value)} placeholder="0"
-            style={{ ...inp, color: '#4ade80' }} />
-        </div>
-
-        {/* Submit */}
-        {confirm ? (
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button onClick={submit} style={{
-              flex: 2, padding: '7px 0', fontSize: 11, fontWeight: 700, borderRadius: 3,
-              cursor: 'pointer', border: 'none', letterSpacing: '0.06em',
-              background: side === 'BUY' ? '#14532d' : '#7f1d1d',
-              color: side === 'BUY' ? '#4ade80' : '#f87171',
-            }}>CONFIRM {side}</button>
-            <button onClick={() => setConfirm(false)} style={{
-              flex: 1, padding: '7px 0', fontSize: 11, borderRadius: 3,
-              cursor: 'pointer', border: '1px solid #2a2a2a', background: '#111', color: '#666',
-            }}>CANCEL</button>
-          </div>
-        ) : (
-          <button onClick={submit} disabled={loading || !symbol || !qty}
-            style={{
-              padding: '7px 0', fontSize: 11, fontWeight: 700, borderRadius: 3,
-              cursor: loading || !symbol || !qty ? 'not-allowed' : 'pointer',
-              border: 'none', letterSpacing: '0.08em',
-              background: loading || !symbol || !qty ? '#1a1a1a' : (side === 'BUY' ? '#14532d' : '#7f1d1d'),
-              color: loading || !symbol || !qty ? '#333' : (side === 'BUY' ? '#4ade80' : '#f87171'),
-            }}>{loading ? 'SENDING…' : `PLACE ${side}`}
-          </button>
-        )}
-
-        {msg && (
-          <div style={{ fontSize: 11, padding: '4px 7px', borderRadius: 3,
-                        background: msg.ok ? '#0a1f0a' : '#1f0a0a',
-                        color: msg.ok ? '#4ade80' : '#f87171',
-                        border: `1px solid ${msg.ok ? '#14532d' : '#7f1d1d'}` }}>
-            {msg.text}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {live != null && sym2 && <div style={{ fontSize: 11, color: C.green, fontWeight: 600 }}>{sym2} ₹{live.toFixed(2)}</div>}
+      <div style={{ position: 'relative' }}>
+        <label style={{ fontSize: 8, color: C.dim, display: 'block', marginBottom: 2 }}>SYMBOL</label>
+        <input value={search} onChange={e => { setSearch(e.target.value); setSym('') }} placeholder="search…" style={{ ...inp, color: sym2 ? C.green : C.text }} />
+        {showD && (
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#111', border: `1px solid ${C.border2}`, borderRadius: 3, maxHeight: 120, overflow: 'auto' }}>
+            {filt.slice(0, 8).map(i => (
+              <div key={i.token} onClick={() => { setSym(i.symbol); setSearch(i.symbol) }}
+                style={{ padding: '4px 8px', fontSize: 10, cursor: 'pointer', color: C.sub }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#1A1A1A')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                {i.symbol}
+              </div>
+            ))}
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-// ── Learning Engine ───────────────────────────────────────────────────────────
-
-function LearnerPanel({ stats, refresh }: { stats: TradeStats | null; refresh: number }) {
-  const [params, setParams]   = useState<LearnerParams[]>([])
-  const paramsUpdate = useSocketEvent<LearnerParams | null>('learner_params_updated', null)
-  const eodReset     = useSocketEvent<{ date: string; equity: number } | null>('settlement_eod_reset', null)
-  const [lastEvent,  setLastEvent] = useState<string | null>(null)
-
-  useEffect(() => { api.learnerParams().then(setParams).catch(() => {}) }, [refresh])
-  useEffect(() => {
-    if (!paramsUpdate) return
-    setParams(prev => {
-      const i = prev.findIndex(p => p.strategy_id === paramsUpdate.strategy_id)
-      if (i >= 0) { const n = [...prev]; n[i] = paramsUpdate; return n }
-      return [...prev, paramsUpdate]
-    })
-  }, [paramsUpdate])
-  useEffect(() => {
-    if (eodReset) setLastEvent(`EOD reset ${eodReset.date} · equity ₹${Math.round(eodReset.equity).toLocaleString('en-IN')}`)
-  }, [eodReset])
-
-  // Settlement countdown
-  const istOffset   = 5.5 * 60 * 60 * 1000
-  const now         = new Date()
-  const istNow      = new Date(now.getTime() + istOffset - now.getTimezoneOffset() * 60000)
-  const settToday   = new Date(istNow); settToday.setHours(15, 30, 0, 0)
-  const msToSett    = settToday.getTime() - istNow.getTime()
-  const settLabel   = msToSett > 0
-    ? `EOD in ${Math.floor(msToSett / 3600000)}h ${Math.floor((msToSett % 3600000) / 60000)}m`
-    : 'post-market'
-
-  // Strategy attribution
-  const byStrat = stats?.by_strategy
-    ? Object.entries(stats.by_strategy).sort((a, b) => b[1].pnl - a[1].pnl)
-    : []
-
-  return (
-    <div className="panel h-full" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <div className="panel-header justify-between">
-        <span><span className="accent">▸</span> LEARNING ENGINE</span>
-        <span style={{ fontSize: 9, color: '#444' }}>{settLabel}</span>
+      <div style={{ display: 'flex', gap: 5 }}>
+        {(['BUY','SELL'] as const).map(s => (
+          <button key={s} onClick={() => setSide(s)} style={{
+            flex: 1, padding: '5px 0', fontSize: 10, fontWeight: 700, cursor: 'pointer', borderRadius: 3, border: 'none', letterSpacing: '.07em',
+            background: side === s ? (s === 'BUY' ? '#001A08' : '#1A0004') : '#111',
+            color: side === s ? (s === 'BUY' ? C.green : C.red) : C.muted,
+          }}>{s}</button>
+        ))}
       </div>
-      <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        {lastEvent && (
-          <div style={{ fontSize: 9, color: '#a78bfa', background: '#1a0a2e', padding: '3px 8px', marginBottom: 6, borderRadius: 3 }}>
-            {lastEvent}
-          </div>
-        )}
-
-        {/* Attribution */}
-        {byStrat.length > 0 && (
-          <>
-            <div style={{ fontSize: 9, color: '#444', letterSpacing: '0.08em', padding: '2px 0 4px' }}>ATTRIBUTION</div>
-            <table style={{ fontSize: 10, marginBottom: 8 }}>
-              <thead><tr><th>Strategy</th><th>N</th><th>WR</th><th>P&L</th></tr></thead>
-              <tbody>
-                {byStrat.map(([sid, rec]) => (
-                  <tr key={sid}>
-                    <td style={{ color: '#ccc', fontSize: 10 }}>{sid}</td>
-                    <td style={{ color: '#555', fontSize: 10 }}>{rec.trades}</td>
-                    <td style={{ fontSize: 10, color: rec.win_rate >= 0.5 ? '#4ade80' : '#f87171' }}>
-                      {(rec.win_rate * 100).toFixed(0)}%
-                    </td>
-                    <td><PnlSpan v={rec.pnl} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
-
-        {/* Adaptive params */}
-        {params.length > 0 && (
-          <>
-            <div style={{ fontSize: 9, color: '#444', letterSpacing: '0.08em', padding: '2px 0 4px' }}>ADAPTIVE PARAMS</div>
-            <table style={{ fontSize: 10 }}>
-              <thead>
-                <tr>
-                  <th>Strat</th>
-                  <th title="Min confidence">Conf</th>
-                  <th title="SL multiplier">SL×</th>
-                  <th title="Bayesian WR">BWR</th>
-                  <th title="Trades">N</th>
-                </tr>
-              </thead>
-              <tbody>
-                {params.sort((a, b) => a.strategy_id.localeCompare(b.strategy_id)).map(p => (
-                  <tr key={p.strategy_id}>
-                    <td style={{ color: '#ccc', fontWeight: 600 }}>{p.strategy_id}</td>
-                    <td style={{ color: p.min_confidence > 0.55 ? '#f87171' : p.min_confidence < 0.40 ? '#4ade80' : '#888' }}>
-                      {(p.min_confidence * 100).toFixed(0)}%
-                    </td>
-                    <td style={{ color: p.sl_multiplier > 2 ? '#fb923c' : '#888' }}>{p.sl_multiplier.toFixed(1)}×</td>
-                    <td style={{ color: p.bayes_wr >= 0.55 ? '#4ade80' : p.bayes_wr < 0.40 ? '#f87171' : '#888' }}>
-                      {(p.bayes_wr * 100).toFixed(0)}%
-                    </td>
-                    <td style={{ color: '#555' }}>{p.n_trades}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
-
-        {params.length === 0 && byStrat.length === 0 && (
-          <p style={{ color: '#333', textAlign: 'center', marginTop: 12, fontSize: 11 }}>Accumulating trades…</p>
-        )}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+          <label style={{ fontSize: 8, color: C.dim }}>QTY</label>
+          <button onClick={autoSz} disabled={!live} style={{ fontSize: 8, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>auto-size</button>
+        </div>
+        <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} placeholder="0" style={inp} />
+        {notional != null && <div style={{ fontSize: 8, color: C.muted, marginTop: 2 }}>{inr(notional)} notional{rr ? ` · ${rr}` : ''}</div>}
       </div>
+      <div>
+        <label style={{ fontSize: 8, color: C.red, display: 'block', marginBottom: 2 }}>STOP LOSS</label>
+        <input type="number" value={sl} onChange={e => setSl(e.target.value)} placeholder="0.00" style={{ ...inp, color: C.red }} />
+      </div>
+      <div>
+        <label style={{ fontSize: 8, color: C.green, display: 'block', marginBottom: 2 }}>TARGET</label>
+        <input type="number" value={target} onChange={e => setTarget(e.target.value)} placeholder="0.00" style={{ ...inp, color: C.green }} />
+      </div>
+      {confirm ? (
+        <div style={{ display: 'flex', gap: 5 }}>
+          <button onClick={submit} style={{ flex: 2, padding: '7px 0', fontSize: 10, fontWeight: 700, borderRadius: 3, cursor: 'pointer', border: 'none', background: side === 'BUY' ? '#001A08' : '#1A0004', color: side === 'BUY' ? C.green : C.red }}>CONFIRM {side}</button>
+          <button onClick={() => setConfirm(false)} style={{ flex: 1, padding: '7px 0', fontSize: 10, borderRadius: 3, cursor: 'pointer', border: `1px solid ${C.border}`, background: '#0A0A0A', color: C.muted }}>CANCEL</button>
+        </div>
+      ) : (
+        <button onClick={submit} disabled={loading || !sym2 || !qty} style={{
+          padding: '7px 0', fontSize: 10, fontWeight: 700, borderRadius: 3, letterSpacing: '.07em',
+          cursor: loading || !sym2 || !qty ? 'not-allowed' : 'pointer', border: 'none',
+          background: loading || !sym2 || !qty ? '#111' : (side === 'BUY' ? '#001A08' : '#1A0004'),
+          color: loading || !sym2 || !qty ? C.dim : (side === 'BUY' ? C.green : C.red),
+        }}>{loading ? 'SENDING…' : `PLACE ${side}`}</button>
+      )}
+      {msg && <div style={{ fontSize: 10, padding: '4px 7px', borderRadius: 3, background: msg.ok ? '#001A08' : '#1A0004', color: msg.ok ? C.green : C.red, border: `1px solid ${msg.ok ? C.green + '44' : C.red + '44'}` }}>{msg.text}</div>}
     </div>
   )
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
+type Tab  = 'book' | 'performance' | 'signals'
+type Sel  = { kind: 'position' | 'trade'; id: string } | { kind: 'order' } | null
 
 export default function TradePage() {
-  const [summary,  setSummary]  = useState<PortfolioSummary | null>(null)
-  const [stats,    setStats]    = useState<TradeStats | null>(null)
-  const [refresh,  setRefresh]  = useState(0)
-  // Prefill: symbol + side from signal click or orchestrator FIRE
-  const [prefill,  setPrefill]  = useState<{ symbol: string; side: 'BUY' | 'SELL'; sl?: number; target?: number } | null>(null)
-
+  const [tab,        setTab]       = useState<Tab>('book')
+  const [filter,     setFilter]    = useState('ALL')
+  const [sel,        setSel]       = useState<Sel>(null)
+  const [positions,  setPositions] = useState<Position[]>([])
+  const [trades,     setTrades]    = useState<Trade[]>([])
+  const [summary,    setSummary]   = useState<PortfolioSummary | null>(null)
+  const [stats,      setStats]     = useState<TradeStats | null>(null)
+  const [scorecards, setScorecards] = useState<Scorecard[]>([])
+  const [snapshots,  setSnapshots] = useState<Record<string, number>[]>([])
+  const ticks = useTickMap()
   const { instruments, tokenMap } = useInstrumentMap()
-  const pnlUpdate = useSocketEvent<{ equity: number; daily_pnl: number } | null>('pnl_update', null)
 
-  function loadMeta() {
-    api.portfolio().then(setSummary).catch(() => {})
-    api.tradeStats().then(setStats).catch(() => {})
-  }
+  const pnlUp  = useSocketEvent<{ equity: number; daily_pnl: number } | null>('pnl_update', null)
+  const opened = useSocketEvent<Position | null>('trade_opened', null)
+  const closed = useSocketEvent<{ trade_id: string } | null>('trade_closed', null)
 
-  useEffect(() => { loadMeta() }, [refresh])
-  useEffect(() => {
-    if (!pnlUpdate) return
-    setSummary(prev => prev ? { ...prev, equity: pnlUpdate.equity, daily_pnl: pnlUpdate.daily_pnl } : prev)
-  }, [pnlUpdate])
+  const load = useCallback(async () => {
+    const [p, t, s, st, sc, sn] = await Promise.allSettled([
+      api.positions(), api.tradesClosed(100), api.portfolio(), api.tradeStats(), api.scorecards(), api.portfolioSnapshots(90),
+    ])
+    if (p.status  === 'fulfilled') setPositions(p.value)
+    if (t.status  === 'fulfilled') setTrades(t.value)
+    if (s.status  === 'fulfilled') setSummary(s.value)
+    if (st.status === 'fulfilled') setStats(st.value)
+    if (sc.status === 'fulfilled') setScorecards(sc.value)
+    if (sn.status === 'fulfilled') setSnapshots(sn.value)
+  }, [])
 
-  function handleFilled() { setTimeout(() => setRefresh(r => r + 1), 600) }
+  useEffect(() => { load() }, [load])
+  useEffect(() => { const t = setInterval(load, 15_000); return () => clearInterval(t) }, [load])
+  useEffect(() => { if (pnlUp) setSummary(p => p ? { ...p, equity: pnlUp.equity, daily_pnl: pnlUp.daily_pnl } : p) }, [pnlUp])
+  useEffect(() => { if (opened) setPositions(p => [opened, ...p.filter(x => x.trade_id !== opened.trade_id)]) }, [opened])
+  useEffect(() => { if (closed) { setPositions(p => p.filter(x => x.trade_id !== closed.trade_id)); load() } }, [closed, load])
 
-  // Prefill order ticket from orchestrator FIRE button
-  function handleFire(r: OrchestratorResult) {
-    const symbol = r.symbol
-    if (!symbol || r.side === 'NEUTRAL' || r.side === 'SKIP') return
-    setPrefill({
-      symbol,
-      side: r.side as 'BUY' | 'SELL',
-      sl:     r.suggested_sl   > 0 ? r.suggested_sl   : undefined,
-      target: r.suggested_target > 0 ? r.suggested_target : undefined,
-    })
-  }
+  // Compute live unrealized
+  const unrealized = positions.reduce((s, pos) => {
+    const live = ticks[pos.instrument_id]?.last_price
+    if (!live) return s
+    return s + (pos.side === 'BUY' ? 1 : -1) * (live - pos.entry_price) * pos.quantity
+  }, 0)
+
+  const selId = sel && sel.kind !== 'order' ? sel.id : null
 
   return (
-    <div style={{
-      flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
-      overflow: 'hidden', padding: '6px 10px', gap: 6,
-    }}>
-      {/* Stats strip */}
-      <StatsStrip summary={summary} stats={stats} />
+    <>
+      <StyleTag />
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: C.bg, overflow: 'hidden' }}>
+        <AccountBar summary={summary} stats={stats} unrealized={unrealized} />
 
-      {/* Main grid: left=agent cockpit (tall), center=positions+trades, right=order+learner */}
-      <div style={{
-        flex: 1, minHeight: 0, display: 'grid',
-        gridTemplateColumns: '380px 1fr 280px',
-        gridTemplateRows: '1fr 1fr',
-        gap: 6,
-      }}>
-        {/* Left col: Agent Cockpit (spans both rows) */}
-        <div style={{ gridRow: '1 / 3', gridColumn: '1 / 2', minHeight: 0, overflow: 'hidden' }}>
-          <AgentCockpit tokenMap={tokenMap} onFire={handleFire} />
-        </div>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 8, padding: '8px 10px', overflow: 'hidden' }}>
+          {/* Left rail */}
+          <LeftRail filter={filter} onFilter={setFilter} stats={stats} scorecards={scorecards} />
 
-        {/* Center-top: Open positions */}
-        <div style={{ gridRow: '1 / 2', gridColumn: '2 / 3', minHeight: 0, overflow: 'hidden' }}>
-          <OpenPositions tokenMap={tokenMap} refresh={refresh} />
-        </div>
+          {/* Center */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {/* Tab bar */}
+            <div style={{ display: 'flex', alignItems: 'center', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden', flexShrink: 0, height: 34 }}>
+              {(['book', 'performance', 'signals'] as Tab[]).map(t => (
+                <button key={t} onClick={() => setTab(t)} style={{
+                  padding: '0 18px', height: '100%', fontSize: 9, fontWeight: tab === t ? 700 : 400,
+                  letterSpacing: '.08em', background: 'transparent', border: 'none',
+                  borderBottom: `2px solid ${tab === t ? C.amber : 'transparent'}`,
+                  color: tab === t ? C.amber : C.muted, cursor: 'pointer', textTransform: 'uppercase',
+                }}>{t === 'book' ? `BOOK (${positions.filter(p => filter === 'ALL' || p.strategy_id === filter).length})` : t.toUpperCase()}</button>
+              ))}
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setSel({ kind: 'order' })} style={{
+                height: '100%', padding: '0 14px', fontSize: 9, fontWeight: 700, background: '#001A08',
+                border: 'none', borderLeft: `1px solid ${C.border}`, color: C.green, cursor: 'pointer', letterSpacing: '.06em',
+              }}>⊕ ORDER</button>
+              <button onClick={load} style={{ height: '100%', padding: '0 12px', fontSize: 9, color: C.muted, background: 'none', border: 'none', borderLeft: `1px solid ${C.border}`, cursor: 'pointer' }}>↺</button>
+            </div>
 
-        {/* Center-bottom: Closed trades */}
-        <div style={{ gridRow: '2 / 3', gridColumn: '2 / 3', minHeight: 0, overflow: 'hidden' }}>
-          <ClosedTrades tokenMap={tokenMap} refresh={refresh} />
-        </div>
+            {/* Content */}
+            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              {tab === 'book' && (
+                <BookView positions={positions} trades={trades} ticks={ticks} tokenMap={tokenMap}
+                  filter={filter} selectedId={selId}
+                  onSelect={(id, kind) => setSel(s => s?.kind !== 'order' && s?.id === id ? null : { kind, id })}
+                />
+              )}
+              {tab === 'performance' && <PerformanceView stats={stats} scorecards={scorecards} snapshots={snapshots} />}
+              {tab === 'signals' && <SignalsView tokenMap={tokenMap} />}
+            </div>
+          </div>
 
-        {/* Right-top: Order ticket */}
-        <div style={{ gridRow: '1 / 2', gridColumn: '3 / 4', minHeight: 0, overflow: 'hidden' }}>
-          <OrderTicket
-            instruments={instruments}
-            tokenMap={tokenMap}
-            prefill={prefill}
-            equity={summary?.equity ?? 1_000_000}
-            onFilled={handleFilled}
-          />
-        </div>
-
-        {/* Right-bottom: Learning engine + attribution */}
-        <div style={{ gridRow: '2 / 3', gridColumn: '3 / 4', minHeight: 0, overflow: 'hidden' }}>
-          <LearnerPanel stats={stats} refresh={refresh} />
+          {/* Right inspector */}
+          {sel && (
+            <TradeInspector
+              kind={sel.kind}
+              id={sel.kind !== 'order' ? sel.id : null}
+              positions={positions} trades={trades} ticks={ticks} tokenMap={tokenMap}
+              onClose={() => setSel(null)}
+              instruments={instruments} equity={summary?.equity ?? 1_000_000}
+            />
+          )}
         </div>
       </div>
-    </div>
+    </>
   )
 }

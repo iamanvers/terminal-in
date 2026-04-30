@@ -25,7 +25,18 @@ class PaperTickAggregator:
         bus.subscribe('ticks.*', self._on_tick)
         log.info('PaperTickAggregator started')
 
+    @staticmethod
+    def _is_market_open() -> bool:
+        from datetime import datetime, timezone, timedelta
+        t = datetime.now(timezone(timedelta(hours=5, minutes=30)))
+        if t.weekday() >= 5:
+            return False
+        m = t.hour * 60 + t.minute
+        return 9 * 60 + 15 <= m <= 15 * 60 + 30
+
     def _on_tick(self, payload: dict):
+        if not self._is_market_open():
+            return  # never write bars outside NSE market hours
         token = payload.get('instrument_token') or payload.get('token')
         price = payload.get('last_price')
         if token is None or price is None:

@@ -67,6 +67,16 @@ html, body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #1E1E1E; border-radius: 2px; }
 
+/* Status dot animations */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .6; transform: scale(1.3); }
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .3; }
+}
+
 /* Flash animations */
 @keyframes flash-pos {
   0%, 100% { background: transparent; }

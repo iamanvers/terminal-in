@@ -171,6 +171,104 @@ export type JournalEntry = {
   net_pnl: number | null
 }
 
+export type AgentState = {
+  agent_id: string
+  agent_type: 'strategy' | 'orchestrator' | 'system'
+  description: string
+  status: 'running' | 'paused' | 'error' | 'idle'
+  last_heartbeat: number
+  heartbeat_age_s: number
+  last_eval_ts: number
+  last_signal_ts: number
+  eval_count: number
+  signal_count: number
+  confidence_threshold: number
+  last_error: string
+}
+
+export type KillSwitchState = {
+  global_pause: boolean
+  blocked_tokens: number[]
+}
+
+export type AuditEntry = {
+  ts: number
+  action: string
+  detail: string
+}
+
+export type DecisionRecord = {
+  decision_id: string
+  signal_id: string
+  strategy_id: string
+  instrument_token: number
+  approved: number        // 0 | 1
+  reason: string | null
+  decided_at: number
+  daily_pnl_at_decision: number | null
+  equity_at_decision: number | null
+  // joined from signal_lineage
+  side: 'BUY' | 'SELL' | null
+  confidence: number | null
+  regime: string | null
+  regime_confidence: number | null
+  trigger_rule: string | null
+  trade_id: string | null
+  trade_pnl: number | null
+  fill_price: number | null
+}
+
+export type SignalLineage = {
+  lineage_id: string
+  signal_id: string
+  strategy_id: string
+  instrument_token: number
+  side: 'BUY' | 'SELL' | null
+  generated_at: number
+  regime: string | null
+  regime_confidence: number | null
+  india_vix: number | null
+  indicators: Record<string, number> | null
+  trigger_rule: string | null
+  confidence: number | null
+  risk_approved: number
+  risk_checks: Record<string, boolean> | null
+  risk_reason: string | null
+  // fill / close outcome
+  fill_price: number | null
+  trade_id: string | null
+  trade_pnl: number | null
+  trade_exit_reason: string | null
+  trade_closed_at: number | null
+  // joined trade record (optional)
+  trade?: {
+    entry_price: number | null
+    exit_price: number | null
+    net_pnl: number | null
+    exit_reason: string | null
+    side: string | null
+    quantity: number | null
+  }
+}
+
+export type EventRecord = {
+  ts: number
+  topic: string
+  severity: 'info' | 'success' | 'warn' | 'critical'
+  summary: string
+  payload: Record<string, unknown>
+}
+
+export type SystemHealth = {
+  healthy: number
+  errored: number
+  paused: number
+  stale: number
+  total: number
+  health_pct: number
+  global_pause: boolean
+}
+
 export type SettlementEvent = {
   date: string
   positions_closed?: number
@@ -210,6 +308,7 @@ export const api = {
   scorecards: ()          => get<Scorecard[]>('/strategies/scorecards'),
   allocations: ()         => get<Record<string, number>>('/strategies/allocations'),
   regime: ()              => get<RegimeState>('/market/regime'),
+  allTicks: ()            => get<Record<string, Record<string, number>>>('/market/ticks'),
   news: (limit = 30)      => get<NewsItem[]>(`/market/news?limit=${limit}`),
   events: ()              => get<CalendarEvent[]>('/risk/events'),
   trades: (limit = 100)   => get<Trade[]>(`/trades/?limit=${limit}`),
@@ -237,6 +336,52 @@ export const api = {
   orchestratorScan: () =>
     fetch(`${BASE}/strategies/orchestrator/scan`, { method: 'POST' }).then(r => r.json()),
   journal: (limit = 50) => get<JournalEntry[]>(`/trades/journal?limit=${limit}`),
+  agents: () => get<AgentState[]>('/agents/'),
+  agentPause: (id: string) =>
+    fetch(`${BASE}/agents/${id}/pause`, { method: 'POST' }).then(r => r.json()),
+  agentResume: (id: string) =>
+    fetch(`${BASE}/agents/${id}/resume`, { method: 'POST' }).then(r => r.json()),
+  agentForceEval: (id: string) =>
+    fetch(`${BASE}/agents/${id}/force-eval`, { method: 'POST' }).then(r => r.json()),
+  agentSetThreshold: (id: string, threshold: number) =>
+    fetch(`${BASE}/agents/${id}/threshold`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ threshold }),
+    }).then(r => r.json()),
+  riskState: () => get<KillSwitchState>('/agents/risk/state'),
+  riskGlobalPause: (reason = 'manual') =>
+    fetch(`${BASE}/agents/risk/global-pause`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    }).then(r => r.json()),
+  riskGlobalResume: (reason = 'manual') =>
+    fetch(`${BASE}/agents/risk/global-resume`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    }).then(r => r.json()),
+  riskKillAll: () =>
+    fetch(`${BASE}/agents/risk/kill-all`, { method: 'POST' }).then(r => r.json()),
+  riskBlockSymbol: (token: number, reason = 'manual') =>
+    fetch(`${BASE}/agents/risk/block-symbol`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, reason }),
+    }).then(r => r.json()),
+  riskUnblockSymbol: (token: number) =>
+    fetch(`${BASE}/agents/risk/unblock-symbol`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    }).then(r => r.json()),
+  agentAudit: (limit = 100) => get<AuditEntry[]>(`/agents/audit?limit=${limit}`),
+  agentHealth: () => get<SystemHealth>('/agents/health'),
+  decisions: (limit = 60, strategyId?: string) =>
+    get<DecisionRecord[]>(`/agents/decisions?limit=${limit}${strategyId ? `&strategy_id=${strategyId}` : ''}`),
+  lineage: (signalId: string) => get<SignalLineage>(`/agents/lineage/${signalId}`),
+  busEvents: (limit = 200) => get<EventRecord[]>(`/agents/events?limit=${limit}`),
   chat: (message: string, context?: Record<string, unknown>) =>
     fetch(`${BASE}/chat`, {
       method: 'POST',

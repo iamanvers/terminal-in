@@ -22,11 +22,12 @@ export default function RiskDashboardPanel() {
   const pnlUpdate = useSocketEvent<Partial<PortfolioSummary> | null>('pnl_update', null)
   const regimeUpdate = useSocketEvent<RegimeState | null>('regime_update', null)
 
+  const [loading, setLoading] = useState(true)
+
   useEffect(() => {
     Promise.all([api.portfolio(), api.regime()]).then(([p, r]) => {
-      setSummary(p)
-      setRegime(r)
-    }).catch(() => {})
+      setSummary(p); setRegime(r)
+    }).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
@@ -50,6 +51,17 @@ export default function RiskDashboardPanel() {
   const vixColor = vix > 25 ? 'text-neg' : vix > 18 ? 'text-accent' : 'text-pos'
 
   // Single-row strip — no panel-header, fits in 52px
+  if (loading) return (
+    <div style={{ height: '100%', background: '#0D0D0D', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 24 }}>
+      {[80, 64, 72, 56, 48, 52, 60].map((w, i) => (
+        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ height: 6, width: w * 0.6, background: '#1A1A1A', borderRadius: 2 }} />
+          <div style={{ height: 10, width: w, background: '#161616', borderRadius: 2, animation: 'shimmer 1.4s ease-in-out infinite' }} />
+        </div>
+      ))}
+    </div>
+  )
+
   return (
     <div style={{ height: '100%', background: '#0D0D0D', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
       {/* Regime pill on the left */}

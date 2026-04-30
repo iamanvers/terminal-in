@@ -29,6 +29,9 @@ FORWARD_TOPICS = [
     'settlement.eod_reset',
     'settlement.day_open',
     'orchestrator.scan_done',
+    'agent.status_changed',
+    'agent.threshold_changed',
+    'kill_switch.global_pause',
 ]
 
 

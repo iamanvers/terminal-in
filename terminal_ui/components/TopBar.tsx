@@ -49,17 +49,49 @@ const TickerItem = React.memo(
   (prev, next) => prev.price === next.price && prev.chg === next.chg,
 )
 
+function isNSEOpen(): boolean {
+  const d = new Date(Date.now() + 5.5 * 3600_000)
+  const m = d.getUTCHours() * 60 + d.getUTCMinutes()
+  return m >= 9 * 60 + 15 && m <= 15 * 60 + 30
+}
+
 // Isolated ticker component so ticks don't re-render the nav/header
 function TickerTape() {
   const ticks = useTickMap()
-  const items = TICKER_TOKENS.map(({ label, token }) => {
-    const tick = ticks[token]
-    return { label, token, price: tick?.last_price ?? 0, chg: tick?.change ?? 0 }
-  })
+  const marketOpen = isNSEOpen()
+
+  // Snapshot prices at market open — freeze after close
+  const [frozen, setFrozen] = React.useState<Record<number, { price: number; chg: number }>>({})
+  React.useEffect(() => {
+    setFrozen(prev => {
+      const next = { ...prev }
+      for (const { token } of TICKER_TOKENS) {
+        const p = ticks[token]?.last_price
+        if (p === undefined) continue
+        if (prev[token] === undefined || marketOpen) {
+          next[token] = { price: p, chg: ticks[token]?.change ?? 0 }
+        }
+      }
+      return next
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticks])
+
+  const items = TICKER_TOKENS.map(({ label, token }) => ({
+    label, token,
+    price: frozen[token]?.price ?? 0,
+    chg:   frozen[token]?.chg   ?? 0,
+  }))
+
   return (
     <div style={{ height: 24, overflow: 'hidden', background: '#0A0A0A', borderBottom: '1px solid #161616', display: 'flex', alignItems: 'center' }}>
+      {!marketOpen && (
+        <span style={{ fontSize: 8, color: '#333', letterSpacing: '0.08em', padding: '0 10px', flexShrink: 0, borderRight: '1px solid #161616' }}>
+          CLOSED
+        </span>
+      )}
       {/* Two separate map calls with distinct key namespaces — prevents React fiber reuse that causes animation restart */}
-      <div className="ticker-track">
+      <div className="ticker-track" style={{ animationPlayState: marketOpen ? 'running' : 'paused' }}>
         {items.map(({ label, token, price, chg }) => (
           <TickerItem key={`a-${token}`} label={label} price={price} chg={chg} />
         ))}

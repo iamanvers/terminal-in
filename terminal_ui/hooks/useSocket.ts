@@ -42,6 +42,8 @@ export function useTickMap(): Record<number, Record<string, number>> {
   return ticks
 }
 
+export type ConnStatus = 'connected' | 'reconnecting' | 'disconnected'
+
 export function useConnected(): boolean {
   const [connected, setConnected] = useState(false)
   useEffect(() => {
@@ -49,9 +51,35 @@ export function useConnected(): boolean {
     const on  = () => setConnected(true)
     const off = () => setConnected(false)
     setConnected(socket.connected)
-    socket.on('connect', on)
+    socket.on('connect',    on)
     socket.on('disconnect', off)
+    // Catch immediate connect if it fired before this effect ran
+    if (socket.connected) setConnected(true)
     return () => { socket.off('connect', on); socket.off('disconnect', off) }
   }, [])
   return connected
+}
+
+export function useConnStatus(): ConnStatus {
+  const [status, setStatus] = useState<ConnStatus>('reconnecting')
+  useEffect(() => {
+    const socket = getSocket()
+    setStatus(socket.connected ? 'connected' : 'reconnecting')
+    const onConnect   = () => setStatus('connected')
+    const onDisconnect = () => setStatus('disconnected')
+    const onAttempt   = () => setStatus('reconnecting')
+    socket.on('connect',           onConnect)
+    socket.on('disconnect',        onDisconnect)
+    socket.on('reconnect_attempt', onAttempt)
+    socket.on('reconnect',         onConnect)
+    socket.on('reconnect_failed',  onDisconnect)
+    return () => {
+      socket.off('connect',           onConnect)
+      socket.off('disconnect',        onDisconnect)
+      socket.off('reconnect_attempt', onAttempt)
+      socket.off('reconnect',         onConnect)
+      socket.off('reconnect_failed',  onDisconnect)
+    }
+  }, [])
+  return status
 }

@@ -9,7 +9,7 @@ from flask import Flask
 from flask_socketio import SocketIO
 
 from terminal_in.api import websocket
-from terminal_in.api.routes import chat, market, portfolio, risk, strategies, trades
+from terminal_in.api.routes import agents, chat, market, portfolio, risk, strategies, trades
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     learner = components.get('learner')
     instruments = components.get('instruments')
     orchestrator = components.get('orchestrator')
+    engine = components.get('engine')
 
     portfolio.init(supervisor, broker, db=db)
     strategies.init(dsa, analyst, db=db, instruments=instruments,
@@ -41,6 +42,11 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     risk.init(supervisor)
     market.init(db)
     chat.init(db)
+    agents.init(engine=engine, db=db)
+
+    # Initialise EventBus ring buffer
+    from terminal_in.api import event_buffer
+    event_buffer.init()
 
     # Register blueprints
     app.register_blueprint(portfolio.bp)
@@ -49,6 +55,7 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     app.register_blueprint(risk.bp)
     app.register_blueprint(market.bp)
     app.register_blueprint(chat.bp)
+    app.register_blueprint(agents.bp)
 
     # Wire WebSocket fan-out
     websocket.init(sio)

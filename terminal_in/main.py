@@ -85,7 +85,7 @@ def main():
         t = Thread(target=streamer.run, daemon=True, name='kite-streamer')
         threads.append(t)
     else:
-        _start_paper_tick_feed(instruments, _stop_event, db=db)
+        _start_yf_live_feed(instruments, _stop_event, db=db)
         # Seed synthetic OHLCV so charts have data immediately in paper mode
         from terminal_in.data_ingest.paper_ohlcv import seed as _seed_ohlcv
         _seed_ohlcv(db, list(instruments.values()))
@@ -148,6 +148,7 @@ def main():
         'artifacts': artifacts,
         'supervisor': supervisor,
         'broker': broker,
+        'engine': engine,
         'dsa': engine._dsa,
         'analyst': analyst,
         'learner': learner,
@@ -187,61 +188,26 @@ def main():
     log.info('TERMINAL//IN stopped cleanly')
 
 
-def _start_paper_tick_feed(instruments: dict, stop_event: Event, db=None):
-    """Simulate tick feed. Initialises prices from last DB close so new stocks match real data."""
-    import random
-    from terminal_in.bus import bus
-    from terminal_in.data_ingest.paper_ohlcv import _SEED_PRICES
-
-    def _init_price(token: int) -> float:
-        if db is not None:
-            try:
-                df = db.get_ohlcv_1d(token=token, limit=1)
-                if not df.empty:
-                    return float(df['close'].iloc[-1])
-            except Exception:
-                pass
-        return _SEED_PRICES.get(token, 1000.0)
-
-    def _feed():
-        import time as _time
-        # Pre-seed all prices from DB before streaming starts
-        prices: dict[int, float] = {token: _init_price(token) for _, token in instruments.items()}
-        opens:  dict[int, float] = {}   # session open — change% calculated against this
-
-        while not stop_event.is_set():
-            for sym, token in instruments.items():
-                base = prices.get(token, _SEED_PRICES.get(token, 1000.0))
-
-                if token not in opens:
-                    opens[token] = base   # lock in session open on first tick
-
-                price = base * (1 + random.gauss(0, 0.0002))
-                prices[token] = price
-                open_px = opens[token]
-                change_pct = round((price - open_px) / open_px * 100, 2) if open_px else 0.0
-
-                bus.publish(f'ticks.{token}', {
-                    'instrument_token': token,
-                    'last_price': round(price, 2),
-                    'change': change_pct,          # real session change %
-                    'open': round(open_px, 2),
-                    'timestamp': int(_time.time() * 1000),
-                })
-            stop_event.wait(timeout=1.0)
-
-    Thread(target=_feed, daemon=True, name='paper-tick-feed').start()
+def _start_yf_live_feed(instruments: dict, stop_event: Event, db=None):
+    """Start real-time price feed via yfinance. No synthetic noise."""
+    from terminal_in.data_ingest.yf_live import YFLiveFeed
+    feed = YFLiveFeed(instruments=instruments, db=db)
+    Thread(target=feed.run, args=(stop_event,), daemon=True, name='yf-live-feed').start()
 
 
 def _start_ohlcv_backfill(db, instruments: dict, cfg):
-    """Non-blocking backfill of daily OHLCV via yfinance."""
+    """Non-blocking backfill of daily + 5m intraday OHLCV via yfinance."""
     def _fill():
         try:
-            from terminal_in.data_ingest.yf_fetcher import backfill
+            from terminal_in.data_ingest.yf_fetcher import backfill, backfill_intraday
             token_map = {tok: sym for sym, tok in instruments.items()}
             n = backfill(db, token_map, days=730)
             if n > 0:
-                log.info('yfinance OHLCV backfill complete — %d symbols', n)
+                log.info('yfinance daily backfill complete — %d symbols', n)
+            # 5m intraday: last 60 days. INSERT OR REPLACE overwrites GBM synthetic bars.
+            n5 = backfill_intraday(db, token_map, interval='5m')
+            if n5 > 0:
+                log.info('yfinance 5m intraday backfill complete — %d symbols', n5)
         except Exception:
             log.exception('OHLCV backfill failed (non-fatal)')
 
