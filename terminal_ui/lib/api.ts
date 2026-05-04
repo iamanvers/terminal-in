@@ -302,6 +302,26 @@ export type OrchestratorState = {
   results: OrchestratorResult[]
 }
 
+export type AgentQueryResponse = {
+  answer: string
+  tool_calls: Array<{ tool: string; args: Record<string, unknown>; result: unknown }>
+  model: string
+  online: boolean
+}
+
+export type OllamaStatus = {
+  online: boolean
+  model: string
+  host: string
+}
+
+export type NSESymbol = {
+  symbol: string
+  name: string
+  series: string
+  yf_symbol: string
+}
+
 export const api = {
   portfolio: ()           => get<PortfolioSummary>('/portfolio/summary'),
   positions: ()           => get<Position[]>('/portfolio/positions'),
@@ -389,4 +409,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, context }),
     }).then(r => r.json()) as Promise<ChatResponse>,
+  agentQuery: (query: string, history?: Array<{ role: string; content: string }>) =>
+    fetch(`${BASE}/agents/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, history }),
+    }).then(r => r.json()) as Promise<AgentQueryResponse>,
+  ollamaStatus: () => get<OllamaStatus>('/agents/ollama/status'),
+  symbolSearch: (q: string, limit = 15) =>
+    get<NSESymbol[]>(`/agents/symbols/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 }

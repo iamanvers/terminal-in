@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import MarketDataPanel    from '@/components/panels/MarketDataPanel'
 import StrategyBookPanel  from '@/components/panels/StrategyBookPanel'
@@ -7,14 +7,174 @@ import PositionsPanel     from '@/components/panels/PositionsPanel'
 import SignalFeedPanel    from '@/components/panels/SignalFeedPanel'
 import RiskDashboardPanel from '@/components/panels/RiskDashboardPanel'
 import ChatPanel          from '@/components/panels/ChatPanel'
+import { api }            from '@/lib/api'
 
 const ChartPanel = dynamic(() => import('@/components/panels/ChartPanel'), { ssr: false })
 
+// ── Loading screen ────────────────────────────────────────────────────────────
+const STEPS = [
+  'Connecting to backend…',
+  'Loading market data…',
+  'Initializing strategy engine…',
+  'Fetching regime state…',
+  'Syncing portfolio…',
+  'Ready.',
+]
+
+function BootScreen({ error }: { error: boolean }) {
+  const [step, setStep] = useState(0)
+  const [dots, setDots] = useState(0)
+
+  useEffect(() => {
+    if (error) return
+    const t = setInterval(() => setStep(s => Math.min(s + 1, STEPS.length - 2)), 900)
+    return () => clearInterval(t)
+  }, [error])
+
+  useEffect(() => {
+    const t = setInterval(() => setDots(d => (d + 1) % 4), 400)
+    return () => clearInterval(t)
+  }, [])
+
+  const dotStr = '.'.repeat(dots)
+
+  return (
+    <div style={{
+      flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      background: '#070707', gap: 0,
+    }}>
+      {/* Logo */}
+      <div style={{ marginBottom: 32, textAlign: 'center' }}>
+        <div style={{
+          fontSize: 28, fontWeight: 900, letterSpacing: '.18em',
+          color: error ? '#E53935' : '#D0D0D0',
+          fontFamily: 'monospace',
+        }}>
+          TERMINAL<span style={{ color: error ? '#E53935' : '#F7931E' }}>//</span>IN
+        </div>
+        <div style={{ fontSize: 9, color: '#2A2A2A', letterSpacing: '.2em', marginTop: 5 }}>
+          NSE · BSE · ALGORITHMIC TRADING
+        </div>
+      </div>
+
+      {/* Status block */}
+      <div style={{
+        border: `1px solid ${error ? '#E5393533' : '#1A1A1A'}`,
+        borderRadius: 6, padding: '20px 32px', minWidth: 360,
+        background: error ? '#0E0808' : '#0A0A0A',
+        display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center',
+      }}>
+        {error ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: '#E53935', fontSize: 16 }}>⚡</span>
+              <span style={{ fontSize: 11, color: '#E53935', fontWeight: 700, letterSpacing: '.08em' }}>
+                BACKEND NOT RUNNING
+              </span>
+            </div>
+            <div style={{ fontSize: 9, color: '#555', textAlign: 'center', lineHeight: 1.7 }}>
+              The Python backend is not reachable at{' '}
+              <code style={{ color: '#888', background: '#111', padding: '1px 5px', borderRadius: 3 }}>
+                localhost:5000
+              </code>
+            </div>
+            <div style={{
+              background: '#111', border: '1px solid #1A1A1A', borderRadius: 4,
+              padding: '10px 14px', fontFamily: 'monospace', fontSize: 9, color: '#F7931E',
+              lineHeight: 1.8, width: '100%',
+            }}>
+              <div style={{ color: '#333', marginBottom: 4 }}># Start the backend</div>
+              <div>.venv\Scripts\python.exe -m terminal_in.main</div>
+              <div style={{ color: '#333', marginTop: 6, marginBottom: 4 }}># Or use the launcher</div>
+              <div>.\start.ps1</div>
+            </div>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                fontSize: 9, fontWeight: 700, letterSpacing: '.08em', padding: '7px 20px',
+                border: '1px solid #E5393544', borderRadius: 4,
+                background: '#1A0808', color: '#E53935', cursor: 'pointer',
+              }}
+            >
+              ↺ RETRY CONNECTION
+            </button>
+          </>
+        ) : (
+          <>
+            {/* Spinner */}
+            <div style={{ position: 'relative', width: 36, height: 36 }}>
+              <div style={{
+                position: 'absolute', inset: 0, borderRadius: '50%',
+                border: '2px solid #141414',
+                borderTopColor: '#F7931E',
+                animation: 'spin 0.9s linear infinite',
+              }} />
+              <style dangerouslySetInnerHTML={{ __html: '@keyframes spin { to { transform: rotate(360deg) } }' }} />
+            </div>
+            {/* Step log */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}>
+              {STEPS.slice(0, step + 1).map((s, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 9, color: i < step ? '#2A4A2A' : '#F7931E', minWidth: 12 }}>
+                    {i < step ? '✓' : '›'}
+                  </span>
+                  <span style={{ fontSize: 9, color: i < step ? '#2A4A2A' : '#888', fontVariantNumeric: 'tabular-nums' }}>
+                    {i === step ? s.replace('…', dotStr || '…') : s.replace('…', '')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+type ReadyState = 'loading' | 'ready' | 'error'
+
 export default function TerminalPage() {
-  const [chartIdx, setChartIdx] = useState(0)
+  const [readyState, setReadyState] = useState<ReadyState>('loading')
+  const [chartIdx,   setChartIdx]   = useState(0)
+  const resolvedRef = useRef(false)
+
+  useEffect(() => {
+    // Fetch the three critical endpoints that gate the dashboard render.
+    // All three resolve against the same backend — if any succeed, backend is up.
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 8000)
+    )
+
+    const load = Promise.race([
+      Promise.allSettled([
+        api.regime(),
+        api.instruments(),
+        api.portfolio(),
+      ]),
+      timeout,
+    ])
+
+    load
+      .then((results) => {
+        if (resolvedRef.current) return
+        resolvedRef.current = true
+        // If at least one succeeded, backend is up — render the dashboard
+        const settled = results as PromiseSettledResult<unknown>[]
+        const anyOk = settled.some(r => r.status === 'fulfilled')
+        setReadyState(anyOk ? 'ready' : 'error')
+      })
+      .catch(() => {
+        if (resolvedRef.current) return
+        resolvedRef.current = true
+        setReadyState('error')
+      })
+  }, [])
 
   // Keyboard: 1–6 switch chart symbol
   useEffect(() => {
+    if (readyState !== 'ready') return
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
       const n = Number(e.key)
@@ -22,7 +182,11 @@ export default function TerminalPage() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [readyState])
+
+  if (readyState !== 'ready') {
+    return <BootScreen error={readyState === 'error'} />
+  }
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>

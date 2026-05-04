@@ -4,6 +4,7 @@ import {
   api, AgentState, AuditEntry, DecisionRecord, EventRecord,
   KillSwitchState, RegimeState, PortfolioSummary, SignalLineage,
   SystemHealth, Scorecard, LearnerParams, OrchestratorState, OrchestratorResult,
+  AgentQueryResponse, NSESymbol,
 } from '@/lib/api'
 import { getSocket } from '@/lib/socket'
 
@@ -215,8 +216,8 @@ const FILTER_LABELS: Array<{ key: Filter; label: string }> = [
   { key: 'execution',    label: 'EXECUTION' },
 ]
 
-function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh, globalPaused }:
-  { agents: AgentState[]; filter: Filter; onFilter: (f: Filter) => void; riskState: KillSwitchState | null; instruments: Array<{symbol:string;token:number}>; onRefresh: () => void; globalPaused: boolean }) {
+function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh, globalPaused, onOpenQuery }:
+  { agents: AgentState[]; filter: Filter; onFilter: (f: Filter) => void; riskState: KillSwitchState | null; instruments: Array<{symbol:string;token:number}>; onRefresh: () => void; globalPaused: boolean; onOpenQuery: () => void }) {
   const [busy, setBusy] = useState(false)
   const [blockToken, setBlockToken] = useState('')
   const [actionBusy, setActionBusy] = useState<string | null>(null)
@@ -323,6 +324,20 @@ function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh,
         {lastAction === 'analyse' && (
           <div style={{ fontSize: 8, color: C.run }}>✓ Analysis triggered</div>
         )}
+      </div>
+
+      {/* AI Analyst shortcut */}
+      <div style={{ background: C.panel, border: `1px solid #1A2A1A`, borderRadius: 5, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <div style={{ fontSize: 8, color: '#2A4A2A', letterSpacing: '.08em', marginBottom: 2 }}>FINANCIAL AGENT</div>
+        <button onClick={onOpenQuery} style={{
+          width: '100%', fontSize: 9, fontWeight: 700, letterSpacing: '.05em',
+          padding: '7px 8px', textAlign: 'left',
+          border: `1px solid #1A3A1A`, borderRadius: 3, cursor: 'pointer',
+          background: '#0A1A0A', color: C.run,
+        }}>◈ OPEN AI ANALYST</button>
+        <div style={{ fontSize: 7, color: '#1E1E1E', lineHeight: 1.4 }}>
+          Natural language queries powered by Ollama open-source LLMs + yfinance data
+        </div>
       </div>
 
       {/* Risk command */}
@@ -989,9 +1004,312 @@ function AuditLog({ entries }: { entries: AuditEntry[] }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Financial Agent Query Panel
+// ─────────────────────────────────────────────────────────────────────────────
+type ConvMsg = {
+  role: 'user' | 'assistant' | 'error'
+  content: string
+  toolCalls?: AgentQueryResponse['tool_calls']
+  model?: string
+  online?: boolean
+}
+
+const QUICK_QUERIES = [
+  { label: 'Market overview', q: 'Give me a quick overview of current Indian market conditions — NIFTY, BANKNIFTY, VIX, and global indices' },
+  { label: 'Momentum scan', q: 'Scan top 20 NSE large-cap stocks for momentum signals and give me the top 5 setups' },
+  { label: 'Breakout watch', q: 'Which NSE large-cap stocks are near 52-week high breakout with strong volume?' },
+  { label: 'Oversold quality', q: 'Find quality large-cap stocks that are RSI oversold but still above EMA50' },
+  { label: 'Analyse RELIANCE', q: 'Give me a full technical and fundamental analysis of RELIANCE' },
+  { label: 'Banking sector', q: 'Compare HDFCBANK, ICICIBANK, SBIN and AXISBANK technically — which is strongest?' },
+]
+
+function renderAnswer(text: string) {
+  return text.split('\n').map((line, i) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/)
+    return (
+      <div key={i} style={{ minHeight: 4 }}>
+        {parts.map((p, j) =>
+          p.startsWith('**') && p.endsWith('**')
+            ? <strong key={j} style={{ color: '#D8D8D8', fontWeight: 700 }}>{p.slice(2, -2)}</strong>
+            : <span key={j}>{p}</span>
+        )}
+      </div>
+    )
+  })
+}
+
+function ToolCallAccordion({ calls }: { calls: AgentQueryResponse['tool_calls'] }) {
+  const [open, setOpen] = useState(false)
+  if (!calls || calls.length === 0) return null
+  return (
+    <div style={{ marginTop: 8, border: `1px solid #1A1A1A`, borderRadius: 3, overflow: 'hidden' }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px',
+        background: '#080808', border: 'none', cursor: 'pointer', textAlign: 'left',
+      }}>
+        <span style={{ fontSize: 8, color: C.teal }}>⚙ {calls.length} tool call{calls.length > 1 ? 's' : ''}</span>
+        <span style={{ fontSize: 8, color: '#2A2A2A', marginLeft: 4 }}>{calls.map(c => c.tool).join(', ')}</span>
+        <span style={{ fontSize: 9, color: '#333', marginLeft: 'auto' }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div style={{ background: '#050505', borderTop: '1px solid #111' }}>
+          {calls.map((tc, i) => (
+            <div key={i} style={{ borderBottom: '1px solid #0D0D0D', padding: '7px 10px' }}>
+              <div style={{ fontSize: 8, color: C.amber, fontWeight: 700, marginBottom: 3 }}>{tc.tool}({JSON.stringify(tc.args)})</div>
+              <pre style={{ fontSize: 7, color: '#3A3A3A', overflow: 'auto', maxHeight: 120, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                {JSON.stringify(tc.result, null, 2)}
+              </pre>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FinancialAgentPanel() {
+  const [messages, setMessages]       = useState<ConvMsg[]>([])
+  const [input, setInput]             = useState('')
+  const [loading, setLoading]         = useState(false)
+  const [ollamaOnline, setOllama]     = useState<boolean | null>(null)
+  const [symQuery, setSymQuery]       = useState('')
+  const [symResults, setSymResults]   = useState<NSESymbol[]>([])
+  const [symSearching, setSymSearching] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    api.ollamaStatus().then(s => setOllama(s.online)).catch(() => setOllama(false))
+  }, [])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  async function send(text: string) {
+    if (!text.trim() || loading) return
+    const userMsg: ConvMsg = { role: 'user', content: text.trim() }
+    setMessages(prev => [...prev, userMsg])
+    setInput('')
+    setLoading(true)
+    try {
+      const history = messages.slice(-10).map(m => ({ role: m.role === 'error' ? 'user' : m.role, content: m.content }))
+      const resp = await api.agentQuery(text.trim(), history)
+      setOllama(resp.online)
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: resp.answer || '(no response)',
+        toolCalls: resp.tool_calls,
+        model: resp.model,
+        online: resp.online,
+      }])
+    } catch (e) {
+      setMessages(prev => [...prev, { role: 'error', content: String(e) }])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function searchSymbols(q: string) {
+    setSymQuery(q)
+    if (!q.trim()) { setSymResults([]); return }
+    setSymSearching(true)
+    try {
+      const res = await api.symbolSearch(q)
+      setSymResults(res)
+    } catch { setSymResults([]) }
+    finally { setSymSearching(false) }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ padding: '8px 14px', borderBottom: `1px solid ${C.border}`, background: '#080808', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 9, color: '#3A3A3A', fontWeight: 700, letterSpacing: '.08em', flex: 1 }}>
+          ◈ FINANCIAL AGENT — NSE/BSE AI ANALYST
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: ollamaOnline === null ? C.warn : ollamaOnline ? C.run : C.err, display: 'inline-block' }} />
+          <span style={{ fontSize: 8, color: ollamaOnline === null ? C.warn : ollamaOnline ? C.run : '#666' }}>
+            {ollamaOnline === null ? 'CHECKING…' : ollamaOnline ? 'OLLAMA ONLINE' : 'OLLAMA OFFLINE — RULE-BASED MODE'}
+          </span>
+        </div>
+        {!ollamaOnline && ollamaOnline !== null && (
+          <span style={{ fontSize: 7, color: '#333', background: '#111', border: '1px solid #1A1A1A', borderRadius: 3, padding: '2px 7px' }}>
+            run: ollama serve
+          </span>
+        )}
+      </div>
+
+      {/* Two-column body: chat + symbol search */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 0 }}>
+
+        {/* Chat column */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: `1px solid ${C.border}` }}>
+          {/* Quick queries */}
+          <div style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0, display: 'flex', gap: 5, flexWrap: 'wrap', background: '#080808' }}>
+            {QUICK_QUERIES.map(q => (
+              <button key={q.label} onClick={() => send(q.q)} disabled={loading} style={{
+                fontSize: 8, padding: '3px 9px', borderRadius: 10,
+                border: `1px solid #1E1E1E`, background: '#0A0A0A',
+                color: loading ? '#2A2A2A' : C.amber, cursor: loading ? 'default' : 'pointer',
+                letterSpacing: '.04em', transition: 'all .1s',
+              }}>{q.label}</button>
+            ))}
+          </div>
+
+          {/* Messages */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {messages.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                <div style={{ fontSize: 28, color: '#1A1A1A', marginBottom: 12 }}>◈</div>
+                <div style={{ fontSize: 10, color: '#2A2A2A', letterSpacing: '.08em', marginBottom: 6 }}>NSE/BSE FINANCIAL ANALYST</div>
+                <div style={{ fontSize: 8, color: '#1A1A1A' }}>Ask about stocks, scans, market overview, technical or fundamental analysis</div>
+              </div>
+            )}
+            {messages.map((m, i) => (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', gap: 4 }}>
+                {m.role === 'user' && (
+                  <div style={{ maxWidth: '80%', background: '#0E1A0E', border: '1px solid #1A2A1A', borderRadius: '8px 8px 2px 8px', padding: '8px 12px' }}>
+                    <div style={{ fontSize: 9, color: '#8A8A8A', marginBottom: 3 }}>YOU</div>
+                    <div style={{ fontSize: 10, color: '#D0D0D0', lineHeight: 1.6 }}>{m.content}</div>
+                  </div>
+                )}
+                {(m.role === 'assistant' || m.role === 'error') && (
+                  <div style={{ maxWidth: '92%', width: '92%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <span style={{ fontSize: 7, color: m.role === 'error' ? C.err : C.teal, fontWeight: 700, letterSpacing: '.07em' }}>
+                        {m.role === 'error' ? '✗ ERROR' : '◈ AGENT'}
+                      </span>
+                      {m.model && <span style={{ fontSize: 7, color: '#2A2A2A' }}>{m.model}</span>}
+                      {m.online === false && <span style={{ fontSize: 7, color: '#3A3A3A' }}>rule-based</span>}
+                    </div>
+                    <div style={{
+                      background: m.role === 'error' ? '#1A0808' : '#0A0D0A',
+                      border: `1px solid ${m.role === 'error' ? '#E5393522' : '#1A2A1A'}`,
+                      borderRadius: '2px 8px 8px 8px', padding: '10px 14px',
+                      fontSize: 10, color: m.role === 'error' ? C.err : '#C8C8C8',
+                      lineHeight: 1.65,
+                    }}>
+                      {renderAnswer(m.content)}
+                    </div>
+                    {m.toolCalls && m.toolCalls.length > 0 && <ToolCallAccordion calls={m.toolCalls} />}
+                  </div>
+                )}
+              </div>
+            ))}
+            {loading && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[0,1,2].map(j => (
+                    <div key={j} style={{
+                      width: 5, height: 5, borderRadius: '50%', background: C.teal,
+                      animation: `blink 1.2s ease-in-out ${j * 0.2}s infinite`,
+                    }} />
+                  ))}
+                </div>
+                <span style={{ fontSize: 8, color: '#333' }}>agent thinking…</span>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Input */}
+          <div style={{ padding: '10px 12px', borderTop: `1px solid ${C.border}`, flexShrink: 0, background: '#080808', display: 'flex', gap: 8 }}>
+            <input
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
+              placeholder="Ask about NSE stocks, market conditions, technical setups…"
+              disabled={loading}
+              style={{
+                flex: 1, fontSize: 10, background: '#0A0A0A', border: `1px solid ${C.border2}`,
+                borderRadius: 4, color: C.text, padding: '8px 12px', outline: 'none',
+                opacity: loading ? 0.5 : 1,
+              }}
+            />
+            <button
+              onClick={() => send(input)}
+              disabled={loading || !input.trim()}
+              style={{
+                fontSize: 9, fontWeight: 700, padding: '8px 16px', borderRadius: 4,
+                border: `1px solid ${C.run}33`, background: '#0A1A0A',
+                color: loading || !input.trim() ? '#333' : C.run,
+                cursor: loading || !input.trim() ? 'default' : 'pointer',
+              }}
+            >
+              {loading ? '…' : 'SEND'}
+            </button>
+            {messages.length > 0 && (
+              <button onClick={() => setMessages([])} style={{
+                fontSize: 9, padding: '8px 10px', borderRadius: 4,
+                border: '1px solid #1A1A1A', background: 'transparent',
+                color: '#333', cursor: 'pointer',
+              }}>CLR</button>
+            )}
+          </div>
+        </div>
+
+        {/* Symbol search panel */}
+        <div style={{ width: 220, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#080808' }}>
+          <div style={{ padding: '8px 10px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+            <div style={{ fontSize: 8, color: '#2A2A2A', letterSpacing: '.08em', marginBottom: 6 }}>NSE SYMBOL LOOKUP</div>
+            <input
+              value={symQuery}
+              onChange={e => searchSymbols(e.target.value)}
+              placeholder="Search ticker or name…"
+              style={{
+                width: '100%', fontSize: 9, background: '#0A0A0A', border: `1px solid ${C.border}`,
+                borderRadius: 3, color: '#888', padding: '5px 8px', outline: 'none', boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {symSearching && <div style={{ padding: '8px 10px', fontSize: 8, color: '#2A2A2A' }}>searching…</div>}
+            {!symSearching && symResults.length === 0 && symQuery && (
+              <div style={{ padding: '8px 10px', fontSize: 8, color: '#1E1E1E' }}>no matches</div>
+            )}
+            {!symSearching && symResults.length === 0 && !symQuery && (
+              <div style={{ padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontSize: 7, color: '#1E1E1E', letterSpacing: '.07em', marginBottom: 4 }}>QUICK ASK</div>
+                {['RELIANCE', 'HDFCBANK', 'TCS', 'INFY', 'SBIN'].map(sym => (
+                  <button key={sym} onClick={() => send(`Full technical analysis of ${sym}`)}
+                    disabled={loading} style={{
+                      fontSize: 9, padding: '4px 8px', textAlign: 'left',
+                      background: '#0A0A0A', border: '1px solid #141414', borderRadius: 3,
+                      color: loading ? '#2A2A2A' : C.warn, cursor: loading ? 'default' : 'pointer',
+                    }}>
+                    {sym}
+                  </button>
+                ))}
+              </div>
+            )}
+            {symResults.map(s => (
+              <div key={s.symbol} style={{ borderBottom: `1px solid #0D0D0D` }}>
+                <button
+                  onClick={() => send(`Full technical and fundamental analysis of ${s.symbol}`)}
+                  disabled={loading}
+                  style={{
+                    width: '100%', padding: '7px 10px', background: 'transparent', border: 'none',
+                    textAlign: 'left', cursor: loading ? 'default' : 'pointer', display: 'flex', flexDirection: 'column', gap: 1,
+                  }}
+                >
+                  <span style={{ fontSize: 9, fontWeight: 700, color: C.warn }}>{s.symbol}</span>
+                  <span style={{ fontSize: 7, color: '#3A3A3A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{s.name}</span>
+                  <span style={{ fontSize: 7, color: '#2A2A2A' }}>{s.series}</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Page
 // ─────────────────────────────────────────────────────────────────────────────
-type Tab = 'matrix' | 'pipeline' | 'scoreboard' | 'broadcast'
+type Tab = 'matrix' | 'pipeline' | 'scoreboard' | 'broadcast' | 'query'
 type SelType = { kind: 'agent'; id: string } | { kind: 'signal'; signalId: string }
 
 export default function AgentsPage() {
@@ -1133,6 +1451,7 @@ export default function AgentsPage() {
     { key: 'pipeline',   label: 'PIPELINE' },
     { key: 'scoreboard', label: 'SCOREBOARD' },
     { key: 'broadcast',  label: 'BROADCAST' },
+    { key: 'query',      label: '◈ AI ANALYST' },
   ]
 
   return (
@@ -1178,7 +1497,8 @@ export default function AgentsPage() {
           {/* Left rail */}
           <div style={{ overflowY: 'auto' }}>
             <LeftRail agents={agents} filter={filter} onFilter={setFilter}
-              riskState={riskState} instruments={instruments} onRefresh={load} globalPaused={globalPaused} />
+              riskState={riskState} instruments={instruments} onRefresh={load} globalPaused={globalPaused}
+              onOpenQuery={() => setTab('query')} />
           </div>
 
           {/* Center */}
@@ -1291,6 +1611,8 @@ export default function AgentsPage() {
             )}
 
             {tab === 'broadcast' && <BroadcastTab events={events} />}
+
+            {tab === 'query' && <FinancialAgentPanel />}
           </div>
 
           {/* Right inspector */}

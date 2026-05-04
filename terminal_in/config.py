@@ -36,6 +36,9 @@ class Config:
         'DRREDDY', 'BAJAJFINSV', 'DIVISLAB', 'HINDALCO',
     ])
 
+    ollama_host:  str = 'http://localhost:11434'
+    ollama_model: str = 'qwen2.5:3b'
+
     use_kite_live: bool = False
 
     @property
@@ -80,4 +83,6 @@ def load_config() -> Config:
         log_level=os.environ.get('LOG_LEVEL', 'INFO'),
         timezone=os.environ.get('TIMEZONE', 'Asia/Kolkata'),
         use_kite_live=bool(access_token and mode == 'live'),
+        ollama_host=os.environ.get('OLLAMA_HOST', 'http://localhost:11434'),
+        ollama_model=os.environ.get('OLLAMA_MODEL', 'qwen2.5:3b'),
     )

@@ -9,7 +9,7 @@ from flask import Flask
 from flask_socketio import SocketIO
 
 from terminal_in.api import websocket
-from terminal_in.api.routes import agents, chat, market, portfolio, risk, strategies, trades
+from terminal_in.api.routes import agent_query, agents, chat, market, portfolio, risk, strategies, trades
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     app.register_blueprint(market.bp)
     app.register_blueprint(chat.bp)
     app.register_blueprint(agents.bp)
+    app.register_blueprint(agent_query.bp)
 
     # Wire WebSocket fan-out
     websocket.init(sio)
