@@ -5,11 +5,17 @@ emits signals to 'strategy.signal' topic for the RiskSupervisor to gate.
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Optional
 
 IST = timezone(timedelta(hours=5, minutes=30))
+
+# Workers for parallel OHLCV loading and strategy evaluation. SQLite reads,
+# pandas resampling, and numpy all release the GIL, so threads give real
+# concurrency here despite CPython's GIL.
+_POOL_WORKERS = 8
 
 import pandas as pd
 
@@ -95,22 +101,32 @@ class StrategyEngine:
         if vix_price > 0:
             self._india_vix = vix_price
 
-        # Build OHLCV cache: load from DB for each tracked symbol
-        ohlcv: dict[int, dict[str, pd.DataFrame]] = {}
+        # Build OHLCV cache: TWO batched window-function queries for the whole
+        # universe (was 144 sequential per-symbol connections — the slowest
+        # part of every eval cycle). 5m resampling fans out across threads.
         nifty_token = self._instruments.get('NIFTY 50', 256265)
-        for sym, token in self._instruments.items():
-            ohlcv[token] = {}
-            try:
-                df_1d = self._db.get_ohlcv_1d(token=token, limit=300)
-                if not df_1d.empty:
-                    ohlcv[token]['1d'] = df_1d
-                df_1m = self._db.get_ohlcv_1m(token=token, limit=500)
+        tokens = list(self._instruments.values())
+        try:
+            all_1d = self._db.get_ohlcv_1d_all(tokens, limit=300)
+            all_1m = self._db.get_ohlcv_1m_all(tokens, limit=500)
+        except Exception:
+            log.exception('Batch OHLCV load failed')
+            all_1d, all_1m = {}, {}
+
+        ohlcv: dict[int, dict[str, pd.DataFrame]] = {t: {} for t in tokens}
+        for t, df in all_1d.items():
+            if not df.empty:
+                ohlcv[t]['1d'] = df
+
+        def _resample_one(item: tuple[int, pd.DataFrame]):
+            t, df_1m = item
+            return t, df_1m, _resample_5m(df_1m)
+
+        with ThreadPoolExecutor(max_workers=_POOL_WORKERS, thread_name_prefix='resample') as pool:
+            for t, df_1m, df_5m in pool.map(_resample_one, all_1m.items()):
                 if not df_1m.empty:
-                    ohlcv[token]['1m'] = df_1m
-                    # Build 5m from 1m
-                    ohlcv[token]['5m'] = _resample_5m(df_1m)
-            except Exception:
-                log.debug('OHLCV fetch failed for %s', sym)
+                    ohlcv[t]['1m'] = df_1m
+                    ohlcv[t]['5m'] = df_5m
 
         # Run regime classification on Nifty daily
         nifty_df = ohlcv.get(nifty_token, {}).get('1d', pd.DataFrame())
@@ -147,6 +163,12 @@ class StrategyEngine:
             self._dsa.maybe_rebalance(now, ctx.regime)
 
             registry.record_eval('ENGINE')
+
+            # Select runnable strategies, then evaluate them IN PARALLEL.
+            # ctx is read-only for strategies; signals are collected and
+            # published sequentially afterwards because the risk gate keeps
+            # stateful daily counters and must see an ordered stream.
+            runnable: list[tuple] = []
             for strategy in ALL_STRATEGIES:
                 if registry.is_paused(strategy.id):
                     log.debug('Strategy %s is paused — skipping', strategy.id)
@@ -155,23 +177,32 @@ class StrategyEngine:
                     continue
                 if ctx.regime not in strategy.valid_regimes:
                     continue
-
                 alloc = self._dsa.allocation(strategy.id)
                 if alloc < 0.02:
                     log.debug('Strategy %s allocation too low (%.3f) — skipped', strategy.id, alloc)
                     continue
+                runnable.append((strategy, alloc))
 
+            def _eval_one(item: tuple):
+                strategy, alloc = item
                 try:
                     signal = strategy.evaluate(ctx)
                     registry.record_eval(strategy.id)
+                    return strategy, alloc, signal
                 except Exception as exc:
                     registry.record_error(strategy.id, str(exc))
                     log.exception('Strategy %s evaluation error', strategy.id)
-                    continue
+                    return strategy, alloc, None
 
+            results = []
+            if runnable:
+                with ThreadPoolExecutor(max_workers=min(_POOL_WORKERS, len(runnable)),
+                                        thread_name_prefix='strat') as pool:
+                    results = list(pool.map(_eval_one, runnable))
+
+            for strategy, alloc, signal in results:
                 if signal is None:
                     continue
-
                 registry.record_signal(strategy.id)
                 # Scale quantity by DSA allocation
                 signal.quantity = max(int(signal.quantity * alloc), 1)

@@ -198,27 +198,38 @@ class TradeOrchestrator:
         except Exception:
             log.debug('Orchestrator: could not load recent news', exc_info=False)
 
-        candidates = []
-        for symbol, token in self._instruments.items():
+        # Batch-load daily OHLCV for the whole universe in ONE query, then
+        # analyse symbols in parallel (numpy/pandas release the GIL). Inputs
+        # are read-only; results are collected before shared-state mutation.
+        try:
+            all_1d = self._db.get_ohlcv_1d_all(list(self._instruments.values()), limit=300)
+        except Exception:
+            log.exception('Orchestrator: batch OHLCV load failed')
+            all_1d = {}
+
+        def _analyse_one(item: tuple[str, int]) -> dict | None:
+            symbol, token = item
             if token in open_tokens:
-                candidates.append({
+                return {
                     'symbol': symbol, 'token': token, 'side': 'SKIP',
                     'verdict': 'OPEN', 'ev': 0.0, 'confidence': 0.0,
                     'price': 0.0, 'regime': regime, 'lenses': [],
                     'rsi': 50.0, 'ret_20d': 0.0,
                     'suggested_sl': 0, 'suggested_target': 0,
                     'summary': 'Position already open',
-                })
-                continue
+                }
             try:
-                result = self._analyse_symbol(
+                return self._analyse_symbol(
                     symbol, token, regime, regime_mult, vix, size_m, strategy_wr,
-                    recent_news, now, suppressed,
+                    recent_news, now, suppressed, df1d=all_1d.get(token),
                 )
-                if result:
-                    candidates.append(result)
             except Exception:
                 log.debug('Orchestrator: analyse failed for %s', symbol, exc_info=True)
+                return None
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=8, thread_name_prefix='scan') as pool:
+            candidates = [c for c in pool.map(_analyse_one, self._instruments.items()) if c]
 
         # Sort: actionable setups by EV desc, NEUTRAL/SKIP last
         candidates.sort(
@@ -345,14 +356,17 @@ class TradeOrchestrator:
                         strategy_wr: dict[str, float],
                         recent_news: list[dict],
                         now: float,
-                        suppressed: set[str] | None = None) -> dict | None:
+                        suppressed: set[str] | None = None,
+                        df1d=None) -> dict | None:
         suppressed = suppressed or set()
 
-        # ── Try to load daily OHLCV ───────────────────────────────────────────
-        try:
-            df1d = self._db.get_ohlcv_1d(token=token, limit=300)
-        except Exception:
-            df1d = None
+        # Daily OHLCV: pre-loaded by the scan's batch query; per-symbol read
+        # only as fallback (e.g. on-demand single-symbol analysis).
+        if df1d is None:
+            try:
+                df1d = self._db.get_ohlcv_1d(token=token, limit=300)
+            except Exception:
+                df1d = None
 
         # Live price from tick cache (always available in paper mode)
         cached_tick = bus.get_cached(f'ticks.{token}') or {}

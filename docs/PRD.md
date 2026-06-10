@@ -125,11 +125,20 @@ Multi-leg positions (spreads, straddles, iron condors) as first-class objects: c
 | Item | Status |
 |---|---|
 | Vectorized indicator math (numpy/pandas-C EMA/RSI/ATR replacing Python loops; 72-symbol pass ≈ 67 ms) | ✅ |
+| **Parallel strategy evaluation** — the 8 strategies evaluate concurrently in a thread pool (signals still published sequentially: the risk gate keeps stateful daily counters) | ✅ |
+| **Batched OHLCV reads** — ONE window-function query for the whole 72-symbol universe instead of 144 per-cycle connections; raw-tuple → DataFrame fast path; orchestrator scan 732→374 ms measured | ✅ |
+| **Parallel symbol analysis** — orchestrator scans all 72 symbols across an 8-worker pool (SQLite/numpy/pandas release the GIL) | ✅ |
 | `LOW_LATENCY=1` → HIGH process priority (Windows `SetPriorityClass` / Unix nice) | ✅ |
 | `PYTHON_JIT=1` opt-in — CPython 3.14 experimental copy-and-patch JIT (`.\start.ps1 -LowLatency`) | ✅ |
 | In-process EventBus (function-call dispatch, no serialization on the hot path) | ✅ (by design) |
 | No eventlet — real OS threads, CPU work cannot stall the API | ✅ |
 | SQLite WAL + bus hot-cache (`get_cached`) so reads never block the tick path | ✅ |
+
+**Parallelism audit (2026-06-10):** profiling showed the engine/orchestrator hot paths were **I/O-bound on SQLite round-trips, not compute-bound** — naive thread-pooling of per-symbol DB reads gained nothing (2156 ms parallel vs 1940 ms sequential) until reads were batched into single queries. Lesson encoded here: measure before parallelizing; batching beats threading for single-file SQLite.
+
+**Async assessment:** a full asyncio rewrite is not worth it — the component threads + parallel pools already exploit the available concurrency, Flask/SocketIO threading mode works, and end-to-end latency is dominated by data-source polling and broker RTT. Targeted async (aiohttp for parallel yfinance/news fetches) is the only piece that would pay, tracked under Tier 2.
+
+**C/C++ for "thinking" tasks:** the heavy computation already runs in native code — numpy/pandas (C), FinBERT inference (libtorch C++), and the LLM judge itself (Ollama **is** llama.cpp). The remaining pure-Python hot spots (lens scoring, filters) are now parallel and measure in single-digit ms. A Cython extension (`_fastind`) for indicators+filters is specced for Tier 3 **after** MSVC Build Tools are installed (same blocker as hmmlearn); numba is an alternative once it supports Python 3.14. Do this only if post-Tier-2 profiling shows these paths hot — currently they are not.
 
 ### Tier 2 — biggest real-latency wins (live-mode path, P2)
 

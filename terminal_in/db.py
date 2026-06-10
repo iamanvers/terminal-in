@@ -237,6 +237,71 @@ class DB:
         df = df.set_index('bucket_time').sort_index()
         return df
 
+    # Batch variants: ONE connection + ONE window-function query for the whole
+    # universe instead of N round-trips. This is the hot path of every engine
+    # cycle and orchestrator scan (72 symbols → 144 connections without these).
+
+    def get_ohlcv_1d_all(self, tokens: list[int], limit: int = 300) -> dict[int, pd.DataFrame]:
+        """{token: daily DataFrame} for every token, single query.
+        Frames match get_ohlcv_1d exactly (DatetimeIndex, ascending)."""
+        if not tokens:
+            return {}
+        placeholders = ','.join('?' * len(tokens))
+        cols = ['instrument_token', 'bucket_date', 'open', 'high', 'low', 'close', 'volume']
+        with self.conn() as c:
+            cur = c.execute(
+                f'''SELECT instrument_token, bucket_date, open, high, low, close, volume
+                    FROM (
+                      SELECT instrument_token, bucket_date, open, high, low, close, volume,
+                             ROW_NUMBER() OVER (PARTITION BY instrument_token
+                                                ORDER BY bucket_date DESC) AS rn
+                      FROM ohlcv_1d WHERE instrument_token IN ({placeholders})
+                    ) WHERE rn <= ?''',
+                [*tokens, limit],
+            )
+            cur.row_factory = None   # raw tuples — skip 20k+ Row->dict conversions
+            rows = cur.fetchall()
+        if not rows:
+            return {}
+        df = pd.DataFrame(rows, columns=cols)
+        # explicit format: ~10x faster than inference on 20k+ ISO date strings
+        df['bucket_date'] = pd.to_datetime(df['bucket_date'], format='%Y-%m-%d')
+        out: dict[int, pd.DataFrame] = {}
+        for token, grp in df.groupby('instrument_token'):
+            out[int(token)] = (grp.drop(columns=['instrument_token'])
+                                  .set_index('bucket_date').sort_index())
+        return out
+
+    def get_ohlcv_1m_all(self, tokens: list[int], limit: int = 500) -> dict[int, pd.DataFrame]:
+        """{token: 1m DataFrame} for every token, single query.
+        Frames match get_ohlcv_1m exactly (UTC DatetimeIndex, ascending)."""
+        if not tokens:
+            return {}
+        placeholders = ','.join('?' * len(tokens))
+        cols = ['instrument_token', 'bucket_time', 'open', 'high', 'low', 'close', 'volume']
+        with self.conn() as c:
+            cur = c.execute(
+                f'''SELECT instrument_token, bucket_time, open, high, low, close, volume
+                    FROM (
+                      SELECT instrument_token, bucket_time, open, high, low, close, volume,
+                             ROW_NUMBER() OVER (PARTITION BY instrument_token
+                                                ORDER BY bucket_time DESC) AS rn
+                      FROM ohlcv_1m WHERE instrument_token IN ({placeholders})
+                    ) WHERE rn <= ?''',
+                [*tokens, limit],
+            )
+            cur.row_factory = None   # raw tuples — skip 35k+ Row->dict conversions
+            rows = cur.fetchall()
+        if not rows:
+            return {}
+        df = pd.DataFrame(rows, columns=cols)
+        df['bucket_time'] = pd.to_datetime(df['bucket_time'], unit='ms', utc=True)
+        out: dict[int, pd.DataFrame] = {}
+        for token, grp in df.groupby('instrument_token'):
+            out[int(token)] = (grp.drop(columns=['instrument_token'])
+                                  .set_index('bucket_time').sort_index())
+        return out
+
     # ── Trades ───────────────────────────────────────────────────────────────
 
     def insert_trade(self, trade: dict) -> None:
