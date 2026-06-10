@@ -20,8 +20,12 @@ import pytest
 
 from terminal_in.risk.gate import (
     RiskSupervisor, MAX_DAILY_TRADES_PAPER, MIN_CONFIDENCE,
-    NON_TRADEABLE, _SECTOR_MAP,
+    NON_TRADEABLE,
 )
+from terminal_in.data_ingest.instruments import registry, SECTOR_MAP, KNOWN_TOKENS
+
+# Sector checks resolve token → symbol → sector through the registry
+registry.load_stubs()
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -383,10 +387,10 @@ def test_sector_concentration_allows_index_instruments():
 
 
 def test_sector_map_covers_all_instruments():
-    """_SECTOR_MAP should define a sector for each of the 19 tracked tokens."""
-    assert len(_SECTOR_MAP) >= 18
-    # All mapped sectors should be valid strings
-    for token, sector in _SECTOR_MAP.items():
+    """Every known instrument symbol must have a sector mapping."""
+    missing = [s for s in KNOWN_TOKENS if s not in SECTOR_MAP]
+    assert not missing, f'Symbols without sector mapping: {missing}'
+    for symbol, sector in SECTOR_MAP.items():
         assert isinstance(sector, str) and sector
 
 

@@ -34,6 +34,13 @@ class Config:
         'POWERGRID', 'NTPC', 'ONGC', 'TITAN', 'HCLTECH', 'TECHM',
         'ADANIPORTS', 'ULTRACEMCO', 'NESTLEIND', 'JSWSTEEL',
         'DRREDDY', 'BAJAJFINSV', 'DIVISLAB', 'HINDALCO',
+        # Nifty 100 expansion
+        'BHARTIARTL', 'ITC', 'M&M', 'BAJAJ-AUTO', 'EICHERMOT', 'HEROMOTOCO',
+        'GRASIM', 'CIPLA', 'APOLLOHOSP', 'COALINDIA', 'BPCL', 'INDUSINDBK',
+        'TATACONSUM', 'BRITANNIA', 'HDFCLIFE', 'SBILIFE', 'ADANIENT', 'LTTS',
+        'TRENT', 'BEL', 'DMART', 'PIDILITIND', 'HAVELLS', 'AMBUJACEM',
+        'DABUR', 'GODREJCP', 'SIEMENS', 'DLF', 'VEDL', 'TVSMOTOR',
+        'BANKBARODA', 'IOC', 'GAIL', 'JINDALSTEL', 'SHRIRAMFIN', 'CHOLAFIN',
     ])
 
     ollama_host:  str = 'http://localhost:11434'

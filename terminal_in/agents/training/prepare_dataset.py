@@ -220,18 +220,77 @@ def _load_local_trades() -> list[dict]:
     return samples
 
 
+# ── Source 5: Agent decisions with hindsight (recursive loop) ─────────────
+
+def _load_agent_decisions() -> list[dict]:
+    """Planner verdicts whose hindsight has been judged — the recursive
+    training signal: the model learns from its own past trade judgements."""
+    if not DB_PATH.exists():
+        return []
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        rows = conn.execute(
+            "SELECT symbol, side, ev, confidence, persistence, regime, "
+            "       planner_action, planner_reason, hindsight_ret_pct, hindsight_outcome "
+            "FROM agent_decisions WHERE hindsight_outcome IS NOT NULL "
+            "ORDER BY decided_at DESC LIMIT 1000"
+        ).fetchall()
+        conn.close()
+    except Exception as e:
+        log.warning(f'Could not load agent decisions: {e}')
+        return []
+
+    samples = []
+    for symbol, side, ev, conf, persist, regime, action, reason, ret, outcome in rows:
+        ret_pct = (ret or 0) * 100
+        correct = (
+            (action in ('approve', 'fired') and outcome in ('would_win', 'actual_win')) or
+            (action in ('reject', 'filtered') and outcome in ('would_lose', 'flat'))
+        )
+        verdict_quality = 'correct' if correct else 'incorrect'
+        response = (
+            f'Decision: {action.upper()} {side} {symbol} — {verdict_quality} in hindsight.\n'
+            f'The market moved {ret_pct:+.1f}% in the proposed direction ({outcome}). '
+        )
+        if correct:
+            response += ('The judgement held up: the cited factors '
+                         f'({(reason or "EV/persistence screen")[:80]}) were predictive here.')
+        else:
+            response += ('The judgement was wrong: re-weight the factors — '
+                         f'EV {ev or 0:.2f}, confidence {(conf or 0):.0%}, persistence {persist or 0}, '
+                         f'regime {regime} pointed the other way.')
+        samples.append(_alpaca(
+            instruction='Review this past trade-planner decision against its hindsight outcome and state the lesson.',
+            input_text=(f'{side} {symbol} | EV {ev or 0:.2f} | conf {(conf or 0):.0%} | '
+                        f'persistence {persist or 0} | regime {regime} | decision: {action}'),
+            response=response,
+        ))
+
+    log.info(f'Agent decisions (hindsight-judged): {len(samples)} samples')
+    return samples
+
+
 # ── Main ──────────────────────────────────────────────────────────────────
 
-def prepare(output_dir: Path = OUTPUT_DIR) -> None:
+def prepare(output_dir: Path = OUTPUT_DIR) -> dict:
+    """Build the SFT dataset. Returns per-source sample counts."""
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
     output_dir.mkdir(parents=True, exist_ok=True)
 
     log.info('Loading datasets...')
+    counts: dict[str, int] = {}
     all_samples = []
-    all_samples.extend(_load_financial_phrasebank())
-    all_samples.extend(_load_fiqa())
-    all_samples.extend(_load_nse_pairs())
-    all_samples.extend(_load_local_trades())
+    for name, loader in [
+        ('sentiment',       _load_financial_phrasebank),
+        ('finance_alpaca',  _load_fiqa),
+        ('nse_pairs',       _load_nse_pairs),
+        ('local_trades',    _load_local_trades),
+        ('agent_decisions', _load_agent_decisions),
+    ]:
+        samples = loader()
+        counts[name] = len(samples)
+        all_samples.extend(samples)
+    counts['total'] = len(all_samples)
 
     log.info(f'Total samples: {len(all_samples)}')
 
@@ -253,7 +312,9 @@ def prepare(output_dir: Path = OUTPUT_DIR) -> None:
 
     print(f'\nDataset ready: {len(all_samples)} samples in {output_dir}')
     print('Next step: python -m terminal_in.agents.training.train_lora')
+    return counts
 
 
 if __name__ == '__main__':
-    prepare()
+    import os
+    prepare(Path(os.environ.get('SFT_OUTPUT_DIR', str(OUTPUT_DIR))))

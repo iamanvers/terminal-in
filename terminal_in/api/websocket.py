@@ -41,6 +41,7 @@ FORWARD_TOPICS = [
     'planner.verdict',
     'supervisor.state',
     'supervisor.throttle',
+    'training.status',
 ]
 
 

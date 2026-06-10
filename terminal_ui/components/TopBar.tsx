@@ -23,11 +23,14 @@ const TICKER_TOKENS = [
   { label: 'ADANIPORTS',token: 3861249 },
 ]
 
+// Equities (cash) and F&O (derivatives) are separate modules — the
+// instruments behave differently (margining, expiry, lot sizes, greeks).
 const NAV = [
-  { label: 'MARKET',  href: '/'        },
-  { label: 'TRADE',   href: '/trade'   },
-  { label: 'AGENTS',  href: '/agents'  },
-  { label: 'TRAIN',   href: '/train'   },
+  { label: 'MARKET',   href: '/'        },
+  { label: 'EQUITIES', href: '/trade'   },
+  { label: 'F&O',      href: '/fno'     },
+  { label: 'AGENTS',   href: '/agents'  },
+  { label: 'TRAIN',    href: '/train'   },
 ]
 
 // Stable tick item — only re-renders when its specific price/change differs
@@ -130,13 +133,18 @@ function NavHeader() {
   const connected = useConnected()
   const pathname  = usePathname()
   return (
-    <header style={{ height: 32, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', borderBottom: '1px solid #1E1E1E', background: '#0D0D0D', flexShrink: 0 }}>
-      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#F7931E', letterSpacing: '0.1em', fontSize: 13, flexShrink: 0 }}>
-        TERMINAL<span style={{ color: '#555' }}>//</span>IN
+    <header style={{
+      height: 38, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '0 18px', borderBottom: '1px solid var(--border-strong, #242424)',
+      background: 'linear-gradient(180deg, #101010, #0B0B0B)', flexShrink: 0,
+    }}>
+      <span style={{ fontFamily: 'var(--font-mono, monospace)', fontWeight: 700, color: '#F7931E', letterSpacing: '0.12em', fontSize: 13, flexShrink: 0 }}>
+        TERMINAL<span style={{ color: '#4A4A4A' }}>//</span>IN
+        <span style={{ fontSize: 8, color: '#3A3A3A', marginLeft: 10, letterSpacing: '0.08em', fontWeight: 500 }}>NSE · PAPER</span>
       </span>
 
       {/* Module navigation tabs */}
-      <nav style={{ display: 'flex', gap: 2 }}>
+      <nav style={{ display: 'flex', gap: 4, height: '100%', alignItems: 'stretch' }}>
         {NAV.map(({ label, href }) => {
           const active = href === '/' ? pathname === '/' : pathname.startsWith(href)
           return (
@@ -144,13 +152,14 @@ function NavHeader() {
               key={href}
               href={href}
               style={{
-                fontSize: 9, fontWeight: active ? 700 : 500,
-                letterSpacing: '0.08em', padding: '4px 14px',
-                borderRadius: 3, textDecoration: 'none', cursor: 'pointer',
-                background:   active ? '#F7931E18' : 'transparent',
-                color:        active ? '#F7931E'   : '#444',
-                borderBottom: active ? '2px solid #F7931E' : '2px solid transparent',
-                transition: 'color 0.15s',
+                display: 'flex', alignItems: 'center',
+                fontSize: 10, fontWeight: active ? 700 : 500,
+                letterSpacing: '0.09em', padding: '0 16px',
+                textDecoration: 'none', cursor: 'pointer',
+                background:   active ? 'var(--accent-soft, #F7931E0E)' : 'transparent',
+                color:        active ? '#F7931E' : '#5C5C5C',
+                boxShadow:    active ? 'inset 0 -2px 0 #F7931E' : 'none',
+                transition: 'color 0.15s, background 0.15s',
               }}
             >
               {label}

@@ -26,9 +26,11 @@ if sys.flags.utf8_mode == 0 and os.environ.get('PYTHONUTF8') != '1':
 
 log = logging.getLogger(__name__)
 
-DATASET_DIR  = Path('./data/training/financial_sft')
-OUTPUT_DIR   = Path('./data/training/financial_lora_adapter')
-BASE_MODEL   = 'TinyLlama/TinyLlama-1.1B-Chat-v1.0'
+# Paths are env-overridable so the recursive TrainingOrchestrator can run
+# isolated per-run directories (data/training/runs/<run_id>/).
+DATASET_DIR  = Path(os.environ.get('LORA_DATASET_DIR', './data/training/financial_sft'))
+OUTPUT_DIR   = Path(os.environ.get('LORA_OUTPUT_DIR',  './data/training/financial_lora_adapter'))
+BASE_MODEL   = os.environ.get('LORA_BASE_MODEL', 'TinyLlama/TinyLlama-1.1B-Chat-v1.0')
 
 # LoRA config — conservative for CPU-trainable run on 16 GB RAM laptop
 LORA_R       = 16

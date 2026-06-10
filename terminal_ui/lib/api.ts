@@ -370,6 +370,27 @@ export type BackendHealth = {
   last_daily_bar: string | null
 }
 
+export type TrainingRun = {
+  run_id: string
+  started_at: number
+  finished_at: number | null
+  status: string
+  max_steps: number | null
+  dataset_samples: number | null
+  dataset_counts?: Record<string, number>
+  initial_loss: number | null
+  final_loss: number | null
+  trained_steps: number | null
+  epochs: number | null
+  adapter_dir: string | null
+  error: string | null
+}
+
+export type TrainingStatus = {
+  state: 'idle' | 'building_dataset' | 'training' | 'collecting' | 'completed' | 'failed' | 'unavailable'
+  current_run: Partial<TrainingRun> & { dataset_counts?: Record<string, number> } | null
+}
+
 export type AgentQueryResponse = {
   answer: string
   tool_calls: Array<{ tool: string; args: Record<string, unknown>; result: unknown }>
@@ -471,6 +492,16 @@ export const api = {
   plannerDecisions: (limit = 50) => get<AgentDecision[]>(`/agents/planner/decisions?limit=${limit}`),
   supervisorState: () => get<SupervisorState>('/agents/supervisor/state'),
   backendHealth: () => get<BackendHealth>('/health'),
+  trainingStatus: () => get<TrainingStatus>('/training/status'),
+  trainingRuns: (limit = 20) => get<TrainingRun[]>(`/training/runs?limit=${limit}`),
+  trainingStart: (maxSteps = -1) =>
+    fetch(`${BASE}/training/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ max_steps: maxSteps }),
+    }).then(r => r.json()),
+  trainingStop: () =>
+    fetch(`${BASE}/training/stop`, { method: 'POST' }).then(r => r.json()),
   decisions: (limit = 60, strategyId?: string) =>
     get<DecisionRecord[]>(`/agents/decisions?limit=${limit}${strategyId ? `&strategy_id=${strategyId}` : ''}`),
   lineage: (signalId: string) => get<SignalLineage>(`/agents/lineage/${signalId}`),

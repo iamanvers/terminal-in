@@ -34,28 +34,11 @@ SIGNAL_DEDUP_WINDOW_S = 300   # skip re-entry for same instrument within 5 min
 # NIFTYBEES (2800641) is an ETF and IS tradeable — not blocked.
 NON_TRADEABLE = frozenset({264969, 256265, 260105, 257801})
 
-# Instrument token → sector label.  Anything not listed → 'other'.
-_SECTOR_MAP: dict[int, str] = {
-    256265:  'index',      # NIFTY 50
-    260105:  'index',      # BANKNIFTY
-    257801:  'index',      # FINNIFTY
-    264969:  'index',      # INDIA VIX
-    2800641: 'index',      # NIFTYBEES
-    341249:  'financials', # HDFCBANK
-    1270529: 'financials', # ICICIBANK
-    779521:  'financials', # SBIN
-    1510401: 'financials', # AXISBANK
-    492033:  'financials', # KOTAKBANK
-    4267265: 'financials', # BAJFINANCE
-    738561:  'energy',     # RELIANCE
-    2953217: 'it',         # TCS
-    408065:  'it',         # INFY
-    969473:  'it',         # WIPRO
-    356865:  'fmcg',       # HINDUNILVR
-    2939009: 'infra',      # LT
-    3861249: 'infra',      # ADANIPORTS
-    2815745: 'auto',       # MARUTI
-}
+# Sector resolution lives in the instrument registry (symbol-keyed,
+# covers the whole tracked universe) — see data_ingest/instruments.py.
+def _sector_of(token: int) -> str:
+    from terminal_in.data_ingest.instruments import registry
+    return registry.sector(int(token or 0))
 
 
 @dataclass
@@ -308,16 +291,16 @@ class RiskSupervisor:
         """True if adding this instrument stays within the sector concentration limit."""
         if not open_trades:
             return True
-        if instrument_id not in _SECTOR_MAP:
+        new_sector = _sector_of(instrument_id)
+        if new_sector == 'other':
             log.warning('Sector map has no entry for instrument %d — treating as '
                         "'other' (concentration check is weaker for unmapped symbols)",
                         instrument_id)
-        new_sector = _SECTOR_MAP.get(instrument_id, 'other')
         if new_sector == 'index':
             return True   # index instruments not subject to sector cap
         sector_count = sum(
             1 for t in open_trades
-            if _SECTOR_MAP.get(int(t.get('instrument_token') or 0), 'other') == new_sector
+            if _sector_of(t.get('instrument_token')) == new_sector
         )
         # After adding this trade: (sector_count + 1) / (total + 1)
         projected_pct = (sector_count + 1) / (len(open_trades) + 1)
@@ -330,14 +313,14 @@ class RiskSupervisor:
         that indicates a crowded one-sided bet in the same market segment.
         """
         new_side   = signal.get('side', 'BUY')
-        new_sector = _SECTOR_MAP.get(int(signal.get('instrument_id', 0)), 'other')
+        new_sector = _sector_of(signal.get('instrument_id', 0))
         if new_sector == 'index':
             return True
 
         same_dir_sector = sum(
             1 for t in open_trades
             if (t.get('side', '') == new_side
-                and _SECTOR_MAP.get(int(t.get('instrument_token') or 0), 'other') == new_sector)
+                and _sector_of(t.get('instrument_token')) == new_sector)
         )
         return same_dir_sector < 3
 

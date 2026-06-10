@@ -9,7 +9,7 @@ from flask import Flask
 from flask_socketio import SocketIO
 
 from terminal_in.api import websocket
-from terminal_in.api.routes import agent_query, agents, chat, market, portfolio, risk, strategies, trades
+from terminal_in.api.routes import agent_query, agents, chat, market, portfolio, risk, strategies, trades, training
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     agents.init(engine=engine, db=db,
                 planner=components.get('planner'),
                 trading_supervisor=components.get('trading_supervisor'))
+    training.init(trainer=components.get('trainer'))
 
     # Initialise EventBus ring buffer
     from terminal_in.api import event_buffer
@@ -62,6 +63,7 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     app.register_blueprint(chat.bp)
     app.register_blueprint(agents.bp)
     app.register_blueprint(agent_query.bp)
+    app.register_blueprint(training.bp)
 
     # Wire WebSocket fan-out
     websocket.init(sio)

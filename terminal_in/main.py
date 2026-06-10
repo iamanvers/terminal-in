@@ -142,6 +142,10 @@ def main():
     trading_supervisor = TradingSupervisor(db=db, config=cfg)
     threads.append(Thread(target=trading_supervisor.run, args=(_stop_event,), daemon=True, name='supervisor'))
 
+    # ── Recursive training orchestrator (manual trigger via /api/training) ────
+    from terminal_in.agents.training.recursive import TrainingOrchestrator
+    trainer = TrainingOrchestrator(db=db, config=cfg)
+
     # ── Risk supervisor ───────────────────────────────────────────────────────
     from terminal_in.risk.gate import RiskSupervisor
     supervisor = RiskSupervisor(db=db, config=cfg, learner=learner)
@@ -179,6 +183,7 @@ def main():
         'planner': planner,
         'trading_supervisor': trading_supervisor,
         'memory': memory,
+        'trainer': trainer,
         'instruments': instruments,
         'jwt_secret': cfg.jwt_secret,
     })

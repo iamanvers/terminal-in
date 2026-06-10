@@ -76,6 +76,25 @@ class DB:
             )''',
             'CREATE INDEX IF NOT EXISTS idx_agdec_time ON agent_decisions(decided_at DESC)',
             'CREATE INDEX IF NOT EXISTS idx_agdec_token ON agent_decisions(instrument_token, decided_at DESC)',
+            # Recursive training run history
+            '''CREATE TABLE IF NOT EXISTS training_runs (
+                run_id          TEXT PRIMARY KEY,
+                started_at      INTEGER NOT NULL,
+                finished_at     INTEGER,
+                status          TEXT NOT NULL,
+                max_steps       INTEGER,
+                dataset_samples INTEGER,
+                dataset_counts_json TEXT,
+                initial_loss    REAL,
+                final_loss      REAL,
+                trained_steps   INTEGER,
+                epochs          REAL,
+                dataset_dir     TEXT,
+                adapter_dir     TEXT,
+                train_log       TEXT,
+                error           TEXT
+            )''',
+            'CREATE INDEX IF NOT EXISTS idx_training_runs_time ON training_runs(started_at DESC)',
         ]
         with sqlite3.connect(str(self.path)) as conn:
             for stmt in migrations:
@@ -691,6 +710,43 @@ class DB:
                    WHERE decision_id=?''',
                 (int(_time.time() * 1000), ret_pct, outcome, decision_id),
             )
+
+    # ── Training runs (recursive model training) ─────────────────────────────
+
+    def insert_training_run(self, record: dict) -> None:
+        with self.conn() as c:
+            c.execute(
+                '''INSERT OR REPLACE INTO training_runs
+                   (run_id, started_at, finished_at, status, max_steps,
+                    dataset_samples, dataset_counts_json, initial_loss, final_loss,
+                    trained_steps, epochs, dataset_dir, adapter_dir, train_log, error)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (
+                    record.get('run_id'),
+                    record.get('started_at'),
+                    record.get('finished_at'),
+                    record.get('status', 'unknown'),
+                    record.get('max_steps'),
+                    record.get('dataset_samples'),
+                    json.dumps(record.get('dataset_counts')) if record.get('dataset_counts') else None,
+                    record.get('initial_loss'),
+                    record.get('final_loss'),
+                    record.get('trained_steps'),
+                    record.get('epochs'),
+                    record.get('dataset_dir'),
+                    record.get('adapter_dir'),
+                    record.get('train_log'),
+                    record.get('error'),
+                ),
+            )
+
+    def get_training_runs(self, limit: int = 20) -> list:
+        with self.conn() as c:
+            rows = c.execute(
+                'SELECT * FROM training_runs ORDER BY started_at DESC LIMIT ?',
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     # ── Risk decisions ────────────────────────────────────────────────────────
 

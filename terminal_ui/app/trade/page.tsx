@@ -147,10 +147,10 @@ function AccountBar({
 
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', background: '#090909', borderBottom: `1px solid ${C.border}`, flexShrink: 0, height: 52 }}>
-      {/* Mode badge */}
-      <div style={{ padding: '0 16px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 2, minWidth: 70 }}>
-        <span style={{ fontSize: 8, fontWeight: 700, color: C.amber, letterSpacing: '.1em', background: '#1A0D00', border: `1px solid ${C.amber}33`, borderRadius: 3, padding: '1px 6px' }}>PAPER</span>
-        <span style={{ fontSize: 7, color: C.dim, letterSpacing: '.06em' }}>SIMULATION</span>
+      {/* Module + mode badge */}
+      <div style={{ padding: '0 16px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 2, minWidth: 86 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: C.text, letterSpacing: '.1em' }}>EQUITIES</span>
+        <span style={{ fontSize: 8, fontWeight: 700, color: C.amber, letterSpacing: '.1em', background: '#1A0D00', border: `1px solid ${C.amber}33`, borderRadius: 3, padding: '1px 6px' }}>PAPER · CASH</span>
       </div>
       {chips.map(c => (
         <div key={c.label} style={{ flex: 1, padding: '0 12px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
@@ -925,7 +925,8 @@ function InlineOrderTicket({
 
   const inst   = instruments.find(i => i.symbol === sym2)
   const live   = inst ? ticks[inst.token]?.last_price : null
-  const filt   = search ? instruments.filter(i => i.type !== 'VIX' && i.symbol.toLowerCase().startsWith(search.toLowerCase())) : []
+  // Equities module: cash instruments only — indices/VIX live in the F&O module
+  const filt   = search ? instruments.filter(i => i.type === 'EQ' && i.symbol.toLowerCase().startsWith(search.toLowerCase())) : []
   const showD  = filt.length > 0 && filt[0].symbol !== search
 
   function autoSz() {
