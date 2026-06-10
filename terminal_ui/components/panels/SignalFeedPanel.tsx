@@ -4,22 +4,6 @@ import { api, type NewsItem, type CalendarEvent } from '@/lib/api'
 import { useSocketList, useTickMap } from '@/hooks/useSocket'
 import Badge from '@/components/primitives/Badge'
 
-const TOKEN_NAME: Record<number, string> = {
-  256265: 'NIFTY 50', 260105: 'BANKNIFTY', 257801: 'FINNIFTY',
-  264969: 'INDIA VIX', 2800641: 'NIFTYBEES',
-  738561: 'RELIANCE', 341249: 'HDFCBANK', 2953217: 'TCS',
-  408065: 'INFY', 1270529: 'ICICIBANK', 779521: 'SBIN',
-  1510401: 'AXISBANK', 492033: 'KOTAKBANK', 4267265: 'BAJFINANCE',
-  356865: 'HINDUNILVR', 969473: 'WIPRO',
-  2939009: 'LT', 2815745: 'MARUTI', 60417: 'ASIANPAINT',
-  884737: 'TATAMOTORS', 857857: 'SUNPHARMA', 895745: 'TATASTEEL',
-  3834113: 'POWERGRID', 2977281: 'NTPC', 633601: 'ONGC',
-  897537: 'TITAN', 1850625: 'HCLTECH', 3465729: 'TECHM',
-  3861249: 'ADANIPORTS', 2952193: 'ULTRACEMCO', 4598529: 'NESTLEIND',
-  3001089: 'JSWSTEEL', 225537: 'DRREDDY', 4268801: 'BAJAJFINSV',
-  2865793: 'DIVISLAB', 348929: 'HINDALCO',
-}
-
 const STRAT_FULL: Record<string, string> = {
   S1: 'Opening Range Breakout',
   S2: '52-Week Breakout',
@@ -84,25 +68,48 @@ function fmtTime(ms: number) {
   return new Date(ms).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
 }
 
+function relTime(ms: number) {
+  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000))
+  if (s < 60) return 'now'
+  if (s < 3600) return `${Math.floor(s / 60)}m`
+  if (s < 86400) return `${Math.floor(s / 3600)}h`
+  return `${Math.floor(s / 86400)}d`
+}
+
+const SENT_COLOR = { positive: '#22C55E', negative: '#EF4444', neutral: '#5C5C5C' } as const
+
 function NewsCard({ n }: { n: NewsItem }) {
-  const borderColor = n.sentiment === 'positive' ? '#00C85360'
-    : n.sentiment === 'negative' ? '#D32F2F60' : '#2A2A2A'
-  const impactColor = n.impact === 'high' ? '#D32F2F'
+  const sentColor = SENT_COLOR[n.sentiment] ?? '#5C5C5C'
+  const impactColor = n.impact === 'high' ? '#EF4444'
     : n.impact === 'medium' ? '#F7931E' : '#444'
 
+  const headline = n.url ? (
+    <a href={n.url} target="_blank" rel="noopener noreferrer"
+      style={{ color: '#D6D6D6', textDecoration: 'none' }}
+      onMouseEnter={e => (e.currentTarget.style.color = '#F7931E')}
+      onMouseLeave={e => (e.currentTarget.style.color = '#D6D6D6')}>
+      {n.headline}
+    </a>
+  ) : n.headline
+
   return (
-    <div style={{ padding: '8px 12px', borderBottom: '1px solid #161616', display: 'flex', gap: 10 }}>
-      <div style={{ width: 2, flexShrink: 0, background: borderColor, borderRadius: 1 }} />
+    <div style={{ padding: '8px 12px', borderBottom: '1px solid #141414', display: 'flex', gap: 10 }}>
+      <div style={{ width: 2, flexShrink: 0, background: `${sentColor}66`, borderRadius: 1 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ margin: '0 0 4px', fontSize: 11, color: '#d0d0d0', lineHeight: 1.4 }}>{n.headline}</p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 9, color: '#444' }}>{fmtTime(n.published_at)}</span>
-          {n.source && <span style={{ fontSize: 9, color: '#333' }}>· {n.source}</span>}
-          <span style={{ fontSize: 9, color: impactColor, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{n.impact}</span>
+        <p style={{ margin: '0 0 4px', fontSize: 11, lineHeight: 1.45 }}>{headline}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 9, color: '#4A4A4A', fontVariantNumeric: 'tabular-nums' }}>{relTime(n.published_at)}</span>
+          {n.source && <span style={{ fontSize: 9, color: '#3E3E3E' }}>{n.source}</span>}
+          <span style={{ fontSize: 8, fontWeight: 700, color: sentColor, letterSpacing: '0.05em' }}>
+            {n.sentiment === 'positive' ? '▲' : n.sentiment === 'negative' ? '▼' : '–'} {n.sentiment.toUpperCase()}
+          </span>
+          {n.impact === 'high' && (
+            <span style={{ fontSize: 8, fontWeight: 700, color: impactColor, letterSpacing: '0.05em' }}>HIGH IMPACT</span>
+          )}
           {n.instruments?.length > 0 && (
             <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
               {n.instruments.slice(0, 3).map((inst, i) => (
-                <span key={i} style={{ fontSize: 8, color: '#555', background: '#1A1A1A', border: '1px solid #222', borderRadius: 2, padding: '1px 4px' }}>
+                <span key={i} style={{ fontSize: 8, color: '#6A6A6A', background: '#161616', border: '1px solid #222', borderRadius: 2, padding: '1px 4px' }}>
                   {inst}
                 </span>
               ))}
@@ -114,10 +121,14 @@ function NewsCard({ n }: { n: NewsItem }) {
   )
 }
 
+type NewsFilter = 'all' | 'positive' | 'negative' | 'high'
+
 export default function SignalFeedPanel() {
   const [news, setNews]     = useState<NewsItem[]>([])
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [tab, setTab]       = useState<'signals' | 'news' | 'events'>('signals')
+  const [newsFilter, setNewsFilter] = useState<NewsFilter>('all')
+  const [tokenName, setTokenName] = useState<Record<number, string>>({})
 
   const rawSignals = useSocketList<SignalEntry>('strategy_signal', 60)
   const liveNews   = useSocketList<NewsItem>('news_signal', 30)
@@ -134,20 +145,38 @@ export default function SignalFeedPanel() {
     return [...m.values()].sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0))
   })()
 
+  // Token → symbol from the registry (covers the full universe, no stale map)
   useEffect(() => {
-    api.news(30).then(setNews).catch(() => {})
-    api.events().then(setEvents).catch(() => {})
+    api.instruments()
+      .then(list => setTokenName(Object.fromEntries(list.map(i => [i.token, i.symbol]))))
+      .catch(() => {})
   }, [])
 
-  // Deduplicate by headline
-  const seenHeadlines = new Set<string>()
-  const allNews = [...liveNews, ...news].filter(n => {
-    if (seenHeadlines.has(n.headline)) return false
-    seenHeadlines.add(n.headline)
-    return true
-  }).slice(0, 50)
+  useEffect(() => {
+    const loadNews = () => api.news(60).then(setNews).catch(() => {})
+    loadNews()
+    api.events().then(setEvents).catch(() => {})
+    // RSS lands every 15 min server-side; refresh the list each minute
+    const t = setInterval(loadNews, 60_000)
+    return () => clearInterval(t)
+  }, [])
 
-  const newsCountLabel = liveNews.length > 0 ? `${liveNews.length} live` : `${allNews.length}`
+  // Deduplicate by headline, newest first, then apply the active filter
+  const seenHeadlines = new Set<string>()
+  const allNews = [...liveNews, ...news]
+    .filter(n => {
+      if (seenHeadlines.has(n.headline)) return false
+      seenHeadlines.add(n.headline)
+      return true
+    })
+    .sort((a, b) => b.published_at - a.published_at)
+    .filter(n =>
+      newsFilter === 'all' ? true
+      : newsFilter === 'high' ? n.impact === 'high'
+      : n.sentiment === newsFilter)
+    .slice(0, 80)
+
+  const newsCountLabel = `${allNews.length}`
 
   return (
     <div className="panel h-full">
@@ -179,7 +208,7 @@ export default function SignalFeedPanel() {
               </div>
             )
             : signals.map((s, i) => {
-              const sym    = TOKEN_NAME[s.instrument_id] ?? `#${s.instrument_id}`
+              const sym    = tokenName[s.instrument_id] ?? `#${s.instrument_id}`
               const full   = STRAT_FULL[s.strategy_id] ?? s.strategy_id
               const liveP  = ticks[s.instrument_id]?.last_price
               const pct    = Math.round(s.confidence * 100)
@@ -237,9 +266,22 @@ export default function SignalFeedPanel() {
 
         {/* ── News ─────────────────────────────────────────── */}
         {tab === 'news' && (
-          allNews.length === 0
-            ? <p className="text-muted text-center mt-4 text-[11px]">No news yet…</p>
-            : allNews.map((n, i) => <NewsCard key={i} n={n} />)
+          <>
+            <div style={{ display: 'flex', gap: 4, padding: '6px 12px', borderBottom: '1px solid #141414', position: 'sticky', top: 0, background: 'var(--surface-1, #0D0D0D)', zIndex: 1 }}>
+              {([['all', 'ALL'], ['positive', '▲ POS'], ['negative', '▼ NEG'], ['high', 'HIGH IMPACT']] as [NewsFilter, string][]).map(([key, label]) => (
+                <button key={key} onClick={() => setNewsFilter(key)} style={{
+                  fontSize: 8, fontWeight: 700, letterSpacing: '0.05em', padding: '2px 8px',
+                  borderRadius: 3, cursor: 'pointer',
+                  border: `1px solid ${newsFilter === key ? '#F7931E55' : '#1E1E1E'}`,
+                  background: newsFilter === key ? '#F7931E0E' : 'transparent',
+                  color: newsFilter === key ? '#F7931E' : '#4A4A4A',
+                }}>{label}</button>
+              ))}
+            </div>
+            {allNews.length === 0
+              ? <p className="text-muted text-center mt-4 text-[11px]">No news matching this filter yet — RSS feeds refresh every 15 min.</p>
+              : allNews.map((n, i) => <NewsCard key={n.id ?? i} n={n} />)}
+          </>
         )}
 
         {/* ── Events ───────────────────────────────────────── */}

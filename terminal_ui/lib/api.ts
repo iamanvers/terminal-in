@@ -55,6 +55,7 @@ export type NewsItem = {
   published_at: number
   headline: string
   source: string
+  url: string | null
   sentiment: 'positive' | 'negative' | 'neutral'
   score: number
   impact: 'high' | 'medium' | 'low'

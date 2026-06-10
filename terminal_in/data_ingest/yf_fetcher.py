@@ -5,10 +5,16 @@ Symbol mapping: NSE equity → SYMBOL.NS, indices → ^NSEI etc.
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Optional
 
 log = logging.getLogger(__name__)
+
+# Concurrent symbol downloads. Network-bound (GIL released), so this cuts a
+# 72-symbol backfill from minutes to tens of seconds while staying polite
+# to Yahoo (bounded fan-out, not 72 simultaneous connections).
+_FETCH_WORKERS = 6
 
 # Map internal symbol → yfinance ticker
 YF_MAP: dict[str, str] = {
@@ -54,23 +60,22 @@ def backfill(db, token_map: dict[int, str], days: int = 730) -> int:
     # Query last stored date for all tokens in one shot
     last_dates = db.get_ohlcv_last_dates(list(token_map.keys()))
 
-    count = 0
+    # Decide what to fetch per symbol (skip up-to-date ones)
+    work: list[tuple[int, str, date]] = []
     for token, symbol in token_map.items():
-        last_str  = last_dates.get(token)
+        last_str = last_dates.get(token)
         if last_str:
             last_date = date.fromisoformat(last_str)
-            gap_days  = (today - last_date).days
-            if gap_days == 0:
+            if (today - last_date).days == 0:
                 log.debug('yfinance %s — already up to date (%s)', symbol, last_str)
                 continue
-            # Fetch from the day after last stored
-            start_dt = last_date + timedelta(days=1)
-            log.info('yfinance %s — gap detected: last=%s, fetching %d missing day(s)',
-                     symbol, last_str, gap_days)
+            work.append((token, symbol, last_date + timedelta(days=1)))
         else:
-            start_dt = full_start
-            log.info('yfinance %s — no data, full backfill from %s', symbol, start_dt)
+            log.info('yfinance %s — no data, full backfill from %s', symbol, full_start)
+            work.append((token, symbol, full_start))
 
+    def _fetch_one(item: tuple[int, str, date]) -> int:
+        token, symbol, start_dt = item
         ticker_str = _yf_ticker(symbol)
         try:
             tk   = yf.Ticker(ticker_str)
@@ -78,8 +83,7 @@ def backfill(db, token_map: dict[int, str], days: int = 730) -> int:
                               interval='1d', auto_adjust=True)
             if hist.empty:
                 log.debug('No yfinance data for %s (%s)', symbol, ticker_str)
-                continue
-
+                return 0
             bars = []
             for idx, row in hist.iterrows():
                 bars.append({
@@ -91,19 +95,24 @@ def backfill(db, token_map: dict[int, str], days: int = 730) -> int:
                     'close':            float(row['Close']),
                     'volume':           int(row['Volume']),
                 })
-            if bars:
-                db.insert_ohlcv_1d_batch(bars)
-                real_dates = {b['date'] for b in bars}
-                purged = db.purge_nontrading_ohlcv_1d(token, bars[0]['date'], real_dates)
-                if purged:
-                    log.debug('yfinance %s — purged %d synthetic holiday bars', symbol, purged)
-                log.info('yfinance %s (%s) — stored %d daily bars (latest: %s)',
-                         symbol, ticker_str, len(bars), bars[-1]['date'])
-                count += 1
+            if not bars:
+                return 0
+            db.insert_ohlcv_1d_batch(bars)
+            real_dates = {b['date'] for b in bars}
+            purged = db.purge_nontrading_ohlcv_1d(token, bars[0]['date'], real_dates)
+            if purged:
+                log.debug('yfinance %s — purged %d synthetic holiday bars', symbol, purged)
+            log.info('yfinance %s (%s) — stored %d daily bars (latest: %s)',
+                     symbol, ticker_str, len(bars), bars[-1]['date'])
+            return 1
         except Exception:
             log.warning('yfinance fetch failed for %s (%s)', symbol, ticker_str)
+            return 0
 
-    return count
+    if not work:
+        return 0
+    with ThreadPoolExecutor(max_workers=_FETCH_WORKERS, thread_name_prefix='yf-daily') as pool:
+        return sum(pool.map(_fetch_one, work))
 
 
 def backfill_intraday(db, token_map: dict[int, str], interval: str = '5m') -> int:
@@ -119,22 +128,21 @@ def backfill_intraday(db, token_map: dict[int, str], interval: str = '5m') -> in
 
     period_map = {'1m': '7d', '5m': '60d', '15m': '60d', '30m': '60d'}
     period = period_map.get(interval, '60d')
-    count = 0
 
     # Skip index symbols that don't have intraday data on yfinance
     SKIP_YF = {'^INDIAVIX'}
 
-    for token, symbol in token_map.items():
+    def _fetch_one(item: tuple[int, str]) -> int:
+        token, symbol = item
         ticker_str = _yf_ticker(symbol)
         if ticker_str in SKIP_YF:
-            continue
+            return 0
         try:
             tk = yf.Ticker(ticker_str)
             hist = tk.history(period=period, interval=interval, auto_adjust=True)
             if hist.empty:
                 log.debug('No intraday data for %s (%s)', symbol, ticker_str)
-                continue
-
+                return 0
             bars = []
             for ts, row in hist.iterrows():
                 try:
@@ -153,8 +161,11 @@ def backfill_intraday(db, token_map: dict[int, str], interval: str = '5m') -> in
             if bars:
                 db.insert_ohlcv_1m_batch(bars)
                 log.info('yfinance intraday %s (%s) %s — stored %d bars', symbol, ticker_str, interval, len(bars))
-                count += 1
+                return 1
+            return 0
         except Exception as exc:
             log.debug('intraday backfill failed %s (%s): %s', symbol, ticker_str, exc)
+            return 0
 
-    return count
+    with ThreadPoolExecutor(max_workers=_FETCH_WORKERS, thread_name_prefix='yf-intra') as pool:
+        return sum(pool.map(_fetch_one, token_map.items()))

@@ -86,6 +86,7 @@ class TradePlanner:
         self._learner = learner
 
         self._cond     = Condition()
+        self._session  = requests.Session()  # keep-alive to Ollama across calls
         self._pending: dict | None = None   # latest-wins batch queue
         self._last_verdict: dict = {}
         self._mode: str = 'idle'            # llm | degraded | off | idle
@@ -217,7 +218,7 @@ class TradePlanner:
         if not self._ollama_available():
             return
         try:
-            requests.post(
+            self._session.post(
                 f'{OLLAMA_BASE}/api/generate',
                 json={'model': OLLAMA_MODEL, 'prompt': 'ok', 'stream': False,
                       'options': {'num_predict': 1}},
@@ -229,14 +230,14 @@ class TradePlanner:
 
     def _ollama_available(self) -> bool:
         try:
-            r = requests.get(f'{OLLAMA_BASE}/api/tags', timeout=PROBE_TIMEOUT_S)
+            r = self._session.get(f'{OLLAMA_BASE}/api/tags', timeout=PROBE_TIMEOUT_S)
             return r.status_code == 200
         except Exception:
             return False
 
     def _call_llm(self, messages: list[dict]) -> str | None:
         try:
-            r = requests.post(
+            r = self._session.post(
                 f'{OLLAMA_BASE}/api/chat',
                 json={
                     'model':    OLLAMA_MODEL,

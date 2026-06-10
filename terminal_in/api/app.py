@@ -68,6 +68,10 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     # Wire WebSocket fan-out
     websocket.init(sio)
 
+    # Central error handling: JSON error responses with traceable ids
+    from terminal_in import errors as _errors
+    _errors.install_flask_handlers(app)
+
     @app.route('/api/health')
     def health():
         """Liveness + degraded-mode report. Anything not 'ok'/full-strength
@@ -112,6 +116,11 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
         if not ollama_online:
             degraded.append('ollama_offline')
 
+        from terminal_in import errors as _err
+        recent_errors = _err.recent(5)
+        if recent_errors:
+            degraded.append('recent_errors')
+
         return jsonify({
             'status': 'degraded' if degraded else 'ok',
             'degraded': degraded,
@@ -119,6 +128,9 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
             'sentiment': sent,
             'ollama_online': ollama_online,
             'last_daily_bar': data_fresh,
+            'recent_errors': [
+                {k: e[k] for k in ('id', 'ts', 'source', 'message')} for e in recent_errors
+            ],
         })
 
     @sio.on('connect')

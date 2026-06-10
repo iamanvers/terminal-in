@@ -58,6 +58,11 @@ def main():
     log.info('TERMINAL//IN starting — mode=%s', cfg.mode)
     _apply_low_latency()
 
+    # Catch crashes in ANY daemon thread — a dead component must be visible,
+    # not silent (errors land in the ring buffer → /api/health → UI badge)
+    from terminal_in import errors as _errors
+    _errors.install_thread_hook()
+
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
@@ -113,13 +118,10 @@ def main():
     # ── OHLCV historical fill (async, best-effort) ────────────────────────────
     _start_ohlcv_backfill(db, instruments, cfg)
 
-    # ── News fetcher ─────────────────────────────────────────────────────────
-    news_fetcher = None
-    if cfg.newsapi_key:
-        from terminal_in.news.fetcher import NewsFetcher
-        news_fetcher = NewsFetcher(api_key=cfg.newsapi_key, db=db)
-        t = Thread(target=news_fetcher.run, daemon=True, name='news-fetcher')
-        threads.append(t)
+    # ── News fetcher (RSS feeds always; NewsAPI added when key configured) ────
+    from terminal_in.news.fetcher import NewsFetcher
+    news_fetcher = NewsFetcher(api_key=cfg.newsapi_key, db=db)
+    threads.append(Thread(target=news_fetcher.run, daemon=True, name='news-fetcher'))
 
     # ── Strategy engine ───────────────────────────────────────────────────────
     # Pre-seed the regime cache so /api/regime never returns {} before the

@@ -95,6 +95,10 @@ class DB:
                 error           TEXT
             )''',
             'CREATE INDEX IF NOT EXISTS idx_training_runs_time ON training_runs(started_at DESC)',
+            # Dedup news across restarts and across sources carrying the same story
+            # (clean existing dupes first or the unique index creation no-ops)
+            'DELETE FROM news_log WHERE id NOT IN (SELECT MIN(id) FROM news_log GROUP BY url)',
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_news_url ON news_log(url)',
         ]
         with sqlite3.connect(str(self.path)) as conn:
             for stmt in migrations:
@@ -922,7 +926,7 @@ class DB:
     def insert_news(self, article: dict) -> None:
         with self.conn() as c:
             c.execute(
-                '''INSERT INTO news_log
+                '''INSERT OR IGNORE INTO news_log
                    (published_at, fetched_at, headline, source, url,
                     sentiment, score, instruments_json, impact)
                    VALUES (?,?,?,?,?,?,?,?,?)''',
