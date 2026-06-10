@@ -25,6 +25,12 @@ Bloomberg-style **agentic** algorithmic trading terminal for Indian markets (NSE
 
 # Run UI dev server
 cd terminal_ui && npm run dev   # http://localhost:3000
+
+# Recursive training (also triggerable from /train UI)
+#   smoke: POST /api/training/start {"max_steps": 200} — full: {"max_steps": -1}
+
+# Low-latency mode (HIGH process priority + Python 3.14 experimental JIT)
+.\start.ps1 -LowLatency
 ```
 
 ## Architecture
@@ -63,12 +69,16 @@ terminal_in/                        ← Python backend
     financial_agent.py              — Ollama chat agent w/ yfinance tools (AI ANALYST tab)
     tools/yfinance_tools.py         — get_stock_data, scans, fundamentals
     training/
-      prepare_dataset.py            — builds 5,421-sample Alpaca SFT dataset (sentiment +
-                                      finance-alpaca + strategy_pairs + local trades)
+      prepare_dataset.py            — SFT dataset (sentiment + finance-alpaca + strategy_pairs
+                                      + own trades + hindsight-judged agent decisions)
       strategy_pairs.py             — Claude-generated NSE strategy QA pairs
-      train_lora.py                 — TinyLlama-1.1B LoRA (TRL 1.x API, UTF-8 re-exec)
+      train_lora.py                 — TinyLlama-1.1B LoRA (TRL 1.x API, UTF-8 re-exec,
+                                      env: LORA_DATASET_DIR/LORA_OUTPUT_DIR/LORA_MAX_STEPS)
+      recursive.py                  — TrainingOrchestrator: dataset→LoRA subprocess→metrics
+                                      per run dir, training_runs table, 'training.status' topic
   data_ingest/
-    instruments.py                  — InstrumentRegistry, stub tokens (paper mode)
+    instruments.py                  — InstrumentRegistry, 72 symbols, symbol-keyed SECTOR_MAP
+                                      (single source of truth — gate resolves token→symbol→sector)
     streamer.py                     — KiteStreamer (live mode only)
     yf_fetcher.py                   — gap-aware yfinance backfill (730d daily + 60d 5m)
     yf_live.py                      — real-time price feed via yfinance (REAL prices, no noise)
@@ -82,14 +92,22 @@ terminal_in/                        ← Python backend
                                       /api/health degraded-mode report
     websocket.py, event_buffer.py   — EventBus → SocketIO fan-out + ring buffer
     routes/                         — market, portfolio, strategies, trades, risk, chat,
-                                      agents (planner/supervisor endpoints), agent_query
+                                      agents (planner/supervisor), agent_query, training
 
-terminal_ui/                        ← Next.js 14 frontend
-  app/page.tsx                      — landing: boot gate w/ retry+backoff, 3-col grid
-  app/agents/page.tsx               — Module 3: agent matrix, OrchestratorPanel, PlannerPanel,
+terminal_ui/                        ← Next.js 14 frontend (modules: MARKET·EQUITIES·F&O·AGENTS·TRAIN)
+  app/page.tsx                      — MARKET: boot gate w/ retry+backoff, 3-col grid
+  app/trade/page.tsx                — EQUITIES: cash cockpit (order ticket = EQ instruments only)
+  app/fno/page.tsx                  — F&O: index complex + lot sizes, index signals, VIX context,
+                                      Phase-2 derivatives scaffold (chain/lots/SPAN — see PRD)
+  app/agents/page.tsx               — AGENTS: matrix, OrchestratorPanel, PlannerPanel,
                                       SupervisorPanel, DECISION LOG tab (hindsight), AI ANALYST
+  app/train/page.tsx                — TRAIN: recursive training pipeline UI + run history
   components/panels/                — market data, chart, positions, signals, risk strip
-  lib/api.ts                        — typed API client (PlannerState, AgentDecision, …)
+  styles/globals.css                — design tokens (layered surfaces, type scale, chips, btns)
+  lib/api.ts                        — typed API client (PlannerState, TrainingRun, …)
+
+docs/PRD.md                         ← product requirements: F&O execution P2, multi-asset
+                                      (CDS FX → MCX commodities → global) P3, low-latency roadmap
 ```
 
 ## Key Design Decisions
@@ -141,12 +159,19 @@ Python 3.14 on Windows 11. Interpreter: `.venv/Scripts/python.exe`.
 ## What's Built / What's Next
 
 **Complete:**
-- Modules 1–3: market terminal, paper-trade cockpit + settlement, agent orchestrator dashboard
-- Agentic layer (Change_6): TradePlanner LLM judge, DecisionMemory + hindsight, TradingSupervisor control loop, noise-reduction filters — all wired, 113 tests passing
-- Real-data-only ingest (Change_5), boot reliability, degraded-mode surfacing
-- Module 4 (partial): SFT dataset built (5,421 samples), train_lora.py fixed for TRL 1.x
+- Modules: MARKET, EQUITIES (cash cockpit), F&O Phase 1 (view+signals), AGENTS (full agentic layer: planner/supervisor/memory/filters), TRAIN (recursive training pipeline)
+- 72-symbol universe with full sector coverage; real-data-only ingest; degraded-mode surfacing; 113 tests passing
+- Low-latency Tier 1: vectorized indicators (72-symbol pass ≈ 67 ms), LOW_LATENCY priority flag, PYTHON_JIT opt-in (see PRD §5)
 
-**Remaining:**
-- Backtest module (`terminal_in/backtest/` is an empty dir) — replay 2y OHLCV through the strategy engine, walk-forward validation, Sharpe/Calmar per strategy per regime, `/train` UI page
-- Full LoRA training run (overnight CPU) → merge → GGUF (needs llama.cpp) → `ollama create` from fine-tune
+**Remaining (see docs/PRD.md for full detail):**
+- P2: F&O execution (contract chain, lot-based fills, SPAN margin) — separate pipeline, NOT a bolt-on to the equities path
+- P2: Backtest engine (`terminal_in/backtest/` empty) — replay through the full agentic stack, walk-forward
+- P2: Training eval set + deploy automation (merge → GGUF via llama.cpp → ollama create)
+- P2 latency: Kite WebSocket ticks in live mode, event-driven scans, async planner fast-lane
+- P3: Multi-asset (NSE CDS FX → MCX commodities → global read-only → IBKR), options strategy engine
 - HMM training once 500+ days of real data accumulate
+
+**Hard invariants (PR-blocking):**
+- No synthetic/random market data in ohlcv_* tables or the tick path — ever
+- Any fallback must log WARN + appear in /api/health + badge in UI (no silent degradation)
+- The planner can veto/shrink signals but can never bypass the risk gate

@@ -31,10 +31,32 @@ def _handle_signal(sig, frame):
     _stop_event.set()
 
 
+def _apply_low_latency():
+    """Opt-in (LOW_LATENCY=1): raise process priority so the tick/scan path
+    isn't preempted by background apps. Pair with PYTHON_JIT=1 (Python 3.14
+    experimental JIT) — set before interpreter start, see start.ps1."""
+    import os
+    if os.environ.get('LOW_LATENCY') != '1':
+        return
+    try:
+        if sys.platform == 'win32':
+            import ctypes
+            HIGH_PRIORITY_CLASS = 0x00000080
+            ctypes.windll.kernel32.SetPriorityClass(
+                ctypes.windll.kernel32.GetCurrentProcess(), HIGH_PRIORITY_CLASS)
+            log.info('LOW_LATENCY: process priority set to HIGH')
+        else:
+            os.nice(-10)
+            log.info('LOW_LATENCY: niceness lowered to -10')
+    except Exception:
+        log.warning('LOW_LATENCY: could not raise process priority (non-fatal)')
+
+
 def main():
     cfg = load_config()
     _setup_logging(cfg.log_level)
     log.info('TERMINAL//IN starting — mode=%s', cfg.mode)
+    _apply_low_latency()
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)

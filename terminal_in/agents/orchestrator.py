@@ -50,6 +50,42 @@ _REGIME_MULT: dict[str, float] = {
 }
 
 
+# ── Vectorized indicators (hot path: 72 symbols × 300 bars per scan) ──────────
+
+def _ema_last(arr: np.ndarray, n: int) -> float:
+    """Last EMA value — pandas ewm (C-vectorized) instead of a Python loop."""
+    if len(arr) == 0:
+        return 0.0
+    import pandas as pd
+    return float(pd.Series(arr).ewm(span=n, adjust=False).mean().iloc[-1])
+
+
+def _rsi_last(arr: np.ndarray, n: int = 14) -> float:
+    """Last Wilder RSI — ewm(alpha=1/n) reproduces Wilder smoothing exactly."""
+    if len(arr) < n + 1 or n < 1:
+        return 50.0
+    import pandas as pd
+    d = np.diff(arr.astype(float))
+    gains  = pd.Series(np.where(d > 0, d, 0.0))
+    losses = pd.Series(np.where(d < 0, -d, 0.0))
+    ag = gains.ewm(alpha=1.0 / n, adjust=False).mean().iloc[-1]
+    al = losses.ewm(alpha=1.0 / n, adjust=False).mean().iloc[-1]
+    if al <= 0:
+        return 100.0
+    return float(100 - 100 / (1 + ag / al))
+
+
+def _atr_last(h: np.ndarray, l: np.ndarray, c: np.ndarray, n: int, fallback_price: float) -> float:
+    """ATR over the last n true ranges (already vectorized numpy)."""
+    if len(h) < 2:
+        return fallback_price * 0.01
+    tr = np.maximum(h[1:] - l[1:],
+                    np.maximum(np.abs(h[1:] - c[:-1]), np.abs(l[1:] - c[:-1])))
+    if len(tr) == 0:
+        return fallback_price * 0.01
+    return float(np.mean(tr[-n:])) if len(tr) >= n else float(np.mean(tr))
+
+
 class TradeOrchestrator:
     def __init__(self, db, instruments: dict, config, learner=None):
         self._db          = db
@@ -346,42 +382,10 @@ class TradeOrchestrator:
 
         price = live_price if live_price > 0 else float(close[-1])
 
-        def _ema(arr, n):
-            k, e = 2.0 / (n + 1), float(arr[0])
-            out = []
-            for v in arr:
-                e = v * k + e * (1 - k)
-                out.append(e)
-            return np.array(out)
-
-        def _rsi(arr, n=14):
-            d = np.diff(arr.astype(float))
-            gains  = np.where(d > 0, d, 0.0)
-            losses = np.where(d < 0, -d, 0.0)
-            if len(gains) < n:
-                return np.array([50.0])
-            ag = np.mean(gains[:n])
-            al = np.mean(losses[:n])
-            result = []
-            for i in range(n, len(d)):
-                ag = (ag * (n - 1) + gains[i]) / n
-                al = (al * (n - 1) + losses[i]) / n
-                result.append(100 - 100 / (1 + ag / al) if al > 0 else 100.0)
-            return np.array(result) if result else np.array([50.0])
-
-        def _atr(h, l, c, n=14):
-            tr = np.maximum(h[1:] - l[1:],
-                            np.maximum(np.abs(h[1:] - c[:-1]), np.abs(l[1:] - c[:-1])))
-            return float(np.mean(tr[-n:])) if len(tr) >= n else float(np.mean(tr)) if len(tr) else price * 0.01
-
-        ema20 = _ema(close, 20)
-        ema50 = _ema(close, min(50, len(close)))
-        rsi14 = _rsi(close, min(14, len(close) - 1))
-
-        ema20_v = float(ema20[-1])
-        ema50_v = float(ema50[-1])
-        rsi_v   = float(rsi14[-1])
-        atr14   = _atr(high, low, close, min(14, len(close) - 1))
+        ema20_v = _ema_last(close, 20)
+        ema50_v = _ema_last(close, min(50, len(close)))
+        rsi_v   = _rsi_last(close, min(14, len(close) - 1))
+        atr14   = _atr_last(high, low, close, min(14, len(close) - 1), price)
         high52w = float(np.max(high[-252:])) if len(high) >= 252 else float(np.max(high))
         low52w  = float(np.min(low[-252:])) if len(low) >= 252 else float(np.min(low))
         vol_avg = float(np.mean(vol[-20:])) if len(vol) >= 20 else float(np.mean(vol)) if len(vol) else 1.0

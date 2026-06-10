@@ -1,241 +1,126 @@
 # TERMINAL//IN
 
-A Bloomberg-style algorithmic trading terminal for Indian equity markets (NSE/BSE), built to run entirely on a personal laptop. No cloud costs, no Docker, no external infrastructure — just Python, SQLite, and a Next.js UI.
+An **agentic** algorithmic trading terminal for Indian markets (NSE), built to run entirely on a personal laptop. No cloud costs, no Docker — Python + SQLite + Next.js, with a local LLM (Ollama) sitting inside the trade-decision loop.
+
+> Paper-trading first. Live execution via Zerodha Kite Connect when enabled. **Real market data only** — the system never trades on synthetic bars.
 
 ---
 
-## What It Does
+## Modules
 
-TERMINAL//IN is a complete algorithmic trading system across four layers:
+| Module | Route | What it does |
+|--------|-------|--------------|
+| **MARKET** | `/` | Live watchlist (72 NSE instruments), candlestick charts, news + FinBERT sentiment, global context (indices/FX/commodities), economic calendar |
+| **EQUITIES** | `/trade` | Cash-equity paper cockpit: positions book, manual order ticket, trade history, P&L attribution, equity curve, strategy scorecards |
+| **F&O** | `/fno` | Derivatives module: index complex (NIFTY/BANKNIFTY/FINNIFTY + lot sizes), India VIX context, index strategy signals. Contract chain + lot-based execution + SPAN margin are Phase 2 (see PRD) |
+| **AGENTS** | `/agents` | The agentic core: orchestrator scan table, **LLM Trade Planner verdicts with reasoning**, supervisor control loop, decision log with hindsight, EventBus inspector, AI analyst chat |
+| **TRAIN** | `/train` | **Recursive model training**: rebuild dataset from the system's own trades + judged decisions → LoRA fine-tune → loss metrics → run history |
 
-**1. Market Intelligence**
-- Live price streaming for 18 NSE instruments (indices + large-cap equities)
-- Real OHLCV data via yfinance (2-year history, backfilled on startup)
-- Global market context: indices (DOW, S&P, NIKKEI, FTSE), FX rates, commodities, VIX
-- News feed with FinBERT sentiment analysis (positive/negative/neutral)
-- Economic calendar with event risk masking
-- Last close prices served to UI even when market is closed — no blank tickers
-
-**2. Autonomous Strategy Engine**
-- 8 live strategies running every 60 seconds:
-  - S1: Intraday Opening Range Breakout (NIFTY/BANKNIFTY)
-  - S2: 52-Week High Breakout
-  - S3: Midcap Momentum Breakout
-  - S4: RSI Mean Reversion
-  - S5: EMA Pullback (trend continuation)
-  - S6: Pairs Cointegration (statistical arbitrage)
-  - S8: VIX Spike Asymmetry (contrarian)
-  - S9: Hawkes Process Momentum
-- HMM-based 6-state regime classifier (strong_bull → strong_bear → high_vol) with size multipliers
-- Dynamic Strategy Allocator (DSA): monthly rebalance using Bayesian win rate + Sharpe + regime fit
-- M2 Risk Gate: 13 pre-trade checks (kill switch, tradeable instrument, VIX, drawdown, daily loss cap, signal dedup, duplicate position, margin, sector concentration, directional correlation, event mask)
-- M3 Analyst: Bayesian scorecard per strategy with adaptive confidence thresholds (Half-Kelly sizing)
-
-**3. Agentic Orchestrator**
-- `TradeOrchestrator`: multi-lens EV-ranked scanner across all instruments (auto every 2 min)
-- Scores setups by Expected Value: `EV = confidence × R:R × vol_factor × convergence_bonus`
-- On-demand scan via AGENTS page button or `POST /api/strategies/orchestrator/scan`
-- `StrategyLearner`: online Bayesian WR updates confidence thresholds after each trade closes
-- Per-strategy adaptive parameters: min_confidence, kelly_fraction, sl_multiplier, target_multiplier
-
-**4. Execution & Paper Trading**
-- Paper broker: fill simulation with 0.03% slippage + ₹20/order commission
-- Capital-constrained: orders rejected when notional exceeds available equity
-- EOD settlement: auto-closes all intraday positions at 15:29 IST, snapshots equity, resets daily counters
-- Live broker: Kite Connect REST integration (Zerodha) for live mode
-- Per-trade journal: entry reasoning, exit analysis, lessons, rating, review status
-
----
-
-## Architecture
+## The agentic decision flow
 
 ```
-Single Python process, multi-threaded. All components communicate via in-process EventBus.
-
-terminal_in/                   ← Python backend
-  main.py                      — entrypoint, wires all threads
-  bus.py                       — EventBus singleton (pub/sub + hot-cache)
-  db.py                        — SQLite WAL wrapper (thread-safe, 6 indexes)
-  config.py                    — load_config() reads .env
-  data_ingest/                 — tick feed, OHLCV backfill, paper seeder, instrument registry (18 symbols)
-  news/                        — NewsAPI + FinBERT sentiment
-  strategy_engine/             — 8 strategies, HMM classifier, DSA, engine loop, MarketContext
-  risk/                        — M2 gate (13 checks), M3 analyst, event calendar
-  execution/                   — PaperBroker, KiteBroker, SettlementService
-  agents/                      — TradeOrchestrator (EV-ranked multi-lens scan), StrategyLearner
-  api/                         — Flask + SocketIO, 6 route blueprints
-
-terminal_ui/                   ← Next.js 14 frontend
-  app/
-    page.tsx                   — main dashboard: fixed viewport, 3-column layout
-    agents/page.tsx            — agent monitoring + orchestrator + controls
-    trade/page.tsx             — trade cockpit: positions + order ticket
-  components/panels/           — MarketData, Chart, Strategy, Positions, Signals, Chat, RiskDashboard
+                       6 deterministic lenses (S2 52w · S4 RSI · S5 EMA · S8 VIX · MOM · NEWS)
+                                        │  every 120s, all 72 symbols
+                                        ▼
+                       noise reduction (signal_filters.py)
+                       ├─ data-quality gate (no thin/stale history)
+                       ├─ persistence ≥ 2 consecutive scans (debounce)
+                       ├─ confidence EMA smoothing
+                       └─ EV hysteresis (enter ≥1.2, exit <1.0) + regime hysteresis
+                                        │  top-5 eligible candidates
+                                        ▼
+                       TRADE PLANNER — local LLM judge (Ollama)
+                       one structured-JSON call per scan: approve / reject / size
+                       + decision memory context ("your last 10 calls and how they aged")
+                       Ollama down → STRICTER deterministic bar, flagged amber, never silent
+                                        │  approved signals
+                                        ▼
+                       M2 RISK GATE — 13 deterministic checks (planner can veto, never bypass)
+                                        │
+                                        ▼
+                       broker (paper fill sim / Kite REST) → settlement → P&L
+                                        │
+        ┌───────────────────────────────┼────────────────────────────────┐
+        ▼                               ▼                                ▼
+  StrategyLearner               TradingSupervisor                DecisionMemory
+  slow loop: Bayesian WR,       fast loop: lens breaker          hindsight loop: did rejected
+  thresholds per 15 trades      (3 losses → 2h off), throttle,   signals win? feeds back into
+                                kill-switch at 8 losses          the next planner prompt
+        └───────────────────────────────┼────────────────────────────────┘
+                                        ▼
+                       TRAIN: recursive LoRA fine-tune on the system's own record
 ```
 
-**EventBus topics:** `ticks.{token}`, `regime.update`, `strategy.signal`, `order.approved`, `order.rejected`, `trade.opened`, `trade.closed`, `pnl.update`, `scorecard.update`, `news.signal`, `event.mask`, `orchestrator.scan_done`, `settlement.day_open`, `settlement.eod_close`, `settlement.eod_reset`
+Three feedback loops at three speeds — trade-by-trade control (supervisor), batch parameter tuning (learner), and model retraining (TRAIN module). Every decision is persisted and explainable: the DECISION LOG answers *"why didn't you take that trade, and was it right?"*
 
-**Why local-only?** The original blueprint used Docker + TimescaleDB + Redis + MinIO. All replaced with SQLite (WAL mode) + Python EventBus + local folders. Total cost: ₹2000/month for Kite Connect in live mode. Zero otherwise.
+## What's under the hood
 
----
+- **Strategy engine** — 8 rule strategies (ORB, 52-week breakout, RSI reversion, EMA pullback, pairs cointegration, VIX fade, Hawkes momentum) evaluated every 60s
+- **Regime classifier** — 6-state HMM (heuristic fallback until trained; degraded mode reported, never hidden)
+- **DSA** — monthly capital allocation across strategies: `0.40×regime_fit + 0.30×Bayesian_WR + 0.30×Sharpe`
+- **Risk** — 13-check pre-trade gate, sector concentration via full-universe sector map, drawdown/daily-loss caps, kill switch, margin check that *rejects* unpriceable orders
+- **Data** — real NSE OHLCV via yfinance (730d daily + 60d 5m, gap-aware backfill, 24h refresh), live quotes, FinBERT news sentiment
+- **Health** — `/api/health` reports every degraded subsystem; the UI badges them. No silent fallbacks anywhere in the signal path.
 
-## Setup
+## Quick start
 
-**Prerequisites:** Python 3.14, Node.js 18+, Windows 11
-
-```bash
-# Python backend
-python -m venv .venv
-.venv/Scripts/pip install -r requirements.txt
-
-# Optional: FinBERT sentiment (~3GB, improves news signals)
-.venv/Scripts/pip install torch --index-url https://download.pytorch.org/whl/cpu
-.venv/Scripts/pip install transformers
-
-# Optional: HMM classifier (needs C++ Build Tools on Windows)
-.venv/Scripts/pip install hmmlearn>=0.3.2
-
-# Configure environment
-copy .env.example .env
-# Edit .env: set MODE=paper, INITIAL_CAPITAL=1000000
-
-# Start backend
-.venv/Scripts/python.exe -m terminal_in.main
-
-# Start UI (separate terminal)
-cd terminal_ui && npm install && npm run dev
-# → http://localhost:3000
-```
-
-**Or use the PowerShell launcher (creates venv + installs deps + starts both):**
 ```powershell
+# 1. Backend (creates venv + installs deps on first run)
 .\start.ps1
+# or directly:
+.venv\Scripts\python.exe -m terminal_in.main         # API on :5000
+
+# 2. UI
+cd terminal_ui ; npm install ; npm run dev            # UI on :3000
+
+# 3. Local LLM for the Trade Planner + AI Analyst (one-time, ~2 GB)
+.\setup_ollama.ps1
+
+# Tests
+.venv\Scripts\pytest tests\ -v                         # 113 tests
+```
+
+`.env` keys: `MODE=paper|live`, `KITE_API_KEY/SECRET/ACCESS_TOKEN`, `NEWSAPI_KEY`, `INITIAL_CAPITAL`, `MAX_DD_PCT`, `DAILY_LOSS_CAP_PCT`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `PLANNER_ENABLED`.
+
+## Recursive training (TRAIN module)
+
+Each run: rebuild the SFT dataset (financial corpora **+ the system's own closed trades + hindsight-judged planner decisions**) → LoRA fine-tune TinyLlama-1.1B in an isolated subprocess → record the real loss curve per run. Smoke test (200 steps, ~30–60 min CPU) or full run (overnight). Deploy path: merge adapter → GGUF → `ollama create` — until then the planner runs on the prompt-tuned base model.
+
+## Latency posture (and the honest limits)
+
+This is a **120-second-cadence positional system trading through a broker REST API** — not HFT. End-to-end signal latency is dominated by data-source polling (seconds) and broker round-trips (~100–300 ms), not by the process. What we do anyway:
+
+- In-process EventBus (function-call dispatch, no broker hop, no serialization on the hot path)
+- Vectorized indicator math (numpy) across the 72-symbol scan
+- Optional **Python 3.14 JIT** (`PYTHON_JIT=1`) and **high process priority** (`LOW_LATENCY=1`)
+- SQLite WAL + hot caches so reads never block the tick path
+
+What we deliberately *don't* do on a retail laptop — kernel bypass (DPDK/Solarflare), FPGA NICs, exchange colocation — and what the realistic upgrade path is instead (Kite WebSocket ticks in live mode, a VPS near the exchange, C-extension hot loops) is laid out in [docs/PRD.md](docs/PRD.md#low-latency-roadmap).
+
+## Roadmap (detail in [docs/PRD.md](docs/PRD.md))
+
+- **P2** — F&O execution: option chains, lot-based paper fills, SPAN margin, expiry handling
+- **P2** — Backtest engine: replay 2y of real OHLCV through the full agentic stack, walk-forward validation
+- **P3** — Multi-asset: NSE CDS currency futures (USDINR), MCX commodities (gold/crude), then global venues
+- **P3** — Options strategies as first-class multi-leg positions (spreads, condors, greeks)
+
+## Project layout
+
+```
+terminal_in/            Python backend (threads + EventBus)
+  agents/               orchestrator, trade_planner (LLM judge), supervisor,
+                        decision_memory, signal_filters, learner, training/
+  strategy_engine/      8 strategies, regime HMM, DSA
+  risk/                 M2 gate, M3 analyst, event calendar
+  execution/            paper broker, Kite broker, EOD settlement
+  data_ingest/          yfinance backfill + live feed, instrument registry (72 symbols)
+  news/                 NewsAPI + FinBERT
+  api/                  Flask + SocketIO (threading mode), 9 route blueprints
+terminal_ui/            Next.js 14 — MARKET / EQUITIES / F&O / AGENTS / TRAIN
+tests/                  113 tests (gate, broker, persistence, filters, planner, supervisor)
+docs/PRD.md             Product requirements + multi-asset and low-latency roadmaps
 ```
 
 ---
 
-## Environment Variables (`.env`)
-
-| Variable | Default | Description |
-|---|---|---|
-| `MODE` | `paper` | `paper` or `live` |
-| `INITIAL_CAPITAL` | `1000000` | Starting capital in ₹ |
-| `MAX_DD_PCT` | `0.20` | Max drawdown before circuit breaker |
-| `DAILY_LOSS_CAP_PCT` | `0.04` | Max daily loss as % of capital |
-| `KITE_API_KEY` | — | Required for live mode |
-| `KITE_API_SECRET` | — | Required for live mode |
-| `KITE_ACCESS_TOKEN` | — | Daily token from Kite login |
-| `NEWSAPI_KEY` | — | Optional news feed (~24 requests/day) |
-| `JWT_SECRET` | `dev-secret` | API auth secret |
-
----
-
-## Risk Gate (M2) — 13 Checks
-
-| # | Check | Blocks if |
-|---|---|---|
-| 0a | Kill switch | Global pause engaged |
-| 0b | Symbol block | Instrument manually blocked |
-| 0c | Tradeable instrument | VIX / raw NIFTY / BANKNIFTY / FINNIFTY (F&O-only, not cash tradeable) |
-| 1 | Event mask | Within economic event blackout window (live only) |
-| 2 | VIX hard stop | India VIX > 35 |
-| 3 | Drawdown circuit | Portfolio drawdown > MAX_DD_PCT |
-| 4 | Daily loss cap | Day P&L loss > DAILY_LOSS_CAP_PCT |
-| 5 | Trade count | Daily trades ≥ 20 (live) / 200 (paper) |
-| 6 | Confidence | Signal confidence < adaptive min (per StrategyLearner) |
-| 7 | Position limit | ≥ 10 open positions |
-| 8 | Duplicate | Same instrument already open |
-| 8b | Signal dedup | Same instrument approved < 5 minutes ago |
-| 9 | Margin | Trade notional > 30% of equity |
-| 10 | Sector concentration | Adding position would put > 40% of book in one sector |
-| 11 | Directional crowding | ≥ 3 open positions in same sector + same direction |
-| 12 | VIX reduce *(non-blocking)* | VIX > 25 → halves quantity |
-
----
-
-## Instruments (18)
-
-**Non-tradeable (indices only — excluded from order flow):**
-NIFTY 50, BANKNIFTY, FINNIFTY, INDIA VIX
-
-**Tradeable:**
-NIFTYBEES (ETF), RELIANCE, HDFCBANK, TCS, INFY, ICICIBANK, SBIN, AXISBANK, KOTAKBANK, BAJFINANCE, HINDUNILVR, WIPRO, LT, MARUTI, ADANIPORTS
-
----
-
-## UI Layout
-
-### Main Dashboard (`/`)
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  TERMINAL//IN  [live ticker tape — always scrolling]    ● LIVE/DISC  │
-├──────────────────────────────────────────────────────────────────────┤
-│  REGIME STRIP: current regime + size multiplier + full 6-state legend│
-├──────────────┬──────────────────────┬────────────────────────────────┤
-│  MARKET DATA │    CANDLESTICK       │     CHAT (AI assistant)        │
-│  NSE / BSE   │    EMA 9/21, Volume  │                                │
-│  GLOBAL / FX │    1m / 5m / 1d     │                                │
-├──────────────┼──────────────────────┼────────────────────────────────┤
-│  STRATEGY    │  OPEN POSITIONS      │  SIGNAL FEED                   │
-│  BOOK + DSA  │  Live P&L/SL/Target  │  Signals / News / Events       │
-└──────────────┴──────────────────────┴────────────────────────────────┘
-```
-
-### Agent Dashboard (`/agents`)
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  COMMAND STRIP: system health · regime · equity · decision funnel   │
-├─────────────┬───────────────────────────────┬───────────────────────┤
-│  AGENT      │  MATRIX / PIPELINE /          │  INSPECTOR            │
-│  GROUPS     │  SCOREBOARD / BROADCAST       │  (selected agent or   │
-│             │                               │   signal lineage)     │
-│  TRIGGER    │  [Orchestrator scan results]  │                       │
-│  AGENTS     │  [Strategy agent cards]       │                       │
-│             │  [System agent cards]         │                       │
-│  RISK       │                               │                       │
-│  COMMAND    │                               │                       │
-└─────────────┴───────────────────────────────┴───────────────────────┘
-```
-
----
-
-## Tests
-
-```bash
-.venv/Scripts/pytest tests/ -v
-# 77 tests covering:
-#   DB persistence (signal lineage, risk decisions, portfolio snapshots)
-#   Risk gate — all 13 checks including sector/correlation/non-tradeable
-#   Paper broker — capital tracking, PnL, SL/target auto-close, multi-position
-```
-
----
-
-## Regime States
-
-| State | Color | Size × | Description |
-|---|---|---|---|
-| strong_bull | green | 1.2 | Trending hard up — full size |
-| bull | green | 1.0 | Uptrend — normal size |
-| sideways | amber | 0.7 | Range-bound — reduced size |
-| bear | red | 0.5 | Downtrend — defensive |
-| strong_bear | dark red | 0.3 | Hard down — minimal exposure |
-| high_vol | purple | 0.2 | VIX elevated — halved size |
-
-The regime strip at the top of every page shows the current state and all 6 states as a legend.
-
----
-
-## Roadmap
-
-### ✅ Module 1 — Market Intelligence
-Live data, news sentiment, regime classifier, strategy engine, risk gate, execution. **Complete.**
-
-### ✅ Module 2 — Trade Execution & Settlement
-Paper cockpit, capital constraints, EOD settlement, learner feedback loop, 77 tests. **Complete.**
-
-### ✅ Module 3 — Agent Dashboard & Controls
-Per-agent state monitoring, strategy evaluation logs, pause/resume/force-eval, signal lineage inspector, EventBus broadcast inspector, orchestrator scan results, on-demand agent execution. **Complete.**
-
-### Module 4 — Strategy Training & Backtesting
-Historical backtest runner (walk-forward validation), HMM training UI (500+ day threshold), feature importance by regime, LLM-proposed strategy rules, strategy gene pool.
+*Single user, single laptop, ₹10L paper capital, NSE market hours. Built with Claude Code.*

@@ -1,9 +1,11 @@
 # TERMINAL//IN — Windows launcher
-# Usage: .\start.ps1          (paper mode, uses .env)
-#        .\start.ps1 -Live    (live mode — requires valid KITE_ACCESS_TOKEN)
+# Usage: .\start.ps1             (paper mode, uses .env)
+#        .\start.ps1 -Live       (live mode — requires valid KITE_ACCESS_TOKEN)
+#        .\start.ps1 -LowLatency (HIGH process priority + Python 3.14 experimental JIT)
 
 param(
-    [switch]$Live
+    [switch]$Live,
+    [switch]$LowLatency
 )
 
 $ErrorActionPreference = "Stop"
@@ -94,6 +96,16 @@ if (Test-Path (Join-Path $UIDir "package.json")) {
     }
     Write-Host "Starting UI on http://localhost:3000 ..." -ForegroundColor Cyan
     Start-Process -FilePath "npm" -ArgumentList "run dev" -WorkingDirectory $UIDir -WindowStyle Minimized
+}
+
+# ── Low-latency mode ──────────────────────────────────────────────────────────
+if ($LowLatency) {
+    # PYTHON_JIT must be set before the interpreter starts (CPython 3.14
+    # experimental JIT — copy-and-patch). LOW_LATENCY raises process priority
+    # inside main.py. Both are no-ops on builds without JIT support.
+    $env:LOW_LATENCY = "1"
+    $env:PYTHON_JIT  = "1"
+    Write-Host "Low-latency: HIGH priority + PYTHON_JIT=1" -ForegroundColor Yellow
 }
 
 # ── Launch Python backend ──────────────────────────────────────────────────────
