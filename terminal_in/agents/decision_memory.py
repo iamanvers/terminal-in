@@ -90,15 +90,15 @@ class DecisionMemory:
         except Exception:
             return ''
 
+        # Outcome facts only — no reason text. Small models copy any prose
+        # they see in examples verbatim into their own output.
         lines = []
         judged = [d for d in recent if d.get('hindsight_outcome')]
         for d in judged[:n]:
             ret = d.get('hindsight_ret_pct')
             ret_s = f'{ret*100:+.1f}%' if ret is not None else '?'
             lines.append(
-                f"{d['symbol']} {d['side']} {d['planner_action']}"
-                f"{' (' + (d.get('planner_reason') or '')[:40] + ')' if d.get('planner_reason') else ''}"
-                f" -> {ret_s} {d['hindsight_outcome']}"
+                f"{d['symbol']} {d['side']} {d['planner_action']} -> {ret_s} {d['hindsight_outcome']}"
             )
 
         rejected = [d for d in judged if d['planner_action'] in ('reject', 'filtered')]

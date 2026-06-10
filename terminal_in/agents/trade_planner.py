@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 OLLAMA_BASE  = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
 OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen2.5:3b')
 
-PLAN_TIMEOUT_S   = 45     # << 120s scan interval
+PLAN_TIMEOUT_S   = 60     # << 120s scan interval; cold model load alone is ~30s
 PROBE_TIMEOUT_S  = 3
 MAX_APPROVED     = 3
 SIZE_FACTOR_MIN  = 0.25
@@ -65,7 +65,9 @@ Rules:
 - action must be "approve" or "reject" for EVERY candidate listed
 - size_factor between 0.25 and 1.5 (1.0 = orchestrator's Kelly size; shrink when unsure)
 - approve at most {max_approved} candidates; reject the rest with a reason
-- reason must cite specifics (lenses, RSI, persistence, regime, portfolio overlap)"""
+- reason must cite specifics (lenses, RSI, persistence, regime, portfolio overlap)
+- write a fresh reason in your own words for each decision — NEVER copy text
+  from the PAST DECISIONS section; it is outcome history, not a template"""
 
 
 @dataclass
@@ -117,6 +119,7 @@ class TradePlanner:
 
     def run(self, stop_event: Event):
         log.info('TradePlanner loop started')
+        self._warmup()
         while not stop_event.is_set():
             with self._cond:
                 while self._pending is None and not stop_event.is_set():
@@ -207,6 +210,22 @@ class TradePlanner:
         ]
 
     # ── Ollama client ────────────────────────────────────────────────────────
+
+    def _warmup(self):
+        """Load the model into Ollama's memory at startup so the first real
+        planning call doesn't spend ~30s on cold load inside its timeout."""
+        if not self._ollama_available():
+            return
+        try:
+            requests.post(
+                f'{OLLAMA_BASE}/api/generate',
+                json={'model': OLLAMA_MODEL, 'prompt': 'ok', 'stream': False,
+                      'options': {'num_predict': 1}},
+                timeout=PLAN_TIMEOUT_S,
+            )
+            log.info('Planner: model %s warmed up', OLLAMA_MODEL)
+        except Exception as e:
+            log.debug('Planner warmup failed (non-fatal): %s', str(e)[:80])
 
     def _ollama_available(self) -> bool:
         try:
