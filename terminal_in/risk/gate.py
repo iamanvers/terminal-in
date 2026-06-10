@@ -258,12 +258,25 @@ class RiskSupervisor:
             age_s = int(now_ts - last_ts)
             return GateResult(False, checks, f'signal_too_recent={age_s}s')
 
-        # 9. Margin check — per-trade notional ≤ 30% of equity
+        # 9. Margin check — per-trade notional ≤ 30% of equity.
+        # Price source order: live tick → limit_price → stop_loss. A signal with
+        # NO resolvable price is rejected — an unknown notional must never pass.
         qty = int(signal.get('quantity', 0))
-        price_approx = float(signal.get('limit_price') or signal.get('stop_loss') or 0.0)
+        price_approx = 0.0
+        try:
+            from terminal_in.bus import bus as _bus
+            cached_tick = _bus.get_cached(f'ticks.{instrument_id}') or {}
+            price_approx = float(cached_tick.get('last_price') or 0.0)
+        except Exception:
+            pass
+        if price_approx <= 0:
+            price_approx = float(signal.get('limit_price') or signal.get('stop_loss') or 0.0)
+        if price_approx <= 0:
+            checks['margin_ok'] = False
+            return GateResult(False, checks, 'no_price_for_margin_check')
         notional = qty * price_approx
         max_per_trade = self._current_equity * 0.30
-        checks['margin_ok'] = notional <= max_per_trade or price_approx == 0
+        checks['margin_ok'] = notional <= max_per_trade
         if not checks['margin_ok']:
             return GateResult(False, checks, f'notional_too_large={notional:.0f}>{max_per_trade:.0f}')
 
@@ -295,6 +308,10 @@ class RiskSupervisor:
         """True if adding this instrument stays within the sector concentration limit."""
         if not open_trades:
             return True
+        if instrument_id not in _SECTOR_MAP:
+            log.warning('Sector map has no entry for instrument %d — treating as '
+                        "'other' (concentration check is weaker for unmapped symbols)",
+                        instrument_id)
         new_sector = _SECTOR_MAP.get(instrument_id, 'other')
         if new_sector == 'index':
             return True   # index instruments not subject to sector cap

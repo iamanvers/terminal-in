@@ -22,7 +22,10 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     app = Flask(__name__, static_folder=None)
     app.config['SECRET_KEY'] = components.get('jwt_secret', 'dev-secret')
 
-    sio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet')
+    # threading mode: real OS threads (engine/orchestrator/FinBERT stay preemptive).
+    # eventlet was greening all threads — one CPU-heavy task stalled the whole
+    # process including Flask. simple-websocket provides native WS in this mode.
+    sio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
     # Init route modules
     db = components.get('db')
@@ -63,8 +66,56 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
 
     @app.route('/api/health')
     def health():
+        """Liveness + degraded-mode report. Anything not 'ok'/full-strength
+        is surfaced so the UI can badge it — no silent fallbacks."""
         from flask import jsonify
-        return jsonify({'status': 'ok'})
+        import requests as _requests
+        from terminal_in.strategy_engine.regime.classifier import classifier as _clf
+        from terminal_in.news import sentiment as _sentiment
+
+        # Ollama reachability (cheap probe, cached 30s)
+        import time as _time
+        now = _time.monotonic()
+        cached = app.config.get('_ollama_probe')
+        if cached and now - cached[0] < 30:
+            ollama_online = cached[1]
+        else:
+            try:
+                import os as _os
+                base = _os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
+                ollama_online = _requests.get(f'{base}/api/tags', timeout=2).status_code == 200
+            except Exception:
+                ollama_online = False
+            app.config['_ollama_probe'] = (now, ollama_online)
+
+        # Data freshness: latest real daily bar for NIFTY 50
+        data_fresh = None
+        try:
+            if db is not None and instruments:
+                nifty_tok = instruments.get('NIFTY 50')
+                if nifty_tok:
+                    last = db.get_ohlcv_last_dates([nifty_tok]).get(nifty_tok)
+                    data_fresh = last
+        except Exception:
+            pass
+
+        sent = _sentiment.status()
+        degraded = []
+        if _clf.mode == 'heuristic':
+            degraded.append('regime_heuristic')
+        if not sent['available']:
+            degraded.append('sentiment_disabled')
+        if not ollama_online:
+            degraded.append('ollama_offline')
+
+        return jsonify({
+            'status': 'degraded' if degraded else 'ok',
+            'degraded': degraded,
+            'regime_mode': _clf.mode,
+            'sentiment': sent,
+            'ollama_online': ollama_online,
+            'last_daily_bar': data_fresh,
+        })
 
     @sio.on('connect')
     def on_connect():

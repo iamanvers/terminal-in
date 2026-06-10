@@ -77,11 +77,17 @@ class DSA:
 
     def _rebalance(self, now: datetime, regime: str):
         scores = {}
+        uninformed = []
         for sid in STRATEGY_IDS:
             regime_score = REGIME_FIT.get(sid, {}).get(regime, 0.3)
             bayes_wr = self._bayesian_wr(sid)
             sharpe = self._rolling_sharpe(sid)
+            if bayes_wr == 0.5 and sharpe == 0.5:
+                uninformed.append(sid)
             scores[sid] = 0.40 * regime_score + 0.30 * bayes_wr + 0.30 * sharpe
+        if uninformed:
+            log.warning('DSA: %s scored on uninformed priors (WR=0.5, no trade history) — '
+                        'allocations for these are regime-fit only', uninformed)
 
         # Normalise scores to allocations
         total = sum(scores.values())

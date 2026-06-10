@@ -14,7 +14,15 @@ To use with Ollama: convert via llama.cpp then `ollama create financial-analyst 
 
 import logging
 import os
+import sys
 from pathlib import Path
+
+# TRL 1.x reads package data files without an explicit encoding; on Windows the
+# default cp1252 codec crashes ('charmap' codec can't decode byte 0x81).
+# Re-exec in UTF-8 mode before any trl/transformers import if not already set.
+if sys.flags.utf8_mode == 0 and os.environ.get('PYTHONUTF8') != '1':
+    os.environ['PYTHONUTF8'] = '1'
+    os.execv(sys.executable, [sys.executable, '-X', 'utf8', *sys.argv])
 
 log = logging.getLogger(__name__)
 
@@ -63,9 +71,9 @@ def train() -> None:
         print('Run first: python -m terminal_in.agents.training.prepare_dataset')
         return
 
-    from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments
+    from transformers import AutoTokenizer, AutoModelForCausalLM
     from peft import LoraConfig, get_peft_model, TaskType
-    from trl import SFTTrainer
+    from trl import SFTTrainer, SFTConfig
     from datasets import load_from_disk, Dataset
     import torch
 
@@ -98,7 +106,7 @@ def train() -> None:
     device_map = 'auto' if torch.cuda.is_available() else 'cpu'
     model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL,
-        torch_dtype=torch.float32 if device_map == 'cpu' else torch.float16,
+        dtype=torch.float32 if device_map == 'cpu' else torch.float16,
         device_map=device_map,
         trust_remote_code=True,
     )
@@ -116,8 +124,8 @@ def train() -> None:
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
 
-    # ── Training args ─────────────────────────────────────────────────────
-    training_args = TrainingArguments(
+    # ── Training args (TRL 1.x uses SFTConfig) ───────────────────────────
+    training_args = SFTConfig(
         output_dir=str(OUTPUT_DIR),
         num_train_epochs=EPOCHS,
         per_device_train_batch_size=BATCH_SIZE,
@@ -132,17 +140,18 @@ def train() -> None:
         fp16=torch.cuda.is_available(),
         report_to='none',
         dataloader_num_workers=0,  # Windows: must be 0
+        dataset_text_field='text',
+        max_length=MAX_SEQ_LEN,    # TRL 1.x: max_length, not max_seq_length
+        packing=False,
     )
 
     # ── SFT Trainer ───────────────────────────────────────────────────────
+    # TRL 1.x: the tokenizer is passed as processing_class (tokenizer= was removed)
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         train_dataset=ds,
         args=training_args,
-        dataset_text_field='text',
-        max_seq_length=MAX_SEQ_LEN,
-        packing=False,
     )
 
     log.info('Starting training...')

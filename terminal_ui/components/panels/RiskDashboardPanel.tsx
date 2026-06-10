@@ -18,7 +18,18 @@ export default function RiskDashboardPanel() {
   const regimeUpdate = useSocketEvent<RegimeState | null>('regime_update', null)
 
   useEffect(() => {
-    api.regime().catch(() => null).then(r => { if (r) setRegime(r) })
+    // Retry a few times — the backend pre-seeds a default regime, but if the
+    // first fetch races the boot, don't leave the strip stuck on "unknown".
+    let cancelled = false
+    const tryFetch = (attempt: number) => {
+      api.regime()
+        .then(r => { if (!cancelled && r && r.regime) setRegime(r) })
+        .catch(() => {
+          if (!cancelled && attempt < 3) setTimeout(() => tryFetch(attempt + 1), 2000 * (attempt + 1))
+        })
+    }
+    tryFetch(0)
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {

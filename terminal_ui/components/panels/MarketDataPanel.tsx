@@ -117,34 +117,29 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
   const [selectedGlobal, setSelectedGlobal] = useState<GlobalQuote | null>(null)
 
   // Seed prices from REST on mount — no waiting for WebSocket.
-  // When market is closed and live ticks are empty, fall back to last OHLCV close prices.
+  // Fetch live ticks and last closes in parallel (no waterfall): live ticks
+  // win, OHLCV closes fill the gaps when the market is closed.
   useEffect(() => {
-    api.allTicks().then(raw => {
+    Promise.allSettled([api.allTicks(), api.lastCloses()]).then(([ticksRes, closesRes]) => {
       const next: PriceMap = {}
-      for (const [tokenStr, tick] of Object.entries(raw)) {
-        const token = Number(tokenStr)
-        if (tick.last_price > 0) {
-          next[token] = { price: tick.last_price, chg: tick.change ?? 0 }
-        }
-      }
-      const liveCount = Object.keys(next).length
-      if (liveCount >= 5) {
-        setPrices(next)
-        setLoading(false)
-        return
-      }
-      // Fewer than 5 live ticks — market likely closed. Fetch last close prices.
-      return api.lastCloses().then(closes => {
-        const merged = { ...next }
-        for (const [tokenStr, rec] of Object.entries(closes)) {
+      if (ticksRes.status === 'fulfilled') {
+        for (const [tokenStr, tick] of Object.entries(ticksRes.value)) {
           const token = Number(tokenStr)
-          if (!merged[token] && rec.close > 0) {
-            merged[token] = { price: rec.close, chg: 0 }
+          if (tick.last_price > 0) {
+            next[token] = { price: tick.last_price, chg: tick.change ?? 0 }
           }
         }
-        setPrices(merged)
-        setLoading(false)
-      })
+      }
+      if (closesRes.status === 'fulfilled') {
+        for (const [tokenStr, rec] of Object.entries(closesRes.value)) {
+          const token = Number(tokenStr)
+          if (!next[token] && rec.close > 0) {
+            next[token] = { price: rec.close, chg: 0 }
+          }
+        }
+      }
+      setPrices(next)
+      setLoading(false)
     }).catch(() => setLoading(false))
   }, [])
 
@@ -169,18 +164,15 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticks, marketOpen])
 
-  // Sparkline history — throttled to 1 update every 5s during market hours.
-  // This avoids costly array concat on every tick (18 tokens × 4Hz without throttle).
-  const sparklineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Sparkline history — fixed 5s interval during market hours, reading the
+  // latest ticks via ref. The effect runs once per market-open transition
+  // instead of re-running on every tick event.
   const ticksRef = useRef(ticks)
   ticksRef.current = ticks
 
   useEffect(() => {
     if (!marketOpen) return
-    if (sparklineTimerRef.current) return  // already scheduled
-
-    sparklineTimerRef.current = setTimeout(() => {
-      sparklineTimerRef.current = null
+    const interval = setInterval(() => {
       const t = ticksRef.current
       setPrevPrices(prev => {
         const next = { ...prev }
@@ -201,8 +193,9 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
         return next
       })
     }, 5000)
+    return () => clearInterval(interval)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticks, marketOpen])
+  }, [marketOpen])
 
   // Fetch global quotes when tab changes
   const fetchGlobal = useCallback(() => {

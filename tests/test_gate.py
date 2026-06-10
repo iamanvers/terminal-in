@@ -194,14 +194,17 @@ def test_margin_check_passes_reasonable_order():
     assert result.approved, f'Should be approved: {result.reason}'
 
 
-def test_margin_check_skipped_when_no_price():
+def test_margin_check_rejects_when_no_price():
     g = _make_gate()
     sig = _signal(instrument_id=999997)
     sig['limit_price'] = 0
     sig['stop_loss']   = 0
     result = g.gate(sig)
-    # No price → margin check skipped (can't compute notional)
-    assert result.checks.get('margin_ok') is True
+    # No resolvable price (no live tick, no limit/SL) → an unknown notional
+    # must never pass the margin check
+    assert not result.approved
+    assert result.checks.get('margin_ok') is False
+    assert 'no_price_for_margin_check' in (result.reason or '')
 
 
 # ── Adaptive confidence via learner ──────────────────────────────────────────

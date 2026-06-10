@@ -141,35 +141,45 @@ export default function TerminalPage() {
   const resolvedRef = useRef(false)
 
   useEffect(() => {
-    // Fetch the three critical endpoints that gate the dashboard render.
-    // All three resolve against the same backend — if any succeed, backend is up.
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('timeout')), 8000)
-    )
+    // Probe the three critical endpoints that gate the dashboard render.
+    // If any succeed, the backend is up. Retries with backoff so a backend
+    // that is still booting doesn't flash a false "BACKEND NOT RUNNING".
+    let cancelled = false
+    const ATTEMPTS = 5
+    const ATTEMPT_TIMEOUT_MS = 4000
+    const BACKOFF_MS = [0, 1500, 2500, 4000, 5000]
 
-    const load = Promise.race([
-      Promise.allSettled([
-        api.regime(),
-        api.instruments(),
-        api.portfolio(),
-      ]),
-      timeout,
-    ])
+    const probeOnce = (): Promise<boolean> => {
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), ATTEMPT_TIMEOUT_MS)
+      )
+      return Promise.race([
+        Promise.allSettled([api.regime(), api.instruments(), api.portfolio()]),
+        timeout,
+      ])
+        .then(results => (results as PromiseSettledResult<unknown>[]).some(r => r.status === 'fulfilled'))
+        .catch(() => false)
+    }
 
-    load
-      .then((results) => {
-        if (resolvedRef.current) return
-        resolvedRef.current = true
-        // If at least one succeeded, backend is up — render the dashboard
-        const settled = results as PromiseSettledResult<unknown>[]
-        const anyOk = settled.some(r => r.status === 'fulfilled')
-        setReadyState(anyOk ? 'ready' : 'error')
-      })
-      .catch(() => {
-        if (resolvedRef.current) return
+    const run = async () => {
+      for (let attempt = 0; attempt < ATTEMPTS && !cancelled; attempt++) {
+        if (BACKOFF_MS[attempt]) await new Promise(r => setTimeout(r, BACKOFF_MS[attempt]))
+        if (cancelled) return
+        const ok = await probeOnce()
+        if (cancelled || resolvedRef.current) return
+        if (ok) {
+          resolvedRef.current = true
+          setReadyState('ready')
+          return
+        }
+      }
+      if (!cancelled && !resolvedRef.current) {
         resolvedRef.current = true
         setReadyState('error')
-      })
+      }
+    }
+    run()
+    return () => { cancelled = true }
   }, [])
 
   // Keyboard: 1–6 switch chart symbol

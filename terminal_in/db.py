@@ -143,6 +143,22 @@ class DB:
             )
             return cur.rowcount
 
+    def get_ohlcv_last_dates(self, tokens: list[int]) -> dict[int, str | None]:
+        """Return {token: last_bucket_date_str} for each token. None if no data."""
+        if not tokens:
+            return {}
+        placeholders = ','.join('?' * len(tokens))
+        with self.conn() as c:
+            rows = c.execute(
+                f'SELECT instrument_token, MAX(bucket_date) AS last_date FROM ohlcv_1d '
+                f'WHERE instrument_token IN ({placeholders}) GROUP BY instrument_token',
+                tokens,
+            ).fetchall()
+        result: dict[int, str | None] = {t: None for t in tokens}
+        for row in rows:
+            result[row['instrument_token']] = row['last_date']
+        return result
+
     def get_ohlcv_1d(self, token: int, limit: int = 300) -> pd.DataFrame:
         with self.conn() as c:
             rows = c.execute(

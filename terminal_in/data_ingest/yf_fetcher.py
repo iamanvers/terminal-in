@@ -19,7 +19,9 @@ YF_MAP: dict[str, str] = {
     'FINNIFTY':          'NIFTY_FIN_SERVICE.NS',
     'INDIA VIX':         '^INDIAVIX',
     'NIFTYBEES':         'NIFTYBEES.NS',
-    'TATAMOTORS':        'TATAMOTORS.NS',
+    # Tata Motors demerged in 2025 — TATAMOTORS.NS was delisted on Yahoo;
+    # the passenger-vehicles entity TMPV.NS carries the listing forward.
+    'TATAMOTORS':        'TMPV.NS',
 }
 
 
@@ -31,11 +33,12 @@ def _yf_ticker(symbol: str) -> str:
     return f'{symbol}.NS'
 
 
-def backfill(db, token_map: dict[int, str], days: int = 365) -> int:
+def backfill(db, token_map: dict[int, str], days: int = 730) -> int:
     """
-    Download and store daily OHLCV for each token in token_map.
-    token_map: instrument_token → symbol_name
-    Returns count of symbols successfully downloaded.
+    Smart gap-aware daily OHLCV backfill.
+    For each token, checks the last stored date and only fetches missing days.
+    Falls back to full `days`-day fetch when no data exists at all.
+    Returns count of symbols successfully updated.
     """
     try:
         import yfinance as yf
@@ -43,16 +46,36 @@ def backfill(db, token_map: dict[int, str], days: int = 365) -> int:
         log.warning('yfinance not installed — skipping OHLCV download. Run: pip install yfinance')
         return 0
 
-    # yfinance end is EXCLUSIVE — use tomorrow so today's completed session is included
-    end_dt   = date.today() + timedelta(days=1)
-    start_dt = end_dt - timedelta(days=days + 1)
-    count = 0
+    today    = date.today()
+    # yfinance end is EXCLUSIVE — use tomorrow so today's close is included
+    end_dt   = today + timedelta(days=1)
+    full_start = end_dt - timedelta(days=days + 1)
 
+    # Query last stored date for all tokens in one shot
+    last_dates = db.get_ohlcv_last_dates(list(token_map.keys()))
+
+    count = 0
     for token, symbol in token_map.items():
+        last_str  = last_dates.get(token)
+        if last_str:
+            last_date = date.fromisoformat(last_str)
+            gap_days  = (today - last_date).days
+            if gap_days == 0:
+                log.debug('yfinance %s — already up to date (%s)', symbol, last_str)
+                continue
+            # Fetch from the day after last stored
+            start_dt = last_date + timedelta(days=1)
+            log.info('yfinance %s — gap detected: last=%s, fetching %d missing day(s)',
+                     symbol, last_str, gap_days)
+        else:
+            start_dt = full_start
+            log.info('yfinance %s — no data, full backfill from %s', symbol, start_dt)
+
         ticker_str = _yf_ticker(symbol)
         try:
-            tk = yf.Ticker(ticker_str)
-            hist = tk.history(start=start_dt.isoformat(), end=end_dt.isoformat(), interval='1d', auto_adjust=True)
+            tk   = yf.Ticker(ticker_str)
+            hist = tk.history(start=start_dt.isoformat(), end=end_dt.isoformat(),
+                              interval='1d', auto_adjust=True)
             if hist.empty:
                 log.debug('No yfinance data for %s (%s)', symbol, ticker_str)
                 continue
@@ -70,12 +93,12 @@ def backfill(db, token_map: dict[int, str], days: int = 365) -> int:
                 })
             if bars:
                 db.insert_ohlcv_1d_batch(bars)
-                # Remove any synthetic seed bars on market holidays within the same range
                 real_dates = {b['date'] for b in bars}
                 purged = db.purge_nontrading_ohlcv_1d(token, bars[0]['date'], real_dates)
                 if purged:
-                    log.info('yfinance %s — purged %d synthetic holiday bars', symbol, purged)
-                log.info('yfinance %s (%s) — stored %d daily bars', symbol, ticker_str, len(bars))
+                    log.debug('yfinance %s — purged %d synthetic holiday bars', symbol, purged)
+                log.info('yfinance %s (%s) — stored %d daily bars (latest: %s)',
+                         symbol, ticker_str, len(bars), bars[-1]['date'])
                 count += 1
         except Exception:
             log.warning('yfinance fetch failed for %s (%s)', symbol, ticker_str)

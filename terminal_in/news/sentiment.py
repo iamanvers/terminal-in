@@ -5,6 +5,7 @@ Loads once on first call; ~440MB download on first use.
 """
 
 import logging
+import time
 from threading import Lock
 from typing import Optional
 
@@ -14,6 +15,30 @@ _model = None
 _tokenizer = None
 _lock = Lock()
 _available = True  # set False if torch/transformers not installed
+
+_WARN_INTERVAL_S = 300
+_last_warn = 0.0
+
+
+def _warn_degraded():
+    """Rate-limited WARN so a disabled FinBERT is visible in logs during use,
+    not just once at import time."""
+    global _last_warn
+    now = time.monotonic()
+    if now - _last_warn >= _WARN_INTERVAL_S:
+        _last_warn = now
+        log.warning('FinBERT unavailable — sentiment scores defaulting to neutral/0.0 '
+                    '(signals using the NEWS lens are degraded)')
+
+
+def status() -> dict:
+    """Current sentiment engine status for /api/health."""
+    return {
+        'mode': 'finbert' if (_available and _model is not None) else
+                ('finbert_lazy' if _available else 'disabled'),
+        'available': _available,
+        'loaded': _model is not None,
+    }
 
 
 def _load():
@@ -46,12 +71,14 @@ def score(text: str) -> dict:
     Falls back to neutral with score 0.0 if model unavailable.
     """
     if not _available:
+        _warn_degraded()
         return {'sentiment': 'neutral', 'score': 0.0}
 
     with _lock:
         _load()
 
     if not _available or _model is None:
+        _warn_degraded()
         return {'sentiment': 'neutral', 'score': 0.0}
 
     try:

@@ -2,9 +2,10 @@
 Prepare fine-tuning dataset for the financial SLM.
 
 Sources:
-  1. FinancialPhraseBank — 4845 sentences with sentiment labels (positive/negative/neutral)
-  2. FiQA — financial QA pairs from HuggingFace (ibm/fiqa)
-  3. Local SQLite trades — signal → outcome pairs from your own paper trades
+  1. nickmuchi/financial-classification — 5057 sentences with sentiment labels (0=negative, 1=neutral, 2=positive)
+  2. gbharti/finance-alpaca — 68,912 general financial QA pairs in Alpaca format (sample 800)
+  3. NSE strategy pairs — Claude-generated high-quality Indian market strategy pairs
+  4. Local SQLite trades — signal → outcome pairs from your own paper trades
 
 Output: HuggingFace Dataset saved to ./data/training/financial_sft
 
@@ -37,32 +38,30 @@ def _alpaca(instruction: str, input_text: str, response: str) -> dict:
     return {'instruction': instruction, 'input': input_text, 'output': response, 'text': text}
 
 
-# ── Source 1: FinancialPhraseBank ─────────────────────────────────────────
+# ── Source 1: Financial sentiment (nickmuchi/financial-classification) ────
 
 def _load_financial_phrasebank() -> list[dict]:
-    """Download FinancialPhraseBank from HuggingFace and convert to sentiment classification pairs."""
+    """Download nickmuchi/financial-classification for sentiment training pairs."""
     try:
         from datasets import load_dataset
     except ImportError:
-        log.warning('datasets not installed — skipping FinancialPhraseBank. pip install datasets')
+        log.warning('datasets not installed — skipping sentiment dataset. pip install datasets')
         return []
 
     try:
-        ds = load_dataset('financial_phrasebank', 'sentences_allagree', trust_remote_code=True)
-        split = ds['train'] if 'train' in ds else list(ds.values())[0]
+        ds = load_dataset('nickmuchi/financial-classification', trust_remote_code=False)
+        split = ds['train']
     except Exception as e:
-        log.warning(f'FinancialPhraseBank load failed: {e}')
+        log.warning(f'financial-classification load failed: {e}')
         return []
 
+    # labels: 0=negative, 1=neutral, 2=positive
     label_map = {0: 'negative', 1: 'neutral', 2: 'positive'}
     samples = []
     for row in split:
-        sentence = row.get('sentence', '')
-        label    = label_map.get(row.get('label', 1), 'neutral')
-        response = (
-            f'Sentiment: {label.upper()}\n\n'
-            f'Analysis: This financial statement has a {label} tone. '
-        )
+        sentence = row.get('text', '')
+        label    = label_map.get(row.get('labels', 1), 'neutral')
+        response = f'Sentiment: {label.upper()}\n\nAnalysis: This financial statement has a {label} tone. '
         if label == 'positive':
             response += 'It signals favorable business conditions or improving financial performance.'
         elif label == 'negative':
@@ -75,45 +74,45 @@ def _load_financial_phrasebank() -> list[dict]:
             input_text=sentence,
             response=response,
         ))
-    log.info(f'FinancialPhraseBank: {len(samples)} samples')
+    log.info(f'Financial sentiment: {len(samples)} samples')
     return samples
 
 
-# ── Source 2: FiQA ────────────────────────────────────────────────────────
+# ── Source 2: General financial QA (gbharti/finance-alpaca) ───────────────
+
+_FINANCE_ALPACA_SAMPLE = 800  # reasonable subset to avoid overwhelming NSE-specific training
 
 def _load_fiqa() -> list[dict]:
-    """Download FiQA QA dataset for financial question answering."""
+    """Download gbharti/finance-alpaca for general financial QA (already in Alpaca format)."""
     try:
         from datasets import load_dataset
     except ImportError:
-        log.warning('datasets not installed — skipping FiQA')
+        log.warning('datasets not installed — skipping finance-alpaca')
         return []
 
     try:
-        ds = load_dataset('ibm/fiqa', 'qa', trust_remote_code=True)
+        ds = load_dataset('gbharti/finance-alpaca', trust_remote_code=False)
+        split = ds['train']
     except Exception as e:
-        try:
-            ds = load_dataset('fiqa', trust_remote_code=True)
-        except Exception as e2:
-            log.warning(f'FiQA load failed: {e}, {e2}')
-            return []
+        log.warning(f'finance-alpaca load failed: {e}')
+        return []
 
+    # Sample evenly to avoid domain dominance
+    import math
+    step = max(1, math.ceil(len(split) / _FINANCE_ALPACA_SAMPLE))
     samples = []
-    for split_name in ['train', 'validation', 'test']:
-        if split_name not in ds:
+    for i in range(0, len(split), step):
+        row = split[i]
+        instruction = row.get('instruction', '')
+        inp         = row.get('input', '') or ''
+        output      = row.get('output', '')
+        if not instruction or not output:
             continue
-        for row in ds[split_name]:
-            question = row.get('question', '') or row.get('query', '')
-            answer   = row.get('answer', '') or row.get('answer_text', '')
-            if not question or not answer:
-                continue
-            samples.append(_alpaca(
-                instruction='Answer the following financial question based on your knowledge of markets, accounting, and investing.',
-                input_text=question,
-                response=str(answer),
-            ))
+        samples.append(_alpaca(instruction=instruction, input_text=inp, response=output))
+        if len(samples) >= _FINANCE_ALPACA_SAMPLE:
+            break
 
-    log.info(f'FiQA: {len(samples)} samples')
+    log.info(f'finance-alpaca: {len(samples)} samples')
     return samples
 
 
@@ -166,12 +165,18 @@ _NSE_PAIRS = [
 def _load_nse_pairs() -> list[dict]:
     samples = []
     for question, answer in _NSE_PAIRS:
-        samples.append(_alpaca(
-            instruction=question,
-            input_text='',
-            response=answer,
-        ))
-    log.info(f'NSE instruction pairs: {len(samples)} samples')
+        samples.append(_alpaca(instruction=question, input_text='', response=answer))
+
+    # Load comprehensive strategy pairs generated by Claude
+    try:
+        from terminal_in.agents.training.strategy_pairs import STRATEGY_PAIRS
+        for question, answer in STRATEGY_PAIRS:
+            samples.append(_alpaca(instruction=question, input_text='', response=answer))
+        log.info(f'Strategy pairs loaded: {len(STRATEGY_PAIRS)} pairs')
+    except Exception as e:
+        log.warning(f'Could not load strategy_pairs: {e}')
+
+    log.info(f'NSE instruction pairs total: {len(samples)} samples')
     return samples
 
 
@@ -183,8 +188,8 @@ def _load_local_trades() -> list[dict]:
     try:
         conn = sqlite3.connect(DB_PATH)
         rows = conn.execute(
-            "SELECT strategy_id, instrument_id, direction, confidence, pnl, exit_reason "
-            "FROM trades WHERE exit_reason IS NOT NULL AND pnl IS NOT NULL LIMIT 500"
+            "SELECT strategy_id, instrument_token, side, confidence, net_pnl, exit_reason "
+            "FROM trades WHERE exit_reason IS NOT NULL AND net_pnl IS NOT NULL LIMIT 500"
         ).fetchall()
         conn.close()
     except Exception as e:
@@ -192,11 +197,12 @@ def _load_local_trades() -> list[dict]:
         return []
 
     samples = []
-    for strategy, symbol, direction, confidence, pnl, exit_reason in rows:
+    for strategy, symbol, side, confidence, pnl, exit_reason in rows:
+        conf_str = f'{(confidence or 0):.0%}'
         outcome = 'profitable' if (pnl or 0) > 0 else 'loss-making'
         response = (
-            f'Trade outcome: {outcome} (PnL: ₹{pnl:.2f})\n'
-            f'Strategy {strategy} entered {direction} on {symbol} with {confidence:.0%} confidence. '
+            f'Trade outcome: {outcome} (PnL: ₹{(pnl or 0):.2f})\n'
+            f'Strategy {strategy} entered {side} on {symbol} with {conf_str} confidence. '
             f'Exit reason: {exit_reason}. '
         )
         if (pnl or 0) > 0:
@@ -205,8 +211,8 @@ def _load_local_trades() -> list[dict]:
             response += 'The trade was unsuccessful — review signal quality and risk management for this setup.'
 
         samples.append(_alpaca(
-            instruction=f'Analyse this paper trade result and identify key lessons.',
-            input_text=f'Strategy: {strategy} | Symbol: {symbol} | Direction: {direction} | Confidence: {confidence:.0%} | Exit: {exit_reason}',
+            instruction='Analyse this paper trade result and identify key lessons.',
+            input_text=f'Strategy: {strategy} | Symbol: {symbol} | Side: {side} | Confidence: {conf_str} | Exit: {exit_reason}',
             response=response,
         ))
 

@@ -169,5 +169,10 @@ class RegimeClassifier:
     def size_multiplier(self) -> float:
         return SIZE_MULTIPLIERS.get(self._current_state, 1.0)
 
+    @property
+    def mode(self) -> str:
+        """'hmm' when the trained model is active, 'heuristic' otherwise."""
+        return 'hmm' if self._model is not None else 'heuristic'
+
 
 classifier = RegimeClassifier()

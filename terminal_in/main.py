@@ -3,9 +3,6 @@ TERMINAL//IN — main entrypoint.
 Starts all threads: data ingest, news, strategy engine, risk, Flask/SocketIO.
 """
 
-import eventlet
-eventlet.monkey_patch()
-
 import logging
 import signal
 import sys
@@ -86,10 +83,8 @@ def main():
         threads.append(t)
     else:
         _start_yf_live_feed(instruments, _stop_event, db=db)
-        # Seed synthetic OHLCV so charts have data immediately in paper mode
-        from terminal_in.data_ingest.paper_ohlcv import seed as _seed_ohlcv
-        _seed_ohlcv(db, list(instruments.values()))
-        # Aggregate live paper ticks into 1m OHLCV bars for intraday charts
+        # Real data only — no synthetic seeding. Historical bars come from the
+        # yfinance backfill below; intraday 1m bars from live tick aggregation.
         from terminal_in.data_ingest.paper_tick_agg import PaperTickAggregator
         _tick_agg = PaperTickAggregator(db=db)
 
@@ -105,6 +100,19 @@ def main():
         threads.append(t)
 
     # ── Strategy engine ───────────────────────────────────────────────────────
+    # Pre-seed the regime cache so /api/regime never returns {} before the
+    # engine's first evaluation cycle (~60s after boot).
+    from terminal_in.bus import bus
+    from datetime import datetime, timezone
+    bus.publish('regime.update', {
+        'regime': 'sideways',
+        'confidence': 0.0,
+        'india_vix': 15.0,
+        'size_multiplier': 0.7,
+        'ts': datetime.now(timezone.utc).isoformat(),
+        'startup_default': True,
+    })
+
     from terminal_in.strategy_engine.engine import StrategyEngine
     engine = StrategyEngine(db=db, instruments=instruments, config=cfg)
     t = Thread(target=engine.run_loop, args=(_stop_event,), daemon=True, name='strategy-engine')
@@ -163,11 +171,24 @@ def main():
     if streamer is not None:
         pass  # KiteStreamer.run() manages its own thread internally
 
+    # Fail fast with a clear message if the API port is already taken
+    # (e.g. a previous instance still running) instead of a raw traceback.
+    import socket as _socket
+    try:
+        probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        probe.bind(('0.0.0.0', 5000))
+        probe.close()
+    except OSError:
+        log.error('Port 5000 is already in use — is another TERMINAL//IN instance running? '
+                  'Stop it (or: netstat -ano | findstr :5000) and restart.')
+        sys.exit(1)
+
     log.info('All components started — API on http://0.0.0.0:5000')
 
     # Start Flask in main thread (blocks until stop)
     flask_thread = Thread(
-        target=lambda: sio.run(flask_app, host='0.0.0.0', port=5000, use_reloader=False, log_output=False),
+        target=lambda: sio.run(flask_app, host='0.0.0.0', port=5000, use_reloader=False,
+                               log_output=False, allow_unsafe_werkzeug=True),
         daemon=True,
         name='flask',
     )
@@ -196,22 +217,34 @@ def _start_yf_live_feed(instruments: dict, stop_event: Event, db=None):
 
 
 def _start_ohlcv_backfill(db, instruments: dict, cfg):
-    """Non-blocking backfill of daily + 5m intraday OHLCV via yfinance."""
-    def _fill():
+    """
+    Non-blocking gap-aware OHLCV backfill.
+    1. Runs immediately on startup — fills any gaps since last stored date per symbol.
+    2. Schedules a daily refresh every 24 h so the DB stays current even across long downtimes.
+    """
+    from terminal_in.data_ingest.yf_fetcher import backfill, backfill_intraday
+    token_map = {tok: sym for sym, tok in instruments.items()}
+
+    def _fill(label: str):
         try:
-            from terminal_in.data_ingest.yf_fetcher import backfill, backfill_intraday
-            token_map = {tok: sym for sym, tok in instruments.items()}
-            n = backfill(db, token_map, days=730)
+            n = backfill(db, token_map)          # smart gap-aware, skips up-to-date symbols
             if n > 0:
-                log.info('yfinance daily backfill complete — %d symbols', n)
-            # 5m intraday: last 60 days. INSERT OR REPLACE overwrites GBM synthetic bars.
+                log.info('yfinance daily backfill [%s] — %d symbols updated', label, n)
             n5 = backfill_intraday(db, token_map, interval='5m')
             if n5 > 0:
-                log.info('yfinance 5m intraday backfill complete — %d symbols', n5)
+                log.info('yfinance 5m intraday backfill [%s] — %d symbols updated', label, n5)
         except Exception:
-            log.exception('OHLCV backfill failed (non-fatal)')
+            log.exception('OHLCV backfill [%s] failed (non-fatal)', label)
 
-    Thread(target=_fill, daemon=True, name='ohlcv-backfill').start()
+    def _periodic_refresh():
+        """Refresh once at startup, then every 24 h."""
+        _fill('startup')
+        while not _stop_event.is_set():
+            _stop_event.wait(timeout=86400)   # 24 hours
+            if not _stop_event.is_set():
+                _fill('daily-refresh')
+
+    Thread(target=_periodic_refresh, daemon=True, name='ohlcv-backfill').start()
 
 
 if __name__ == '__main__':
