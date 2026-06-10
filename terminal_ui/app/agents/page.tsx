@@ -5,6 +5,7 @@ import {
   KillSwitchState, RegimeState, PortfolioSummary, SignalLineage,
   SystemHealth, Scorecard, LearnerParams, OrchestratorState, OrchestratorResult,
   AgentQueryResponse, NSESymbol,
+  PlannerState, PlannerVerdict, AgentDecision, SupervisorState, BackendHealth,
 } from '@/lib/api'
 import { getSocket } from '@/lib/socket'
 
@@ -1309,7 +1310,187 @@ function FinancialAgentPanel() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Page
 // ─────────────────────────────────────────────────────────────────────────────
-type Tab = 'matrix' | 'pipeline' | 'scoreboard' | 'broadcast' | 'query'
+// ─────────────────────────────────────────────────────────────────────────────
+// Trade Planner (LLM judge) panel
+// ─────────────────────────────────────────────────────────────────────────────
+function PlannerModeBadge({ mode, model, latencyMs }: { mode: string; model?: string | null; latencyMs?: number | null }) {
+  const cfg = mode === 'llm'
+    ? { color: C.green, label: `LLM · ${model ?? '?'} · ${latencyMs != null ? (latencyMs / 1000).toFixed(1) + 's' : '—'}` }
+    : mode === 'degraded'
+    ? { color: C.amber, label: 'DEGRADED — deterministic high bar (Ollama unreachable)' }
+    : mode === 'off'
+    ? { color: C.muted, label: 'PLANNER OFF' }
+    : { color: C.muted, label: 'AWAITING FIRST SCAN' }
+  return (
+    <span style={{
+      fontSize: 8, fontWeight: 700, letterSpacing: '.06em', padding: '2px 8px',
+      borderRadius: 3, border: `1px solid ${cfg.color}44`, color: cfg.color,
+      background: `${cfg.color}0A`,
+    }}>{cfg.label}</span>
+  )
+}
+
+function PlannerPanel({ state }: { state: PlannerState | null }) {
+  const verdict = (state?.last_verdict ?? {}) as PlannerVerdict
+  const items = verdict.verdicts ?? []
+  return (
+    <div>
+      <div style={{ fontSize: 8, color: '#2A2A2A', letterSpacing: '.09em', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+        ⚖ TRADE PLANNER — LLM JUDGE
+        <PlannerModeBadge mode={state?.mode ?? 'idle'} model={state?.model} latencyMs={state?.last_latency_ms} />
+        {verdict.ts ? <span style={{ fontSize: 8, color: '#333' }}>scan #{verdict.scan_id} · {fmtTs(verdict.ts)}</span> : null}
+        <div style={{ flex: 1, height: 1, background: '#111' }} />
+      </div>
+      {items.length === 0 ? (
+        <div style={{ fontSize: 9, color: '#333', padding: '8px 4px' }}>
+          No verdicts yet — the planner rules on each orchestrator batch (one LLM call per scan).
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {items.map((v, i) => (
+            <div key={`${v.symbol}-${i}`} className="row-in" style={{
+              display: 'flex', alignItems: 'baseline', gap: 10, padding: '6px 10px',
+              background: C.card, border: `1px solid ${C.border}`, borderRadius: 4,
+              borderLeft: `2px solid ${v.action === 'approve' ? C.green : C.red}`,
+            }}>
+              <span style={{
+                fontSize: 8, fontWeight: 800, letterSpacing: '.06em', minWidth: 52,
+                color: v.action === 'approve' ? C.green : C.red,
+              }}>{v.action === 'approve' ? '✓ APPROVE' : '✕ REJECT'}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: C.text, minWidth: 84 }}>{v.symbol}</span>
+              <span style={{ fontSize: 9, color: v.side === 'BUY' ? C.green : C.red, minWidth: 30 }}>{v.side ?? ''}</span>
+              {v.ev != null && <span style={{ fontSize: 9, color: C.sub, minWidth: 56 }}>EV {v.ev.toFixed(2)}</span>}
+              {v.action === 'approve' && v.size_factor !== 1.0 && (
+                <span style={{ fontSize: 9, color: C.amber, minWidth: 44 }}>size ×{v.size_factor.toFixed(2)}</span>
+              )}
+              <span style={{ fontSize: 9, color: '#666', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                title={v.reason}>{v.reason}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trading Supervisor (control loop) panel
+// ─────────────────────────────────────────────────────────────────────────────
+function SupervisorPanel({ state }: { state: SupervisorState | null }) {
+  const suppressed = Object.entries(state?.suppressed_lenses ?? {})
+  const throttle = state?.throttle_level ?? 0
+  const consec = state?.consec_losses ?? 0
+  const allQuiet = suppressed.length === 0 && throttle === 0
+  return (
+    <div>
+      <div style={{ fontSize: 8, color: '#2A2A2A', letterSpacing: '.09em', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+        ⟲ SUPERVISOR — CONTROL LOOP
+        {throttle > 0 && (
+          <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 8px', borderRadius: 3, border: `1px solid ${C.amber}44`, color: C.amber, background: `${C.amber}0A` }}>
+            THROTTLED L{throttle}
+          </span>
+        )}
+        <div style={{ flex: 1, height: 1, background: '#111' }} />
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {allQuiet ? (
+          <span style={{ fontSize: 9, color: '#333' }}>
+            All lenses active · consecutive losses: {consec} · breaker at 3 (per lens) / throttle at 5 / hard stop at 8
+          </span>
+        ) : (
+          <>
+            {suppressed.map(([lens, secs]) => (
+              <span key={lens} style={{
+                fontSize: 9, fontWeight: 700, padding: '4px 10px', borderRadius: 4,
+                border: `1px solid ${C.red}44`, color: C.red, background: `${C.red}0A`,
+              }}>
+                {lens} suppressed · {Math.max(1, Math.round(secs / 60))}m left
+              </span>
+            ))}
+            <span style={{ fontSize: 9, color: '#555' }}>consecutive losses: {consec}</span>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Decision log tab (planner decisions + hindsight)
+// ─────────────────────────────────────────────────────────────────────────────
+const HINDSIGHT_C: Record<string, string> = {
+  would_win: C.red, would_lose: C.green, flat: C.muted,
+  actual_win: C.green, actual_loss: C.red,
+}
+
+function DecisionLogTab({ decisions }: { decisions: AgentDecision[] }) {
+  const [missedOnly, setMissedOnly] = useState(false)
+  const rows = missedOnly
+    ? decisions.filter(d => d.planner_action !== 'fired' && d.planner_action !== 'approve' && d.hindsight_outcome === 'would_win')
+    : decisions
+  const th: React.CSSProperties = { fontSize: 8, color: '#2A2A2A', letterSpacing: '.08em', fontWeight: 700, textAlign: 'left', padding: '6px 8px', position: 'sticky', top: 0, background: C.panel }
+  const td: React.CSSProperties = { fontSize: 9, padding: '5px 8px', borderTop: `1px solid #111`, whiteSpace: 'nowrap' }
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        <span style={{ fontSize: 9, color: '#555' }}>
+          Every candidate the agents ruled on — and what the market did next. Rejections that would have won are the cost of caution; track them.
+        </span>
+        <div style={{ flex: 1 }} />
+        <button onClick={() => setMissedOnly(m => !m)} style={{
+          fontSize: 8, fontWeight: 700, padding: '3px 10px', borderRadius: 3, cursor: 'pointer',
+          border: `1px solid ${missedOnly ? C.amber : C.border2}`,
+          background: missedOnly ? '#F7931E0A' : 'transparent',
+          color: missedOnly ? C.amber : '#555',
+        }}>MISSED WINNERS</button>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {rows.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center', fontSize: 9, color: '#333' }}>
+            {missedOnly ? 'No missed winners in the recent log.' : 'No decisions recorded yet — they appear after the first planner-ruled scan.'}
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>
+              <th style={th}>TIME</th><th style={th}>SYMBOL</th><th style={th}>SIDE</th>
+              <th style={th}>EV</th><th style={th}>CONF</th><th style={th}>PERSIST</th>
+              <th style={th}>ACTION</th><th style={th}>MODE</th><th style={th}>HINDSIGHT</th><th style={th}>REASON</th>
+            </tr></thead>
+            <tbody>
+              {rows.map(d => {
+                const actionC = d.planner_action === 'approve' || d.planner_action === 'fired' ? C.green
+                  : d.planner_action === 'reject' ? C.red : C.muted
+                const hc = d.hindsight_outcome ? HINDSIGHT_C[d.hindsight_outcome] ?? C.muted : '#2A2A2A'
+                return (
+                  <tr key={d.decision_id}>
+                    <td style={{ ...td, color: '#555' }}>{fmtTs(d.decided_at)}</td>
+                    <td style={{ ...td, color: C.text, fontWeight: 700 }}>{d.symbol}</td>
+                    <td style={{ ...td, color: d.side === 'BUY' ? C.green : C.red }}>{d.side}</td>
+                    <td style={{ ...td, color: C.sub }}>{d.ev?.toFixed(2) ?? '—'}</td>
+                    <td style={{ ...td, color: C.sub }}>{d.confidence != null ? `${(d.confidence * 100).toFixed(0)}%` : '—'}</td>
+                    <td style={{ ...td, color: C.sub }}>{d.persistence ?? '—'}</td>
+                    <td style={{ ...td, color: actionC, fontWeight: 700 }}>{d.planner_action.toUpperCase()}</td>
+                    <td style={{ ...td, color: d.planner_mode === 'llm' ? C.teal : d.planner_mode === 'degraded' ? C.amber : '#444' }}>{d.planner_mode}</td>
+                    <td style={{ ...td, color: hc, fontWeight: 600 }}>
+                      {d.hindsight_outcome
+                        ? `${d.hindsight_ret_pct != null ? `${(d.hindsight_ret_pct * 100).toFixed(1)}% ` : ''}${d.hindsight_outcome}`
+                        : 'pending'}
+                    </td>
+                    <td style={{ ...td, color: '#666', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis' }} title={d.planner_reason ?? ''}>
+                      {d.planner_reason}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+type Tab = 'matrix' | 'judge' | 'pipeline' | 'scoreboard' | 'broadcast' | 'query'
 type SelType = { kind: 'agent'; id: string } | { kind: 'signal'; signalId: string }
 
 export default function AgentsPage() {
@@ -1328,6 +1509,10 @@ export default function AgentsPage() {
   const [learnerParams, setLearnerParams] = useState<LearnerParams[]>([])
   const [allocations,   setAllocations]  = useState<Record<string, number>>({})
   const [orchState,     setOrchState]    = useState<OrchestratorState | null>(null)
+  const [plannerState,  setPlannerState] = useState<PlannerState | null>(null)
+  const [supState,      setSupState]     = useState<SupervisorState | null>(null)
+  const [agentDecisions, setAgentDecisions] = useState<AgentDecision[]>([])
+  const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null)
   const [selected,      setSelected]     = useState<SelType | null>(null)
   const [lineage,       setLineage]      = useState<SignalLineage | null>(null)
   const [lineageLoading, setLineageLoading] = useState(false)
@@ -1335,7 +1520,7 @@ export default function AgentsPage() {
   const [backendDown,    setBackendDown]  = useState(false)
 
   const load = useCallback(async () => {
-    const [a, r, au, ins, h, reg, port, sc, lp, alloc, orch] = await Promise.allSettled([
+    const [a, r, au, ins, h, reg, port, sc, lp, alloc, orch, plan, sup, bh] = await Promise.allSettled([
       api.agents(),
       api.riskState(),
       api.agentAudit(100),
@@ -1347,6 +1532,9 @@ export default function AgentsPage() {
       api.learnerParams(),
       api.allocations(),
       api.orchestratorState(),
+      api.plannerState(),
+      api.supervisorState(),
+      api.backendHealth(),
     ])
     const anyOk = [a, r, au, ins, h, reg, port, sc, lp, alloc, orch].some(x => x.status === 'fulfilled')
     setBackendDown(!anyOk)
@@ -1361,12 +1549,16 @@ export default function AgentsPage() {
     if (lp.status === 'fulfilled')    setLearnerParams(lp.value)
     if (alloc.status === 'fulfilled') setAllocations(alloc.value)
     if (orch.status === 'fulfilled')  setOrchState(orch.value)
+    if (plan.status === 'fulfilled')  setPlannerState(plan.value)
+    if (sup.status === 'fulfilled')   setSupState(sup.value)
+    if (bh.status === 'fulfilled')    setBackendHealth(bh.value)
     setLoading(false)
   }, [])
 
   const loadDecisions = useCallback(async () => {
-    const d = await api.decisions(100).catch(() => [])
-    setDecisions(d)
+    const [d, ad] = await Promise.allSettled([api.decisions(100), api.plannerDecisions(100)])
+    if (d.status === 'fulfilled')  setDecisions(d.value)
+    if (ad.status === 'fulfilled') setAgentDecisions(ad.value)
   }, [])
 
   const loadEvents = useCallback(async () => {
@@ -1392,6 +1584,8 @@ export default function AgentsPage() {
     s.on('orchestrator_scan_done', debounceAll)
     s.on('scorecard_update',       debounceAll)
     s.on('learner_params_updated', debounceAll)
+    s.on('planner_verdict',        debounceAll)
+    s.on('supervisor_throttle',    debounceAll)
     return () => {
       s.off('agent_status_changed',   debounceAll)
       s.off('kill_switch_global_pause', debounceAll)
@@ -1400,6 +1594,8 @@ export default function AgentsPage() {
       s.off('orchestrator_scan_done', debounceAll)
       s.off('scorecard_update',       debounceAll)
       s.off('learner_params_updated', debounceAll)
+      s.off('planner_verdict',        debounceAll)
+      s.off('supervisor_throttle',    debounceAll)
       if (allTimer) clearTimeout(allTimer)
       if (decTimer) clearTimeout(decTimer)
     }
@@ -1448,6 +1644,7 @@ export default function AgentsPage() {
 
   const TABS: Array<{ key: Tab; label: string }> = [
     { key: 'matrix',     label: 'MATRIX' },
+    { key: 'judge',      label: '⚖ DECISION LOG' },
     { key: 'pipeline',   label: 'PIPELINE' },
     { key: 'scoreboard', label: 'SCOREBOARD' },
     { key: 'broadcast',  label: 'BROADCAST' },
@@ -1485,6 +1682,15 @@ export default function AgentsPage() {
               ))}
             </div>
           )}
+          {backendHealth && backendHealth.degraded.length > 0 && (
+            <span title={`Degraded subsystems: ${backendHealth.degraded.join(', ')}`} style={{
+              fontSize: 8, fontWeight: 700, letterSpacing: '.06em', padding: '2px 8px', marginRight: 8,
+              borderRadius: 3, border: `1px solid ${C.amber}44`, color: C.amber, background: `${C.amber}0A`,
+              alignSelf: 'center',
+            }}>
+              ⚠ DEGRADED: {backendHealth.degraded.map(d => d.replace(/_/g, ' ')).join(' · ')}
+            </span>
+          )}
           <button onClick={() => { load(); loadDecisions(); if (tab === 'broadcast') loadEvents() }}
             style={{ padding: '8px 14px', fontSize: 9, color: '#3A3A3A', background: 'none', border: 'none', cursor: 'pointer', borderLeft: `1px solid ${C.border}` }}>
             ↺ REFRESH
@@ -1514,6 +1720,12 @@ export default function AgentsPage() {
                 <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {/* Orchestrator scan results — the core agentic output */}
                   <OrchestratorPanel state={orchState} onScan={load} />
+
+                  {/* LLM judge verdicts on the latest candidate batch */}
+                  <PlannerPanel state={plannerState} />
+
+                  {/* Closed-loop control: lens breakers + throttle */}
+                  <SupervisorPanel state={supState} />
 
                   {/* System agents */}
                   {systemAgents.length > 0 && (
@@ -1599,6 +1811,8 @@ export default function AgentsPage() {
                 </div>
               </div>
             )}
+
+            {tab === 'judge' && <DecisionLogTab decisions={agentDecisions} />}
 
             {tab === 'pipeline' && (
               <PipelineTab agents={agents} decisions={decisions}

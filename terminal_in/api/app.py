@@ -45,7 +45,9 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     risk.init(supervisor)
     market.init(db)
     chat.init(db)
-    agents.init(engine=engine, db=db)
+    agents.init(engine=engine, db=db,
+                planner=components.get('planner'),
+                trading_supervisor=components.get('trading_supervisor'))
 
     # Initialise EventBus ring buffer
     from terminal_in.api import event_buffer

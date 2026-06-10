@@ -26,11 +26,13 @@ import numpy as np
 
 from terminal_in.bus import bus
 from terminal_in.agents.control import registry
+from terminal_in.agents.signal_filters import CandidateTracker, RegimeHysteresis, data_quality
 
 log = logging.getLogger(__name__)
 
 SCAN_INTERVAL_S    = 120   # seconds between automatic scans
-TOP_K              = 3     # max signals emitted per scan
+TOP_K              = 3     # max signals emitted per scan (planner off)
+PLANNER_BATCH_K    = 5     # eligible candidates handed to the LLM planner
 MIN_EV             = 1.2   # minimum EV to fire a signal
 MIN_CONF           = 0.45  # minimum base confidence to fire
 SIGNAL_DEDUP_S     = 300   # don't re-signal same instrument within 5 min
@@ -59,9 +61,15 @@ class TradeOrchestrator:
         self._scan_count  = 0
         self._last_signal: dict[int, float] = {}  # token → last signal ts
 
+        # Noise reduction: debounce/persistence/EV-hysteresis across scans
+        self._tracker     = CandidateTracker(min_conf=MIN_CONF, ev_enter=MIN_EV)
+        self._regime_hyst = RegimeHysteresis(required=2)
+        self._planner_enabled = bool(getattr(config, 'planner_enabled', True))
+
         registry.register('ORCHESTRATOR', 'orchestrator')
         bus.subscribe('orchestrator.scan_now', self._on_scan_now)
-        log.info('TradeOrchestrator initialised (%d instruments)', len(instruments))
+        log.info('TradeOrchestrator initialised (%d instruments, planner=%s)',
+                 len(instruments), 'on' if self._planner_enabled else 'off')
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -104,13 +112,23 @@ class TradeOrchestrator:
         from terminal_in.strategy_engine.regime.classifier import classifier
 
         now    = _time.time()
-        regime = classifier.current_state
+        # Regime hysteresis: a flapping regime must hold 2 consecutive scans
+        # before its multiplier applies (the raw regime is still reported).
+        regime = self._regime_hyst.update(classifier.current_state)
         cached = bus.get_cached('regime.update') or {}
         vix    = float(cached.get('india_vix', 15.0))
         size_m = float(cached.get('size_multiplier', 1.0))
 
         # Regime confidence multiplier (not a gate)
         regime_mult = _REGIME_MULT.get(regime, 1.0)
+
+        # Supervisor control inputs: suppressed lenses + global throttle
+        sup_state  = bus.get_cached('supervisor.state') or {}
+        suppressed = set((sup_state.get('suppressed_lenses') or {}).keys())
+        throttle   = int((bus.get_cached('supervisor.throttle') or {}).get('level', 0))
+        min_ev     = MIN_EV * 1.25 if throttle else MIN_EV
+        if suppressed:
+            log.info('Orchestrator: lenses suppressed by supervisor: %s', sorted(suppressed))
 
         # Open positions — skip instruments already held
         try:
@@ -159,7 +177,7 @@ class TradeOrchestrator:
             try:
                 result = self._analyse_symbol(
                     symbol, token, regime, regime_mult, vix, size_m, strategy_wr,
-                    recent_news, now,
+                    recent_news, now, suppressed,
                 )
                 if result:
                     candidates.append(result)
@@ -171,66 +189,72 @@ class TradeOrchestrator:
             key=lambda r: r.get('ev', 0) if r.get('side') not in ('NEUTRAL', 'SKIP') else -1,
             reverse=True,
         )
+
+        # Noise reduction: persistence/debounce + conf EMA + EV hysteresis.
+        # Annotates candidates with eligible/persistence/conf_smoothed/filter_reason.
+        candidates = self._tracker.update(candidates, now)
+
         self._results = candidates
         self._scan_count += 1
         self._last_scan = now
 
-        # Fire top-K high-EV signals
-        fired = 0
+        # Collect fireable candidates (throttle halves the budget)
+        equity = float(cached.get('equity') or self._config.initial_capital)
+        batch_k = (1 if throttle else PLANNER_BATCH_K) if self._planner_enabled \
+            else (1 if throttle else TOP_K)
+        fireable = []
         for c in candidates:
-            if fired >= TOP_K:
+            if len(fireable) >= batch_k:
                 break
             if c.get('side') in ('NEUTRAL', 'SKIP', None):
                 continue
-            if c.get('ev', 0) < MIN_EV:
+            if c.get('ev', 0) < min_ev:
                 break
-            if c.get('confidence', 0) < MIN_CONF:
+            if not c.get('eligible'):
                 continue
-
             token = int(c['token'])
             if now - self._last_signal.get(token, 0) < SIGNAL_DEDUP_S:
                 continue
-
-            price = float(c.get('price', 0))
-            if price <= 0:
+            if float(c.get('price', 0)) <= 0:
                 continue
+            c['signal'] = self._build_signal(c, equity, size_m, regime, now)
+            fireable.append(c)
 
-            sl  = float(c.get('suggested_sl', 0))
-            tgt = float(c.get('suggested_target', 0))
-
-            kelly = 0.025
-            if self._learner:
-                params = self._learner.get_params('ORCHESTRATOR')
-                kelly  = float(params.get('kelly_fraction', 0.025))
-
-            equity   = float(cached.get('equity') or self._config.initial_capital)
-            notional = equity * kelly * size_m
-            qty      = max(1, int(notional / price))
-
-            signal = {
-                'strategy_id':   'ORCHESTRATOR',
-                'instrument_id': token,
-                'side':          c['side'],
-                'quantity':      qty,
-                'limit_price':   price,
-                'stop_loss':     sl,
-                'target':        tgt,
-                'confidence':    round(float(c.get('confidence', MIN_CONF)), 3),
-                'regime':        regime,
-                'trigger_rule':  c.get('verdict'),
-                'generated_at':  int(now * 1000),
-                'metadata': {
-                    'source':    'orchestrator',
-                    'ev':        round(c.get('ev', 0), 3),
-                    'rationale': c.get('summary', ''),
-                    'lenses':    [l.get('strategy') for l in c.get('lenses', [])],
-                },
-            }
-            bus.publish('strategy.signal', signal)
-            self._last_signal[token] = now
-            fired += 1
-            log.info('ORCHESTRATOR SIGNAL: %s %s EV=%.2f conf=%.2f',
-                     c['side'], c['symbol'], c.get('ev', 0), c.get('confidence', 0))
+        fired = 0
+        if fireable and self._planner_enabled:
+            # Hand the batch to the LLM TradePlanner — it approves/rejects/sizes
+            # and publishes strategy.signal itself. The risk gate still runs on
+            # everything it emits.
+            try:
+                open_pos = [
+                    {'symbol': t.get('tradingsymbol') or str(t.get('instrument_token')),
+                     'side': t.get('side'), 'qty': t.get('quantity'),
+                     'unrealized': t.get('unrealized_pnl', 0)}
+                    for t in self._db.get_open_trades()
+                ]
+            except Exception:
+                open_pos = []
+            bus.publish('planner.candidates', {
+                'scan_id':        self._scan_count,
+                'ts':             int(now * 1000),
+                'regime':         regime,
+                'india_vix':      vix,
+                'equity':         equity,
+                'throttle':       throttle,
+                'open_positions': open_pos,
+                'candidates':     fireable,
+            })
+            for c in fireable:
+                self._last_signal[int(c['token'])] = now
+            log.info('Orchestrator → planner: %d candidates handed off', len(fireable))
+        else:
+            # Planner disabled — fire directly (legacy path)
+            for c in fireable:
+                bus.publish('strategy.signal', c['signal'])
+                self._last_signal[int(c['token'])] = now
+                fired += 1
+                log.info('ORCHESTRATOR SIGNAL: %s %s EV=%.2f conf=%.2f',
+                         c['side'], c['symbol'], c.get('ev', 0), c.get('confidence', 0))
 
         bus.publish('orchestrator.scan_done', {
             'scan_count':   self._scan_count,
@@ -241,6 +265,41 @@ class TradeOrchestrator:
         log.info('Orchestrator scan #%d: %d candidates, %d fired (regime=%s)',
                  self._scan_count, len(candidates), fired, regime)
 
+    # ── Signal construction ───────────────────────────────────────────────────
+
+    def _build_signal(self, c: dict, equity: float, size_m: float,
+                      regime: str, now: float) -> dict:
+        """Build the strategy.signal payload for a fireable candidate.
+        Kelly-fraction sizing × regime size multiplier."""
+        price = float(c.get('price', 0))
+        kelly = 0.025
+        if self._learner:
+            params = self._learner.get_params('ORCHESTRATOR')
+            kelly  = float(params.get('kelly_fraction', 0.025))
+        notional = equity * kelly * size_m
+        qty      = max(1, int(notional / max(price, 0.01)))
+
+        return {
+            'strategy_id':   'ORCHESTRATOR',
+            'instrument_id': int(c['token']),
+            'side':          c['side'],
+            'quantity':      qty,
+            'limit_price':   price,
+            'stop_loss':     float(c.get('suggested_sl', 0)),
+            'target':        float(c.get('suggested_target', 0)),
+            'confidence':    round(float(c.get('confidence', MIN_CONF)), 3),
+            'regime':        regime,
+            'trigger_rule':  c.get('verdict'),
+            'generated_at':  int(now * 1000),
+            'metadata': {
+                'source':      'orchestrator',
+                'ev':          round(c.get('ev', 0), 3),
+                'rationale':   c.get('summary', ''),
+                'lenses':      [l.get('strategy') for l in c.get('lenses', [])],
+                'persistence': int(c.get('persistence', 0)),
+            },
+        }
+
     # ── Symbol analysis ───────────────────────────────────────────────────────
 
     def _analyse_symbol(self,
@@ -249,7 +308,9 @@ class TradeOrchestrator:
                         vix: float, size_m: float,
                         strategy_wr: dict[str, float],
                         recent_news: list[dict],
-                        now: float) -> dict | None:
+                        now: float,
+                        suppressed: set[str] | None = None) -> dict | None:
+        suppressed = suppressed or set()
 
         # ── Try to load daily OHLCV ───────────────────────────────────────────
         try:
@@ -260,40 +321,22 @@ class TradeOrchestrator:
         # Live price from tick cache (always available in paper mode)
         cached_tick = bus.get_cached(f'ticks.{token}') or {}
         live_price  = float(cached_tick.get('last_price') or 0)
+        tick_age_s  = None
+        if cached_tick.get('timestamp'):
+            tick_age_s = max(0.0, now - float(cached_tick['timestamp']) / 1000)
 
-        has_ohlcv = df1d is not None and not df1d.empty and len(df1d) >= 5
-
-        if not has_ohlcv:
-            if live_price <= 0:
-                return None
-            # Minimal result — show live price with no technical lenses
-            news_lens = self._news_lens(symbol, recent_news, now, strategy_wr, live_price)
-            lenses = [news_lens] if news_lens else []
-            if lenses:
-                side = lenses[0]['side']
-                conf = lenses[0]['confidence']
-                atr_est = live_price * 0.01
-                sl  = round(live_price - 1.5 * atr_est, 2) if side == 'BUY' else round(live_price + 1.5 * atr_est, 2)
-                tgt = round(live_price + 2.5 * atr_est, 2) if side == 'BUY' else round(live_price - 2.5 * atr_est, 2)
-                ev  = round(conf * (abs(tgt - live_price) / max(abs(live_price - sl), 0.01)) * 1.0, 3)
-                return {
-                    'symbol': symbol, 'token': token, 'price': round(live_price, 2),
-                    'regime': regime, 'side': side, 'verdict': 'NEWS',
-                    'confidence': round(conf, 3), 'ev': ev,
-                    'rsi': 50.0, 'ret_20d': 0.0,
-                    'suggested_sl': sl, 'suggested_target': tgt,
-                    'atr14': round(atr_est, 2), 'rr': round(ev / conf, 2) if conf > 0 else 0,
-                    'vol_factor': 1.0,
-                    'summary': lenses[0]['detail'],
-                    'lenses': lenses,
-                }
+        # ── Data-quality gate: thin/stale history never produces a signal ─────
+        dq_ok, dq_reason = data_quality(df1d, live_price, tick_age_s)
+        if not dq_ok:
+            # Visible in the scan table, never fireable. No "news-only" trades
+            # on symbols whose price history we can't trust.
             return {
                 'symbol': symbol, 'token': token, 'price': round(live_price, 2),
-                'regime': regime, 'side': 'NEUTRAL', 'verdict': 'NO OHLCV',
+                'regime': regime, 'side': 'NEUTRAL', 'verdict': 'LOW DQ',
                 'confidence': 0.0, 'ev': 0.0, 'rsi': 50.0, 'ret_20d': 0.0,
                 'suggested_sl': 0, 'suggested_target': 0,
-                'summary': f'No OHLCV data. Live tick: {live_price:.2f}',
-                'lenses': [],
+                'summary': f'Data quality: {dq_reason}',
+                'lenses': [], 'dq_ok': False,
             }
 
         close = df1d['close'].values.astype(float)
@@ -435,6 +478,10 @@ class TradeOrchestrator:
         news_lens = self._news_lens(symbol, recent_news, now, strategy_wr, price)
         if news_lens:
             lenses.append(news_lens)
+
+        # Supervisor circuit breaker: drop lenses in cooldown after losses
+        if suppressed:
+            lenses = [l for l in lenses if l.get('strategy') not in suppressed]
 
         triggered = [l for l in lenses if l.get('triggered')]
         if not triggered:

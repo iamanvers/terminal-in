@@ -43,7 +43,9 @@ GRAD_ACCUM   = 8      # effective batch = 16
 EPOCHS       = 3
 LR           = 2e-4
 WARMUP_RATIO = 0.05
-MAX_STEPS    = -1     # -1 = run full epochs; set to e.g. 200 for a quick smoke-test
+#  -1 = run full epochs; override for a quick smoke-test:
+#  LORA_MAX_STEPS=200 python -m terminal_in.agents.training.train_lora
+MAX_STEPS    = int(os.environ.get('LORA_MAX_STEPS', '-1'))
 
 
 def _check_deps() -> bool:

@@ -39,6 +39,11 @@ class Config:
     ollama_host:  str = 'http://localhost:11434'
     ollama_model: str = 'qwen2.5:3b'
 
+    # LLM TradePlanner judge between orchestrator and risk gate.
+    # When Ollama is down the planner degrades to a stricter deterministic
+    # bar (flagged, never silent) — so this is safe to leave on.
+    planner_enabled: bool = True
+
     use_kite_live: bool = False
 
     @property
@@ -85,4 +90,5 @@ def load_config() -> Config:
         use_kite_live=bool(access_token and mode == 'live'),
         ollama_host=os.environ.get('OLLAMA_HOST', 'http://localhost:11434'),
         ollama_model=os.environ.get('OLLAMA_MODEL', 'qwen2.5:3b'),
+        planner_enabled=os.environ.get('PLANNER_ENABLED', 'true').lower() in ('1', 'true', 'yes'),
     )

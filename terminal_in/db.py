@@ -47,6 +47,35 @@ class DB:
             'CREATE INDEX IF NOT EXISTS idx_orders_strategy ON orders(strategy_id)',
             'CREATE INDEX IF NOT EXISTS idx_signal_lineage_signal ON signal_lineage(signal_id)',
             'CREATE INDEX IF NOT EXISTS idx_risk_decisions_ts ON risk_decisions(decided_at)',
+            # Agent decision memory (planner verdicts + hindsight outcomes)
+            '''CREATE TABLE IF NOT EXISTS agent_decisions (
+                decision_id       TEXT PRIMARY KEY,
+                scan_id           INTEGER NOT NULL,
+                decided_at        INTEGER NOT NULL,
+                instrument_token  INTEGER NOT NULL,
+                symbol            TEXT NOT NULL,
+                side              TEXT NOT NULL,
+                ev                REAL,
+                confidence        REAL,
+                persistence       INTEGER,
+                price_at_decision REAL,
+                sl_pct            REAL,
+                target_pct        REAL,
+                lenses_json       TEXT,
+                regime            TEXT,
+                india_vix         REAL,
+                planner_action    TEXT NOT NULL,
+                planner_reason    TEXT,
+                size_factor       REAL DEFAULT 1.0,
+                planner_mode      TEXT NOT NULL,
+                llm_latency_ms    INTEGER,
+                signal_id         TEXT,
+                hindsight_at      INTEGER,
+                hindsight_ret_pct REAL,
+                hindsight_outcome TEXT
+            )''',
+            'CREATE INDEX IF NOT EXISTS idx_agdec_time ON agent_decisions(decided_at DESC)',
+            'CREATE INDEX IF NOT EXISTS idx_agdec_token ON agent_decisions(instrument_token, decided_at DESC)',
         ]
         with sqlite3.connect(str(self.path)) as conn:
             for stmt in migrations:
@@ -615,6 +644,53 @@ class DB:
                 'SELECT * FROM agent_state ORDER BY agent_id',
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── Agent decisions (planner verdicts + hindsight) ───────────────────────
+
+    def insert_agent_decisions(self, rows: list[dict]) -> None:
+        if not rows:
+            return
+        with self.conn() as c:
+            c.executemany(
+                '''INSERT OR IGNORE INTO agent_decisions
+                   (decision_id, scan_id, decided_at, instrument_token, symbol, side,
+                    ev, confidence, persistence, price_at_decision, sl_pct, target_pct,
+                    lenses_json, regime, india_vix, planner_action, planner_reason,
+                    size_factor, planner_mode, llm_latency_ms, signal_id)
+                   VALUES (:decision_id,:scan_id,:decided_at,:instrument_token,:symbol,:side,
+                           :ev,:confidence,:persistence,:price_at_decision,:sl_pct,:target_pct,
+                           :lenses_json,:regime,:india_vix,:planner_action,:planner_reason,
+                           :size_factor,:planner_mode,:llm_latency_ms,:signal_id)''',
+                rows,
+            )
+
+    def get_recent_agent_decisions(self, limit: int = 50) -> list:
+        with self.conn() as c:
+            rows = c.execute(
+                'SELECT * FROM agent_decisions ORDER BY decided_at DESC LIMIT ?',
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_decisions_pending_hindsight(self, older_than_ms: int, newer_than_ms: int) -> list:
+        with self.conn() as c:
+            rows = c.execute(
+                '''SELECT * FROM agent_decisions
+                   WHERE hindsight_outcome IS NULL
+                     AND decided_at <= ? AND decided_at >= ?
+                   ORDER BY decided_at ASC LIMIT 200''',
+                (older_than_ms, newer_than_ms),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_decision_hindsight(self, decision_id: str, ret_pct: float, outcome: str) -> None:
+        with self.conn() as c:
+            c.execute(
+                '''UPDATE agent_decisions
+                   SET hindsight_at=?, hindsight_ret_pct=?, hindsight_outcome=?
+                   WHERE decision_id=?''',
+                (int(_time.time() * 1000), ret_pct, outcome, decision_id),
+            )
 
     # ── Risk decisions ────────────────────────────────────────────────────────
 

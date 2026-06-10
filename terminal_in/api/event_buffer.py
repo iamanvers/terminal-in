@@ -29,6 +29,8 @@ RECORDED_TOPICS = [
     'settlement.eod_close',
     'settlement.eod_reset',
     'settlement.day_open',
+    'planner.verdict',
+    'supervisor.throttle',
 ]
 
 # Human-readable severity per topic
@@ -48,6 +50,8 @@ _SEVERITY: dict[str, str] = {
     'settlement.eod_close':   'info',
     'settlement.eod_reset':   'info',
     'settlement.day_open':    'info',
+    'planner.verdict':        'info',
+    'supervisor.throttle':    'warn',
 }
 
 

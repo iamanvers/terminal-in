@@ -9,14 +9,18 @@ from terminal_in.agents.control import registry, kill_switch
 bp  = Blueprint('agents', __name__, url_prefix='/api/agents')
 log = logging.getLogger(__name__)
 
-_engine = None
-_db     = None
+_engine  = None
+_db      = None
+_planner = None
+_trading_supervisor = None
 
 
-def init(engine=None, db=None):
-    global _engine, _db
-    _engine = engine
-    _db     = db
+def init(engine=None, db=None, planner=None, trading_supervisor=None):
+    global _engine, _db, _planner, _trading_supervisor
+    _engine  = engine
+    _db      = db
+    _planner = planner
+    _trading_supervisor = trading_supervisor
 
 
 # ── Agent registry ─────────────────────────────────────────────────────────
@@ -194,6 +198,40 @@ def lineage(signal_id: str):
                 'quantity':    match.get('quantity'),
             }
     return jsonify(rec)
+
+
+# ── Trade planner (LLM judge) ────────────────────────────────────────────────
+
+@bp.route('/planner/state')
+def planner_state():
+    if _planner is None:
+        return jsonify({'mode': 'off'})
+    return jsonify(_planner.get_state())
+
+
+@bp.route('/planner/decisions')
+def planner_decisions():
+    if _db is None:
+        return jsonify([])
+    limit = int(request.args.get('limit', 50))
+    rows = _db.get_recent_agent_decisions(limit=limit)
+    for r in rows:
+        if r.get('lenses_json'):
+            try:
+                r['lenses'] = json.loads(r['lenses_json'])
+            except Exception:
+                r['lenses'] = []
+        r.pop('lenses_json', None)
+    return jsonify(rows)
+
+
+# ── Trading supervisor (control loop) ────────────────────────────────────────
+
+@bp.route('/supervisor/state')
+def supervisor_state():
+    if _trading_supervisor is None:
+        return jsonify({})
+    return jsonify(_trading_supervisor.get_state())
 
 
 # ── EventBus inspector ────────────────────────────────────────────────────────

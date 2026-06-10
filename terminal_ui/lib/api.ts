@@ -302,6 +302,74 @@ export type OrchestratorState = {
   results: OrchestratorResult[]
 }
 
+export type PlannerVerdictItem = {
+  symbol: string
+  side: 'BUY' | 'SELL' | null
+  action: 'approve' | 'reject'
+  size_factor: number
+  reason: string
+  ev: number | null
+}
+
+export type PlannerVerdict = {
+  scan_id: number
+  ts: number
+  mode: 'llm' | 'degraded' | 'off' | 'idle'
+  model: string | null
+  latency_ms: number
+  fired: number
+  verdicts: PlannerVerdictItem[]
+}
+
+export type PlannerState = {
+  mode: 'llm' | 'degraded' | 'off' | 'idle'
+  model: string
+  plan_count: number
+  last_latency_ms: number | null
+  last_verdict: PlannerVerdict | Record<string, never>
+}
+
+export type AgentDecision = {
+  decision_id: string
+  scan_id: number
+  decided_at: number
+  instrument_token: number
+  symbol: string
+  side: string
+  ev: number | null
+  confidence: number | null
+  persistence: number | null
+  price_at_decision: number | null
+  regime: string | null
+  india_vix: number | null
+  planner_action: 'approve' | 'reject' | 'filtered' | 'fired'
+  planner_reason: string | null
+  size_factor: number
+  planner_mode: 'llm' | 'degraded' | 'off'
+  llm_latency_ms: number | null
+  signal_id: string | null
+  hindsight_at: number | null
+  hindsight_ret_pct: number | null
+  hindsight_outcome: 'would_win' | 'would_lose' | 'flat' | 'actual_win' | 'actual_loss' | null
+  lenses?: string[]
+}
+
+export type SupervisorState = {
+  suppressed_lenses: Record<string, number>   // lens → seconds remaining
+  lens_loss_streaks: Record<string, number>
+  consec_losses: number
+  throttle_level: number
+}
+
+export type BackendHealth = {
+  status: 'ok' | 'degraded'
+  degraded: string[]
+  regime_mode: 'hmm' | 'heuristic'
+  sentiment: { mode: string; available: boolean; loaded: boolean }
+  ollama_online: boolean
+  last_daily_bar: string | null
+}
+
 export type AgentQueryResponse = {
   answer: string
   tool_calls: Array<{ tool: string; args: Record<string, unknown>; result: unknown }>
@@ -399,6 +467,10 @@ export const api = {
     }).then(r => r.json()),
   agentAudit: (limit = 100) => get<AuditEntry[]>(`/agents/audit?limit=${limit}`),
   agentHealth: () => get<SystemHealth>('/agents/health'),
+  plannerState: () => get<PlannerState>('/agents/planner/state'),
+  plannerDecisions: (limit = 50) => get<AgentDecision[]>(`/agents/planner/decisions?limit=${limit}`),
+  supervisorState: () => get<SupervisorState>('/agents/supervisor/state'),
+  backendHealth: () => get<BackendHealth>('/health'),
   decisions: (limit = 60, strategyId?: string) =>
     get<DecisionRecord[]>(`/agents/decisions?limit=${limit}${strategyId ? `&strategy_id=${strategyId}` : ''}`),
   lineage: (signalId: string) => get<SignalLineage>(`/agents/lineage/${signalId}`),

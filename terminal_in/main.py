@@ -127,6 +127,21 @@ def main():
     orchestrator = TradeOrchestrator(db=db, instruments=instruments, config=cfg, learner=learner)
     threads.append(Thread(target=orchestrator.run, args=(_stop_event,), daemon=True, name='orchestrator'))
 
+    # ── Decision memory + hindsight loop (audit trail of agent decisions) ─────
+    from terminal_in.agents.decision_memory import DecisionMemory
+    memory = DecisionMemory(db=db)
+    threads.append(Thread(target=memory.run_hindsight, args=(_stop_event,), daemon=True, name='hindsight'))
+
+    # ── Trade planner (LLM judge between orchestrator and risk gate) ──────────
+    from terminal_in.agents.trade_planner import TradePlanner
+    planner = TradePlanner(db=db, config=cfg, memory=memory, learner=learner)
+    threads.append(Thread(target=planner.run, args=(_stop_event,), daemon=True, name='planner'))
+
+    # ── Trading supervisor (closed-loop lens breaker + throttle) ──────────────
+    from terminal_in.agents.supervisor import TradingSupervisor
+    trading_supervisor = TradingSupervisor(db=db, config=cfg)
+    threads.append(Thread(target=trading_supervisor.run, args=(_stop_event,), daemon=True, name='supervisor'))
+
     # ── Risk supervisor ───────────────────────────────────────────────────────
     from terminal_in.risk.gate import RiskSupervisor
     supervisor = RiskSupervisor(db=db, config=cfg, learner=learner)
@@ -161,6 +176,9 @@ def main():
         'analyst': analyst,
         'learner': learner,
         'orchestrator': orchestrator,
+        'planner': planner,
+        'trading_supervisor': trading_supervisor,
+        'memory': memory,
         'instruments': instruments,
         'jwt_secret': cfg.jwt_secret,
     })
