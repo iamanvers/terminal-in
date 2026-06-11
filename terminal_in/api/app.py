@@ -72,6 +72,32 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     from terminal_in import errors as _errors
     _errors.install_flask_handlers(app)
 
+    # ── Packaged single-process mode ──────────────────────────────────────
+    # When the UI has been static-exported (cd terminal_ui && BUILD_STATIC=1
+    # npx next build), Flask serves it directly — no Node process needed.
+    # The whole app then runs on :5000 alone.
+    from pathlib import Path as _Path
+    ui_out = _Path('./terminal_ui/out')
+    if ui_out.exists():
+        from flask import abort, send_from_directory
+
+        @app.route('/', defaults={'path': ''})
+        @app.route('/<path:path>')
+        def serve_ui(path: str):
+            if path.startswith('api/') or path.startswith('socket.io'):
+                abort(404)   # never shadow the API with the SPA fallback
+            root = ui_out.resolve()
+            target = (root / path) if path else (root / 'index.html')
+            if path and target.is_file():
+                return send_from_directory(root, path)
+            # Next static export emits <route>.html for each page
+            html = root / f'{path}.html'
+            if path and html.is_file():
+                return send_from_directory(root, f'{path}.html')
+            return send_from_directory(root, 'index.html')
+
+        log.info('Packaged mode: serving static UI from %s on :5000', ui_out)
+
     @app.route('/api/health')
     def health():
         """Liveness + degraded-mode report. Anything not 'ok'/full-strength
