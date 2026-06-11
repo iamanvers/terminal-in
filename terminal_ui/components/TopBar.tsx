@@ -149,8 +149,8 @@ function NavHeader() {
           <rect x="29" y="14" width="1.6" height="32" fill="#0094FB" />
           <rect x="40" y="12" width="7" height="16" rx="1.5" fill="#00B9FC" />
           <rect x="43" y="7" width="1.6" height="28" fill="#00B9FC" />
-          <path d="M30 56 L38 40" stroke="#ECEEF1" strokeWidth="3.4" strokeLinecap="round" />
-          <path d="M39 56 L47 40" stroke="#ECEEF1" strokeWidth="3.4" strokeLinecap="round" />
+          <path d="M25 56 L33 40" stroke="#ECEEF1" strokeWidth="3.4" strokeLinecap="round" />
+          <path d="M34 56 L42 40" stroke="#ECEEF1" strokeWidth="3.4" strokeLinecap="round" />
         </svg>
         <span style={{ fontFamily: 'var(--font-mono, monospace)', fontWeight: 700, color: '#ECEEF1', letterSpacing: '0.12em', fontSize: 13 }}>
           TERMINAL<span style={{ color: '#0094FB' }}>//</span>IN

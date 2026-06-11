@@ -142,6 +142,8 @@ def train() -> None:
         save_total_limit=2,
         max_steps=MAX_STEPS,
         fp16=torch.cuda.is_available(),
+        bf16=False,                 # TRL 1.x defaults bf16 on; CPU-only setup rejects it
+        use_cpu=not torch.cuda.is_available(),
         report_to='none',
         dataloader_num_workers=0,  # Windows: must be 0
         dataset_text_field='text',

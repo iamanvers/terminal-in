@@ -11,6 +11,6 @@
   <rect x="40" y="12" width="7" height="16" rx="1.5" fill="#00B9FC"/>
   <rect x="43" y="7"  width="1.6" height="28" fill="#00B9FC"/>
   <!-- double-slash glyph -->
-  <path d="M30 56 L38 40" stroke="#ECEEF1" stroke-width="3.4" stroke-linecap="round"/>
-  <path d="M39 56 L47 40" stroke="#ECEEF1" stroke-width="3.4" stroke-linecap="round"/>
+  <path d="M25 56 L33 40" stroke="#ECEEF1" stroke-width="3.4" stroke-linecap="round"/>
+  <path d="M34 56 L42 40" stroke="#ECEEF1" stroke-width="3.4" stroke-linecap="round"/>
 </svg>

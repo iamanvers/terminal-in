@@ -170,16 +170,34 @@ Multi-leg positions (spreads, straddles, iron condors) as first-class objects: c
 
 ---
 
-## 5b. Packaging decision (2026-06-11)
+## 5b. Distribution: standalone, transferable Windows app (P2 — owner mandate 2026-06-11)
 
-**An .exe is the wrong shape for this app** — pushback recorded after evaluation:
-- PyInstaller bundling torch + transformers + pandas ⇒ a 3–5 GB artifact, slow cold-start (temp unpack), and notoriously fragile with torch's dynamic imports; every code change requires rebuilding the whole bundle (vs `git pull` today).
-- The exe wouldn't remove any real dependency: Ollama, `.env` keys, and `data/` are external regardless; the UI still needs Node or a static export.
+Supersedes the earlier single-machine packaging decision: the app must now be **installable on any Windows machine, run standalone, and receive remote updates**. Single-process serving (static UI via Flask, `background.ps1`) shipped earlier remains the runtime foundation the installer wraps.
 
-**Adopted path instead:**
-1. ✅ `background.ps1` — headless autonomous operation + logon Scheduled Task with auto-restart. From the user's perspective this *is* "an app that runs itself".
-2. **P2 — single-process serving**: `next build` static export served by Flask (verified feasible: `lib/api.ts` uses relative `/api`, so exported pages served from :5000 are same-origin; the dev-only rewrite proxy is bypassed). Kills the Node dev server → one process, one port.
-3. Desktop shortcut to `start.ps1` for interactive use. Revisit an installer (Inno Setup wrapping the venv, not PyInstaller) only if the app is ever distributed beyond this machine.
+### 5b.1 Windows installer (.exe)
+- **PyInstaller `--onedir`** build of the backend (never `--onefile` — torch/transformers make a 3–5 GB payload; onedir avoids per-launch temp unpacking), bundling Python 3.14 runtime + `terminal_in/` + static `terminal_ui/out`.
+- **Inno Setup** wraps the onedir tree + bundled LLM (5b.3) into `TERMINAL-IN-Setup.exe`: Start-menu entry, desktop shortcut, optional logon auto-start (replaces `background.ps1 -Install`).
+- **Data separation for transferability**: all mutable state (SQLite DB, reports, models, logs, settings) moves to `%LOCALAPPDATA%\TerminalIN\`; the install dir stays read-only. Backup/transfer = copy one folder.
+- First-run wizard: capital, risk tier, optional Kite/SMTP keys — replaces hand-editing `.env`.
+
+### 5b.2 Settings panel (top-right frame)
+- Gear icon in the TopBar (top-right) → slide-over **SETTINGS** panel; groups: Trading (mode, capital, risk caps), Planner (enabled, model, timeout), Data (symbols refresh, news sources), Reports (SMTP, recipient, schedule), System (low-latency, JIT, log level).
+- Backend: `settings` table overriding `.env` defaults; `GET/POST /api/settings` with type/range validation. Hot-applicable settings take effect immediately (planner toggle, thresholds, SMTP); restart-required ones are flagged in the UI.
+- `.env` remains the bootstrap layer; the settings table wins where both define a value.
+
+### 5b.3 Bundled base LLM (general-finance weights, no personal data)
+- Ship a **finance-tuned base model fine-tuned ONLY on public corpora** (sentiment, finance-alpaca, NSE strategy QA) — explicitly excluding the owner's trades and decisions, so the installable artifact carries no personal trading data.
+- Runtime: **bundled `llama-server.exe` (llama.cpp) + GGUF** — removes the Ollama install dependency entirely; the planner/analyst speak the same OpenAI-compatible API.
+- The personal layer (own trades + hindsight decisions) remains a **local TRAIN-module LoRA** applied on top, per machine, never distributed.
+
+### 5b.4 Hardware maximization (CPU + GPU as available)
+- `torch.set_num_threads(physical_cores)` + `OMP_NUM_THREADS` at boot; HIGH process priority default in packaged mode.
+- Device autodetect at startup: CUDA → DirectML (any Windows GPU) → CPU; applies to FinBERT inference and LoRA training (`use_cpu` only when nothing better exists); llama.cpp `--n-gpu-layers auto`.
+- `/api/health` reports the active device per subsystem (no silent CPU fallback when a GPU exists).
+
+### 5b.5 Remote updates
+- Update channel: **GitHub Releases** — the app checks the latest-release tag at boot (and daily), downloads the new package in the background, applies on next restart, keeps the previous version for rollback. Signed checksums.
+- Mechanism final call deferred (full installer re-run vs delta patching); the version-check endpoint + UI "update available" toast land first.
 
 ## 5c. Model deploy + Claude-augmented training (P2, partially blocked)
 
