@@ -78,12 +78,19 @@ html, body {
 .panel {
   background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 12px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+  transition: border-color .22s cubic-bezier(.22,1,.36,1),
+              box-shadow  .25s cubic-bezier(.22,1,.36,1);
+}
+.panel:hover {
+  border-color: var(--border-strong);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.045), 0 10px 30px rgba(0,0,0,.35);
 }
 
 .panel-header {
@@ -106,6 +113,7 @@ html, body {
 .panel-body {
   flex: 1;
   overflow-y: auto;
+  overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }
@@ -210,12 +218,16 @@ th {
   z-index: 1;
 }
 th:first-child { text-align: left; }
+th { white-space: nowrap; }
 td {
-  padding: 5px 10px;
+  padding: 6px 10px;
   text-align: right;
   border-bottom: 1px solid var(--border);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-body);
+  overflow-wrap: anywhere;   /* long text wraps — never overlaps neighbours */
+  line-height: 1.4;
+  vertical-align: top;
 }
 td:first-child { text-align: left; }
 tr:hover td { background: rgba(255,255,255,0.025); }
@@ -270,3 +282,7 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ── Liquid tile defaults ─────────────────────────────────────────────── */
+button { border-radius: 6px; }
+input, select { border-radius: 6px; }

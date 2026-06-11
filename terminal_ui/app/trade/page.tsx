@@ -267,7 +267,7 @@ function LeftRail({
 }
 
 // ── Positions Blotter ─────────────────────────────────────────────────────────
-const PCOLS = '130px 46px 56px 40px 70px 70px 70px 56px 80px 60px 48px 36px'
+const PCOLS = 'minmax(153px, 1.4fr) 54px 66px 47px 83px 83px 83px 66px 94px 71px 57px 42px'
 
 function PositionsTable({
   positions, ticks, tokenMap, filter, onSelect, selectedId, onClose,
@@ -395,7 +395,7 @@ function PositionsTable({
 }
 
 // ── Trade History ──────────────────────────────────────────────────────────────
-const HCOLS = '56px 120px 46px 56px 70px 70px 80px 50px 90px'
+const HCOLS = '66px minmax(142px, 1.4fr) 54px 66px 83px 83px 94px 59px 106px'
 
 function TradeHistory({
   trades, tokenMap, filter, onSelect, selectedId,
