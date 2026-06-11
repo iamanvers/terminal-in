@@ -93,10 +93,10 @@ function NewsCard({ n }: { n: NewsItem }) {
   ) : n.headline
 
   return (
-    <div style={{ padding: '8px 12px', borderBottom: '1px solid #141414', display: 'flex', gap: 10 }}>
+    <div style={{ padding: '9px 12px', borderBottom: '1px solid #141414', display: 'flex', gap: 10 }}>
       <div style={{ width: 2, flexShrink: 0, background: `${sentColor}66`, borderRadius: 1 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ margin: '0 0 4px', fontSize: 11, lineHeight: 1.45 }}>{headline}</p>
+        <p className="t-headline" style={{ margin: '0 0 4px' }}>{headline}</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 9, color: '#4A4A4A', fontVariantNumeric: 'tabular-nums' }}>{relTime(n.published_at)}</span>
           {n.source && <span style={{ fontSize: 9, color: '#3E3E3E' }}>{n.source}</span>}

@@ -206,14 +206,16 @@ export default function TerminalPage() {
         <RiskDashboardPanel />
       </div>
 
-      {/* ── Main grid ────────────────────────────────────────── */}
+      {/* ── Main grid — breathing room + rounded panels to match the
+             other modules (1px fused grid read as cramped/MVP) ───── */}
       <div style={{
         flex: 1, minHeight: 0,
         display: 'grid',
-        gridTemplateColumns: '240px 1fr 310px',
-        gridTemplateRows: '1fr 190px 210px',
-        gap: 1,
-        background: '#060606',
+        gridTemplateColumns: 'minmax(220px, 250px) 1fr minmax(280px, 320px)',
+        gridTemplateRows: 'minmax(0, 1fr) 190px 210px',
+        gap: 7,
+        padding: '7px 9px',
+        background: '#070707',
         overflow: 'hidden',
       }}>
         {/* Col 1, rows 1+2: Market Data (with tabs) */}

@@ -1024,7 +1024,8 @@ type Sel  = { kind: 'position' | 'trade'; id: string } | { kind: 'order' } | nul
 export default function TradePage() {
   const [tab,        setTab]       = useState<Tab>('book')
   const [filter,     setFilter]    = useState('ALL')
-  const [sel,        setSel]       = useState<Sel>(null)
+  // Order ticket open by default — the cockpit should be immediately tradeable
+  const [sel,        setSel]       = useState<Sel>({ kind: 'order' })
   const [positions,  setPositions] = useState<Position[]>([])
   const [trades,     setTrades]    = useState<Trade[]>([])
   const [summary,    setSummary]   = useState<PortfolioSummary | null>(null)

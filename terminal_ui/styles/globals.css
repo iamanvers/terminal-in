@@ -44,8 +44,12 @@
   --radius:    5px;
   --radius-sm: 3px;
 
-  --font-mono: 'JetBrains Mono', Consolas, monospace;
-  --font-ui:   'Inter', 'JetBrains Mono', sans-serif;
+  --font-mono:    'JetBrains Mono', Consolas, monospace;
+  --font-ui:      'Inter', 'JetBrains Mono', sans-serif;
+  /* Display face: Georgia — editorial serif for titles, headlines, and
+     prose. Data/numbers stay mono (Georgia's old-style numerals don't
+     align in tables). */
+  --font-display: Georgia, 'Times New Roman', serif;
 }
 
 * { box-sizing: border-box; }
@@ -210,6 +214,26 @@ td {
 }
 td:first-child { text-align: left; }
 tr:hover td { background: rgba(255,255,255,0.025); }
+
+/* ── Display typography (Georgia) ──────────────────────────────────────── */
+.t-display {
+  font-family: var(--font-display);
+  letter-spacing: 0;
+  font-weight: 700;
+  color: var(--text);
+}
+.t-headline {
+  font-family: var(--font-display);
+  font-size: 13px;
+  line-height: 1.45;
+  letter-spacing: .005em;
+}
+.t-prose {
+  font-family: var(--font-display);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
 
 /* ── Inputs ────────────────────────────────────────────────────────────── */
 input, select, textarea {

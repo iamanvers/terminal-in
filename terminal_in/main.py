@@ -170,6 +170,11 @@ def main():
     from terminal_in.agents.training.recursive import TrainingOrchestrator
     trainer = TrainingOrchestrator(db=db, config=cfg)
 
+    # ── Daily report scheduler (pre-open brief 08:55 / EOD report 15:45 IST) ──
+    from terminal_in.reporting.daily_report import ReportScheduler
+    report_scheduler = ReportScheduler(db=db)
+    threads.append(Thread(target=report_scheduler.run, args=(_stop_event,), daemon=True, name='reports'))
+
     # ── Risk supervisor ───────────────────────────────────────────────────────
     from terminal_in.risk.gate import RiskSupervisor
     supervisor = RiskSupervisor(db=db, config=cfg, learner=learner)

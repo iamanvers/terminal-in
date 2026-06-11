@@ -9,11 +9,13 @@ bp  = Blueprint('training', __name__, url_prefix='/api/training')
 log = logging.getLogger(__name__)
 
 _trainer = None
+_db      = None
 
 
-def init(trainer=None):
-    global _trainer
+def init(trainer=None, db=None):
+    global _trainer, _db
     _trainer = trainer
+    _db      = db
 
 
 @bp.route('/status')
@@ -57,3 +59,16 @@ def stop():
     if _trainer is None:
         return jsonify({'ok': False, 'error': 'trainer unavailable'}), 503
     return jsonify(_trainer.stop())
+
+
+# ── Daily reports (on-demand; scheduler fires 08:55 / 15:45 IST itself) ─────
+
+@bp.route('/report/run', methods=['POST'])
+def report_run():
+    from terminal_in.reporting import daily_report
+    body = request.get_json(silent=True) or {}
+    kind = body.get('kind', 'eod')
+    if kind not in ('pre_open', 'eod'):
+        return jsonify({'ok': False, 'error': 'kind must be pre_open|eod'}), 400
+    result = daily_report.generate(_db, kind, email=bool(body.get('email', True)))
+    return jsonify({'ok': True, **result})

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import '@/styles/globals.css'
 import TopBar from '@/components/TopBar'
+import Toasts from '@/components/Toasts'
 
 export const metadata: Metadata = {
   title: 'TERMINAL//IN',
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {children}
         </main>
+        <Toasts />
       </body>
     </html>
   )

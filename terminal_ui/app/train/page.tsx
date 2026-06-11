@@ -171,8 +171,8 @@ export default function TrainPage() {
       {/* Header strip */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 5, padding: '10px 14px', flexShrink: 0 }}>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, letterSpacing: '.1em' }}>RECURSIVE MODEL TRAINING</div>
-          <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>
+          <div className="t-display" style={{ fontSize: 16 }}>Recursive Model Training</div>
+          <div className="t-prose" style={{ fontSize: 11, marginTop: 2 }}>
             The financial SLM retrains on its own trading record — every closed trade and hindsight-judged planner decision becomes training signal.
           </div>
         </div>

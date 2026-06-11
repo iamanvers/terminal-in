@@ -42,6 +42,7 @@ FORWARD_TOPICS = [
     'supervisor.state',
     'supervisor.throttle',
     'training.status',
+    'system.error',
 ]
 
 

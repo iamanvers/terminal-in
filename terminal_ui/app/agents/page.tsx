@@ -1490,11 +1490,11 @@ function DecisionLogTab({ decisions }: { decisions: AgentDecision[] }) {
   )
 }
 
-type Tab = 'matrix' | 'judge' | 'pipeline' | 'scoreboard' | 'broadcast' | 'query'
+type Tab = 'command' | 'matrix' | 'judge' | 'pipeline' | 'scoreboard' | 'broadcast' | 'query'
 type SelType = { kind: 'agent'; id: string } | { kind: 'signal'; signalId: string }
 
 export default function AgentsPage() {
-  const [tab,           setTab]          = useState<Tab>('matrix')
+  const [tab,           setTab]          = useState<Tab>('command')
   const [filter,        setFilter]       = useState<Filter>('all')
   const [agents,        setAgents]       = useState<AgentState[]>([])
   const [decisions,     setDecisions]    = useState<DecisionRecord[]>([])
@@ -1642,12 +1642,15 @@ export default function AgentsPage() {
 
   const selectedAgent = selected?.kind === 'agent' ? agents.find(a => a.agent_id === selected.id) ?? null : null
 
+  // COMMAND = the decision pipeline (what the system is about to do and why).
+  // AGENTS  = component health + controls. Everything else is drill-down.
   const TABS: Array<{ key: Tab; label: string }> = [
-    { key: 'matrix',     label: 'MATRIX' },
+    { key: 'command',    label: '◉ COMMAND' },
     { key: 'judge',      label: '⚖ DECISION LOG' },
+    { key: 'matrix',     label: 'AGENTS' },
     { key: 'pipeline',   label: 'PIPELINE' },
     { key: 'scoreboard', label: 'SCOREBOARD' },
-    { key: 'broadcast',  label: 'BROADCAST' },
+    { key: 'broadcast',  label: 'BUS' },
     { key: 'query',      label: '◈ AI ANALYST' },
   ]
 
@@ -1710,13 +1713,9 @@ export default function AgentsPage() {
           {/* Center */}
           <div style={{ minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 5 }}>
 
-            {/* MATRIX */}
-            {tab === 'matrix' && (
-              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
-                {/* Pipeline funnel */}
-                <div style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-                  <PipelineFunnel agents={agents} decisions={decisions} />
-                </div>
+            {/* COMMAND — the decision pipeline: scan → judge → control loop */}
+            {tab === 'command' && (
+              <div style={{ flex: 1, overflowY: 'auto' }}>
                 <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {/* Orchestrator scan results — the core agentic output */}
                   <OrchestratorPanel state={orchState} onScan={load} />
@@ -1726,7 +1725,14 @@ export default function AgentsPage() {
 
                   {/* Closed-loop control: lens breakers + throttle */}
                   <SupervisorPanel state={supState} />
+                </div>
+              </div>
+            )}
 
+            {/* AGENTS — component health + controls only */}
+            {tab === 'matrix' && (
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
+                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {/* System agents */}
                   {systemAgents.length > 0 && (
                     <div>
@@ -1815,9 +1821,14 @@ export default function AgentsPage() {
             {tab === 'judge' && <DecisionLogTab decisions={agentDecisions} />}
 
             {tab === 'pipeline' && (
-              <PipelineTab agents={agents} decisions={decisions}
-                selectedId={selected?.kind === 'signal' ? selected.signalId : null}
-                onSelect={sid => setSelected(sel => sel?.kind === 'signal' && sel.signalId === sid ? null : { kind: 'signal', signalId: sid })} />
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                <div style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+                  <PipelineFunnel agents={agents} decisions={decisions} />
+                </div>
+                <PipelineTab agents={agents} decisions={decisions}
+                  selectedId={selected?.kind === 'signal' ? selected.signalId : null}
+                  onSelect={sid => setSelected(sel => sel?.kind === 'signal' && sel.signalId === sid ? null : { kind: 'signal', signalId: sid })} />
+              </div>
             )}
 
             {tab === 'scoreboard' && (
