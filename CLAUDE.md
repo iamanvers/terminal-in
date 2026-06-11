@@ -132,6 +132,16 @@ docs/PRD.md                         ← product requirements: F&O execution P2, 
 
 **Design system** — `terminal_ui/lib/theme.ts` + `styles/globals.css` are the single palette source (cool dark surfaces, electric-blue accent ramp #0094FB/#00B9FC/#006FF9/#004AF8/#0025F6; gold #FFB02E = warn ONLY). Fonts: Geist Mono (data) / Geist (UI) / Georgia (display). Logo: `terminal_ui/app/icon.svg` (favicon + TopBar + PDF reports). Never add per-page palette constants.
 
+**Settings** — `terminal_in/app_settings.py` SCHEMA + `app_settings` table override `.env` (settings > env > default); gear icon (TopBar) opens the panel; hot vs RESTART flagged; secrets masked. Boot: `apply_overrides(db)` before Config rebuild.
+
+**Portfolio statement** — `portfolio_ledger.build_statement(db, broker)` is the single assembly → data/portfolio.md + `/api/portfolio/holdings` + HoldingsPanel (EQUITIES/F&O, composition bar + product chips). Never duplicate this math.
+
+**Analyst (AI ANALYST tab)** — app-aware system prompt + LIVE CONTEXT injection (bus caches); NDJSON streaming via `/api/agents/query/stream`; keep_alive 30m + boot warmup. Generation is DDR-bandwidth-bound (~10.7 tok/s for 3B Q4; 16 threads or Vulkan iGPU do NOT help — measured, see PRD 5b.4); levers = model size, prefix cache, streaming.
+
+**Model deploy** — `agents/training/deploy.py`: adapter → merge → GGUF → Q4_K_M → `ollama create financial-analyst-vN`; `POST /api/training/deploy`. llama.cpp vendored under `vendor/` (gitignored). Adapter dirs nest: `runs/<id>/adapter/adapter/`.
+
+**Contract specs** — `data_ingest/contract_specs.py` = sourced NSE lot sizes/expiries + margin BAND (estimate, labeled); served at `/api/market/contract-specs`. Never hardcode lots/margins in the UI.
+
 **Daily reports** — `terminal_in/reporting/daily_report.py`: pre-open brief 08:55 IST (fresh scan at 08:50) + EOD 15:45 → branded PDF (reportlab; Rs not ₹ — Helvetica glyph) → SMTP email (`SMTP_*`, `REPORT_EMAIL_TO` in .env). On-demand: `POST /api/training/report/run`.
 
 **OHLCV data** — `yf_fetcher.backfill()` is gap-aware: checks `db.get_ohlcv_last_dates()` and fetches only missing days; 24h refresh thread. `YF_MAP`: NIFTY 50→^NSEI, BANKNIFTY→^NSEBANK, VIX→^INDIAVIX, **TATAMOTORS→TMPV.NS** (2025 demerger delisted TATAMOTORS.NS on Yahoo), equities→SYMBOL.NS.

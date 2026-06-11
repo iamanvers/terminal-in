@@ -13,9 +13,9 @@
 | Module | Route | What it does |
 |--------|-------|--------------|
 | **MARKET** | `/` | Live watchlist (72 NSE instruments), candlestick charts, news + FinBERT sentiment, global context (indices/FX/commodities), economic calendar |
-| **EQUITIES** | `/trade` | Cash-equity paper cockpit: positions book, manual order ticket, trade history, P&L attribution, equity curve, strategy scorecards |
+| **EQUITIES** | `/trade` | Cash cockpit: **portfolio statement** (composition, holdings with live marks, MIS/CNC products), positions book, order ticket, trade history, P&L attribution, equity curve |
 | **F&O** | `/fno` | Derivatives module: index complex (NIFTY/BANKNIFTY/FINNIFTY + lot sizes), India VIX context, index strategy signals. Contract chain + lot-based execution + SPAN margin are Phase 2 (see PRD) |
-| **AGENTS** | `/agents` | The agentic core: orchestrator scan table, **LLM Trade Planner verdicts with reasoning**, supervisor control loop, decision log with hindsight, EventBus inspector, AI analyst chat |
+| **AGENTS** | `/agents` | The agentic core: actionable-only scan view, **LLM Trade Planner verdicts with reasoning**, supervisor control loop, decision log with hindsight, EventBus inspector, **streaming app-aware AI analyst** |
 | **TRAIN** | `/train` | **Recursive model training**: rebuild dataset from the system's own trades + judged decisions → LoRA fine-tune → loss metrics → run history |
 
 ## The agentic decision flow

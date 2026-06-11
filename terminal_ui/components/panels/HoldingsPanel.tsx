@@ -79,6 +79,41 @@ export default function HoldingsPanel({ segment }: { segment: 'EQ' | 'FNO' }) {
           </div>
         )}
 
+        {stmt && segment === 'EQ' && (() => {
+          // ── COMPOSITION — where the equity actually sits ──
+          const palette = ['#0094FB', '#00B9FC', '#006FF9', '#004AF8', '#2DBD80', '#FFB02E']
+          const segs = marked.map((h, i) => ({
+            label: h.symbol,
+            value: Math.abs(h.mark * h.quantity),
+            color: palette[i % palette.length],
+          }))
+          const cash = Math.max(stmt.cash, 0)
+          const total = segs.reduce((a, x) => a + x.value, 0) + cash
+          if (total <= 0) return null
+          const all = [...segs, { label: 'CASH', value: cash, color: '#2A2E36' }]
+          return (
+            <div style={{ padding: '10px 12px', borderBottom: '1px solid #23272E' }}>
+              <div style={{ fontSize: 9, color: '#71767F', letterSpacing: '0.08em', marginBottom: 6 }}>
+                COMPOSITION <span style={{ color: '#4A4F57' }}>· % OF EQUITY AT MARK</span>
+              </div>
+              <div style={{ display: 'flex', height: 14, borderRadius: 4, overflow: 'hidden', border: '1px solid #23272E' }}>
+                {all.map(s => s.value > 0 && (
+                  <div key={s.label} title={`${s.label} ${(s.value / total * 100).toFixed(1)}%`}
+                    style={{ width: `${(s.value / total) * 100}%`, background: s.color, minWidth: s.value > 0 ? 2 : 0 }} />
+                ))}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 6 }}>
+                {all.map(s => s.value > 0 && (
+                  <span key={s.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, color: '#AEB3BB' }}>
+                    <span style={{ width: 7, height: 7, borderRadius: 2, background: s.color, display: 'inline-block' }} />
+                    {s.label} <span style={{ color: '#71767F', fontVariantNumeric: 'tabular-nums' }}>{(s.value / total * 100).toFixed(1)}%</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
         {marked.length === 0 ? (
           <div style={{ padding: '18px 12px', fontSize: 11, color: '#71767F' }}>
             {segment === 'FNO'

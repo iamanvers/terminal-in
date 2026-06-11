@@ -410,6 +410,7 @@ function PipelineFunnel({ agents, decisions }: { agents: AgentState[]; decisions
 function OrchestratorPanel({ state, onScan }: { state: OrchestratorState | null; onScan: () => void }) {
   const [scanning, setScanning] = useState(false)
   const [expandedSym, setExpandedSym] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
 
   async function triggerScan() {
     setScanning(true)
@@ -419,6 +420,10 @@ function OrchestratorPanel({ state, onScan }: { state: OrchestratorState | null;
   const results = state?.results ?? []
   const lastScan = state?.last_scan_ts ? new Date(state.last_scan_ts * 1000).toLocaleTimeString('en-IN', { hour12: false }) : null
   const actionable = results.filter(r => r.side !== 'NEUTRAL' && r.side !== 'SKIP')
+  // Default view shows only actionable setups — a 72-row wall of NEUTRAL
+  // re-printed every 120s is noise, not signal. Unique fired decisions
+  // live in the DECISION LOG tab; full breadth behind the ALL toggle.
+  const visible = showAll ? results : actionable
 
   const sideC = (side: string) => side === 'BUY' ? C.run : side === 'SELL' ? C.err : side === 'SKIP' ? '#4A4F57' : C.sub
 
@@ -431,7 +436,12 @@ function OrchestratorPanel({ state, onScan }: { state: OrchestratorState | null;
         </span>
         {lastScan && <span style={{ fontSize: 9.5, color: '#4A4F57', fontVariantNumeric: 'tabular-nums' }}>last scan {lastScan}</span>}
         {state && <span style={{ fontSize: 9.5, color: C.amber }}>{state.scan_count} scans</span>}
-        <span style={{ fontSize: 9.5, color: C.run }}>{actionable.length} actionable</span>
+        <span style={{ fontSize: 9.5, color: C.run }}>{actionable.length} actionable / {results.length} scanned</span>
+        <button onClick={() => setShowAll(v => !v)} style={{
+          fontSize: 9, letterSpacing: '.06em', padding: '3px 8px', borderRadius: 4, cursor: 'pointer',
+          background: showAll ? '#0094FB14' : 'transparent', color: showAll ? '#0094FB' : '#71767F',
+          border: `1px solid ${showAll ? '#0094FB44' : '#23272E'}`,
+        }}>{showAll ? 'ACTIONABLE ONLY' : `ALL ${results.length}`}</button>
         <Btn label={scanning ? 'SCANNING…' : '⟳ SCAN NOW'} onClick={triggerScan} busy={scanning} variant="primary" />
       </div>
 
@@ -441,6 +451,11 @@ function OrchestratorPanel({ state, onScan }: { state: OrchestratorState | null;
             ? 'Orchestrator not started — backend server must be running'
             : 'No scan results yet — click SCAN NOW or wait for auto-scan'}
         </div>
+      ) : visible.length === 0 ? (
+        <div style={{ padding: '22px 16px', textAlign: 'center', color: '#71767F', fontSize: 10.5, lineHeight: 1.6 }}>
+          Flat scan — {results.length} symbols evaluated, no actionable setup this pass.<br />
+          <span style={{ color: '#4A4F57' }}>Setups must persist ≥2 scans and clear the EV bar before they fire. Unique fired/judged decisions are in the DECISION LOG tab.</span>
+        </div>
       ) : (
         <div style={{ maxHeight: 320, overflowY: 'auto' }}>
           {/* Column headers */}
@@ -449,7 +464,7 @@ function OrchestratorPanel({ state, onScan }: { state: OrchestratorState | null;
               <span key={h} style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.06em' }}>{h}</span>
             ))}
           </div>
-          {results.map(r => (
+          {visible.map(r => (
             <div key={r.symbol}>
               <div
                 onClick={() => setExpandedSym(prev => prev === r.symbol ? null : r.symbol)}
