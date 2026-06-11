@@ -78,8 +78,10 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     # When the UI has been static-exported (cd terminal_ui && BUILD_STATIC=1
     # npx next build), Flask serves it directly — no Node process needed.
     # The whole app then runs on :5000 alone.
+    import os as _os
     from pathlib import Path as _Path
-    ui_out = _Path('./terminal_ui/out')
+    # packaged exe sets UI_OUT_DIR to the bundled static export
+    ui_out = _Path(_os.environ.get('UI_OUT_DIR', './terminal_ui/out'))
     if ui_out.exists():
         from flask import abort, send_from_directory
 
