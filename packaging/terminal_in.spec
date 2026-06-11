@@ -8,7 +8,14 @@
 # work from a frozen exe). The UI hides nothing: training start returns a
 # clear "requires dev install" error in packaged mode.
 
+import os
+import sys
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+# Anchor everything on the repo root regardless of invocation cwd
+ROOT = os.path.abspath(os.path.join(SPECPATH, '..'))
+sys.path.insert(0, ROOT)
 
 block_cipher = None
 
@@ -20,16 +27,16 @@ hiddenimports = [
 ]
 
 datas = [
-    ('../terminal_ui/out', 'terminal_ui/out'),    # static UI export
-    ('../Modelfile', '.'),                         # analyst system prompt
-    ('../docs/LEGAL.md', 'docs'),
-    ('../docs/USAGE.md', 'docs'),
+    (os.path.join(ROOT, 'terminal_ui', 'out'), 'terminal_ui/out'),
+    (os.path.join(ROOT, 'Modelfile'), '.'),
+    (os.path.join(ROOT, 'docs', 'LEGAL.md'), 'docs'),
+    (os.path.join(ROOT, 'docs', 'USAGE.md'), 'docs'),
     *collect_data_files('transformers', include_py_files=False),
 ]
 
 a = Analysis(
     ['run_app.py'],
-    pathex=['..'],
+    pathex=[ROOT],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
