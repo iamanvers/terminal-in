@@ -49,8 +49,12 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=you@gmail.com
 SMTP_PASS=xxxx xxxx xxxx xxxx
-REPORT_EMAIL_TO=you@gmail.com
+REPORT_EMAIL_TO=anmolverma1998@hotmail.com   # already configured
 ```
+
+The recipient is already set. Reports will not send until the SMTP sender
+credentials (`SMTP_USER`/`SMTP_PASS`) are supplied — PDFs still land in
+`data/reports/` regardless.
 
 PDFs always land in `data/reports/` even without email. On-demand:
 `POST /api/training/report/run` with `{"kind": "pre_open" | "eod", "email": true}`.

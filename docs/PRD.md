@@ -1,6 +1,6 @@
 # TERMINAL//IN — Product Requirements Document
 
-**Version:** 1.0 · **Date:** 2026-06-10 · **Owner:** Anmol Verma · **Status:** Living document
+**Version:** 1.1 · **Date:** 2026-06-11 · **Owner:** Anmol Verma · **Status:** Living document
 
 ---
 
@@ -42,6 +42,10 @@ A single-user, laptop-local, **agentic trading terminal** for Indian markets tha
 | F&O (derivatives) | `/fno` | ◐ Phase 1 (view + signals); execution = P2 |
 | Agent orchestration | `/agents` | ✅ Shipped incl. LLM planner |
 | Recursive training | `/train` | ✅ Shipped (deploy step manual) |
+| Education | `/learn` | ✅ Shipped |
+| Market-hours + settlement realism | core | ✅ Shipped (MIS/CNC products, SL/target-driven exits, session-gated signals) |
+| Packaging (single process) | — | ✅ Shipped (static UI served by Flask on :5000; headless via background.ps1) |
+| Daily PDF reports + email | — | ✅ Shipped (pre-open 08:55 / EOD 15:45 IST, branded) |
 
 ### 3.2 The agentic decision pipeline (shipped)
 
@@ -180,7 +184,7 @@ Multi-leg positions (spreads, straddles, iron condors) as first-class objects: c
 
 ## 6. Quality & operations
 
-- **Tests:** 113 passing (gate, broker, persistence, filters, planner, supervisor); every new module ships with unit tests; planner/LLM tests run fully mocked.
+- **Tests:** 119 passing (gate, broker, persistence, filters, planner, supervisor); every new module ships with unit tests; planner/LLM tests run fully mocked.
 - **No-silent-degradation invariant:** any subsystem fallback must (a) log at WARN with rate limiting, (b) appear in `/api/health`, (c) badge in the UI. PR-blocking rule.
 - **Real-data invariant:** no synthetic/random market data may enter `ohlcv_*` tables or the tick path. PR-blocking rule.
 - **Commit convention:** `Change_N: summary` on `main`.

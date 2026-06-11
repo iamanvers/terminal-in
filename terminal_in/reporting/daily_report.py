@@ -36,6 +36,14 @@ EOD_HHMM      = (15, 45)
 
 # ── Data assembly ───────────────────────────────────────────────────────────
 
+def _symbol_of(token) -> str:
+    try:
+        from terminal_in.data_ingest.instruments import registry
+        return registry.symbol(int(token)) or str(token)
+    except Exception:
+        return str(token)
+
+
 def build_report_data(db, kind: str) -> dict:
     """kind: 'pre_open' | 'eod'. Pulls everything from DB + bus hot cache."""
     now = datetime.now(IST)
@@ -110,6 +118,27 @@ def build_report_data(db, kind: str) -> dict:
 
 # ── PDF rendering ───────────────────────────────────────────────────────────
 
+def _logo_drawing(size: float = 26.0):
+    """The TERMINAL//IN brand mark (same artwork as the app favicon),
+    drawn vectorially for the PDF header."""
+    from reportlab.graphics.shapes import Drawing, Rect, Line
+    from reportlab.lib.colors import HexColor
+    s = size / 64.0
+    d = Drawing(size, size)
+    d.add(Rect(0, 0, 64 * s, 64 * s, rx=14 * s, ry=14 * s,
+               fillColor=HexColor('#0A0B0D'), strokeColor=HexColor('#23272E'),
+               strokeWidth=1))
+    for x, y, h, color in ((12, 18, 16, '#004AF8'), (26, 24, 20, '#0094FB'),
+                           (40, 36, 16, '#00B9FC')):
+        d.add(Rect(x * s, y * s, 7 * s, h * s, rx=1.5 * s, ry=1.5 * s,
+                   fillColor=HexColor(color), strokeColor=None))
+    for x1 in (30, 39):
+        d.add(Line(x1 * s, 8 * s, (x1 + 8) * s, 24 * s,
+                   strokeColor=HexColor('#ECEEF1'), strokeWidth=2.6 * s,
+                   strokeLineCap=1))
+    return d
+
+
 def render_pdf(data: dict, path: Path) -> Path:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
@@ -119,25 +148,25 @@ def render_pdf(data: dict, path: Path) -> Path:
     )
     from reportlab.lib.styles import ParagraphStyle
 
-    AMBER = colors.HexColor('#B8690F')
+    BLUE  = colors.HexColor('#0057C2')
     GREEN = colors.HexColor('#15803D')
     RED   = colors.HexColor('#B91C1C')
     GREY  = colors.HexColor('#555555')
 
     h1   = ParagraphStyle('h1', fontName='Times-Bold', fontSize=18, spaceAfter=2)
     sub  = ParagraphStyle('sub', fontName='Helvetica', fontSize=8.5, textColor=GREY, spaceAfter=10)
-    h2   = ParagraphStyle('h2', fontName='Times-Bold', fontSize=12.5, spaceBefore=12, spaceAfter=5, textColor=AMBER)
+    h2   = ParagraphStyle('h2', fontName='Times-Bold', fontSize=12.5, spaceBefore=12, spaceAfter=5, textColor=BLUE)
     body = ParagraphStyle('body', fontName='Helvetica', fontSize=8.5, leading=12)
 
     def money(v: float) -> str:
-        return f"₹{v:,.0f}"
+        return f"Rs {v:,.0f}"
 
     def trade_rows(trades, limit=8):
         rows = [['Symbol/ID', 'Side', 'Qty', 'Entry', 'Exit', 'P&L', 'Reason']]
         for t in trades[:limit]:
             pnl_v = float(t.get('net_pnl') or 0)
             rows.append([
-                str(t.get('tradingsymbol') or t.get('instrument_token') or t.get('trade_id', ''))[:16],
+                _symbol_of(t.get('instrument_token') or 0)[:16] if t.get('instrument_token') else str(t.get('trade_id', ''))[:16],
                 str(t.get('side', '')),
                 str(t.get('quantity', '')),
                 f"{float(t.get('entry_price') or 0):,.1f}",
@@ -169,12 +198,21 @@ def render_pdf(data: dict, path: Path) -> Path:
         return t
 
     title = 'PRE-OPEN BRIEF' if data['kind'] == 'pre_open' else 'END-OF-DAY REPORT'
+    brand = Table(
+        [[_logo_drawing(26), Paragraph(f'TERMINAL//IN — {title}', h1)]],
+        colWidths=[34, None],
+    )
+    brand.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (0, 0), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+    ]))
     story = [
-        Paragraph(f'TERMINAL//IN — {title}', h1),
+        brand,
         Paragraph(f"{data['generated']} · regime {data['regime'].upper()} · "
                   f"India VIX {data['india_vix']:.1f} · size ×{data['size_mult']:.1f} · "
                   f"equity {money(data['equity'])} · day P&L {data['daily_pnl']:+,.0f}", sub),
-        HRFlowable(width='100%', thickness=0.8, color=AMBER),
+        HRFlowable(width='100%', thickness=0.8, color=BLUE),
     ]
 
     if data['kind'] == 'pre_open':
@@ -210,16 +248,16 @@ def render_pdf(data: dict, path: Path) -> Path:
 
         story.append(Paragraph(
             f"Longs: {len(data['longs'])} closed, "
-            f"P&L {sum(float(t.get('net_pnl') or 0) for t in data['longs']):+,.0f} · "
+            f"P&amp;L {sum(float(t.get('net_pnl') or 0) for t in data['longs']):+,.0f} · "
             f"Shorts: {len(data['shorts'])} closed, "
-            f"P&L {sum(float(t.get('net_pnl') or 0) for t in data['shorts']):+,.0f}", body))
+            f"P&amp;L {sum(float(t.get('net_pnl') or 0) for t in data['shorts']):+,.0f}", body))
 
         story.append(Paragraph('Open Positions (carried)', h2))
         if data['open']:
             rows = [['Symbol', 'Side', 'Qty', 'Entry', 'SL', 'Target']]
             for t in data['open'][:10]:
                 rows.append([
-                    str(t.get('tradingsymbol') or t.get('instrument_token', '')),
+                    _symbol_of(t.get('instrument_token', 0)),
                     str(t.get('side', '')), str(t.get('quantity', '')),
                     f"{float(t.get('entry_price') or 0):,.1f}",
                     f"{float(t.get('stop_loss') or 0):,.1f}",
@@ -229,7 +267,7 @@ def render_pdf(data: dict, path: Path) -> Path:
         else:
             story.append(Paragraph('Flat — no open positions.', body))
 
-    story.append(Paragraph('F&O — Index Complex', h2))
+    story.append(Paragraph('F&amp;O — Index Complex', h2))
     if data['fno_signals']:
         rows = [['Index', 'Side', 'Verdict', 'EV', 'RSI', 'Summary']]
         for r in data['fno_signals']:

@@ -1,8 +1,10 @@
+<img src="terminal_ui/app/icon.svg" alt="TERMINAL//IN" width="56" align="left" />
+
 # TERMINAL//IN
 
-An **agentic** algorithmic trading terminal for Indian markets (NSE), built to run entirely on a personal laptop. No cloud costs, no Docker — Python + SQLite + Next.js, with a local LLM (Ollama) sitting inside the trade-decision loop.
+**An agentic algorithmic trading terminal for Indian markets (NSE).** Runs entirely on a single machine — Python, SQLite, and a statically served Next.js interface — with a local language model embedded in the trade-decision loop. No cloud dependencies.
 
-> Paper-trading first. Live execution via Zerodha Kite Connect when enabled. **Real market data only** — the system never trades on synthetic bars.
+> Paper-trading first; live execution via Zerodha Kite Connect when enabled. The system operates exclusively on real market data and observes real NSE market hours, products (MIS/CNC), and settlement mechanics — including in simulation.
 
 ---
 
@@ -65,20 +67,23 @@ Three feedback loops at three speeds — trade-by-trade control (supervisor), ba
 ## Quick start
 
 ```powershell
-# 1. Backend (creates venv + installs deps on first run)
-.\start.ps1
-# or directly:
-.venv\Scripts\python.exe -m terminal_in.main         # API on :5000
+# One-time setup
+.\start.ps1                       # creates venv, installs deps, starts everything
+.\setup_ollama.ps1                # local LLM for the Trade Planner (~2 GB, one-time)
 
-# 2. UI
-cd terminal_ui ; npm install ; npm run dev            # UI on :3000
+# Packaged single-process mode (UI + API on :5000, no Node required)
+cd terminal_ui ; $env:BUILD_STATIC='1' ; npx next build ; cd ..
+.\background.ps1 -Start           # headless; -Install registers auto-start at logon
 
-# 3. Local LLM for the Trade Planner + AI Analyst (one-time, ~2 GB)
-.\setup_ollama.ps1
+# Development mode (hot reload)
+.venv\Scripts\python.exe -m terminal_in.main          # API :5000
+cd terminal_ui ; npm run dev                          # UI :3000
 
 # Tests
-.venv\Scripts\pytest tests\ -v                         # 113 tests
+.venv\Scripts\pytest tests\ -v                        # 119 tests
 ```
+
+Operator guide: [docs/USAGE.md](docs/USAGE.md) · Product specification: [docs/PRD.md](docs/PRD.md)
 
 `.env` keys: `MODE=paper|live`, `KITE_API_KEY/SECRET/ACCESS_TOKEN`, `NEWSAPI_KEY`, `INITIAL_CAPITAL`, `MAX_DD_PCT`, `DAILY_LOSS_CAP_PCT`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `PLANNER_ENABLED`.
 

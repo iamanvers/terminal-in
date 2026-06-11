@@ -11,7 +11,7 @@ Bloomberg-style **agentic** algorithmic trading terminal for Indian markets (NSE
 # Run via launcher (also creates venv + installs deps)
 .\start.ps1
 
-# Run tests (113 passing)
+# Run tests (119 passing)
 .venv/Scripts/pytest tests/ -v
 
 # Train HMM regime classifier (after accumulating 500+ days of data)
@@ -123,6 +123,16 @@ docs/PRD.md                         ← product requirements: F&O execution P2, 
 **EventBus topics** — `ticks.{token}`, `regime.update`, `strategy.signal`, `order.approved/rejected`, `trade.opened/closed`, `pnl.update`, `scorecard.update`, `news.signal`, `orchestrator.scan_done`, `planner.candidates`, `planner.verdict`, `supervisor.state`, `supervisor.throttle`, `kill_switch.global_pause`, `settlement.*`. Glob: `ticks.*`.
 
 **Paper vs live** — `MODE=paper|live` in `.env`. PaperBroker: 0.03% slip + ₹20/order. `use_kite_live` only when `MODE=live` AND `KITE_ACCESS_TOKEN` set.
+
+**Market-hours discipline** — `terminal_in/market_hours.py` is the single source of truth (Mon–Fri 09:15–15:30 IST + holiday calendar). Gate check 0d rejects `market_closed` (paper AND live); engine suppresses signals off-hours; orchestrator scans are display-only off-hours. Never reintroduce simulated clocks.
+
+**Settlement mechanics** — product-aware like a real broker: MIS (S1, time_exit, explicit) squares off at EOD (`mis_square_off`); CNC (default) carries overnight and exits ONLY when ticks cross stop-loss/target (`paper_broker._check_exit`). EOD snapshot marks carried positions to market. Signals: S2–S9 once per (strategy, token) per session; S1 30-min cooldown.
+
+**Packaging** — `cd terminal_ui && BUILD_STATIC=1 npx next build` → Flask serves `terminal_ui/out` (SPA fallback; `/api`+`/socket.io` guarded). Whole app = one process on :5000. `background.ps1 -Start|-Install` for headless/auto-start. Dev hot-reload on :3000 unchanged.
+
+**Design system** — `terminal_ui/lib/theme.ts` + `styles/globals.css` are the single palette source (cool dark surfaces, electric-blue accent ramp #0094FB/#00B9FC/#006FF9/#004AF8/#0025F6; gold #FFB02E = warn ONLY). Fonts: Geist Mono (data) / Geist (UI) / Georgia (display). Logo: `terminal_ui/app/icon.svg` (favicon + TopBar + PDF reports). Never add per-page palette constants.
+
+**Daily reports** — `terminal_in/reporting/daily_report.py`: pre-open brief 08:55 IST (fresh scan at 08:50) + EOD 15:45 → branded PDF (reportlab; Rs not ₹ — Helvetica glyph) → SMTP email (`SMTP_*`, `REPORT_EMAIL_TO` in .env). On-demand: `POST /api/training/report/run`.
 
 **OHLCV data** — `yf_fetcher.backfill()` is gap-aware: checks `db.get_ohlcv_last_dates()` and fetches only missing days; 24h refresh thread. `YF_MAP`: NIFTY 50→^NSEI, BANKNIFTY→^NSEBANK, VIX→^INDIAVIX, **TATAMOTORS→TMPV.NS** (2025 demerger delisted TATAMOTORS.NS on Yahoo), equities→SYMBOL.NS.
 
