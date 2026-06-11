@@ -223,16 +223,18 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
       <div style={{ display: 'flex', borderBottom: '1px solid #333841', background: '#121419', flexShrink: 0 }}>
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
-            flex: 1, padding: '5px 0', fontSize: 10, fontWeight: 600,
-            letterSpacing: '0.06em', background: 'none', border: 'none', cursor: 'pointer',
+            flex: 1, padding: '6px 0', fontSize: 9.5, fontWeight: 600,
+            letterSpacing: '0.01em', background: 'none', border: 'none', cursor: 'pointer',
+            minWidth: 0, overflow: 'hidden',
             color: tab === t ? '#0094FB' : '#71767F',
             borderBottom: tab === t ? '2px solid #0094FB' : '2px solid transparent',
           }}>{t}</button>
         ))}
       </div>
 
-      {/* Market-closed notice */}
-      {!marketOpen && (
+      {/* Market-closed notice — Indian venues only; GLOBAL/FX/COMMOD keep
+          their own trading hours and are never 'NSE closed' */}
+      {!marketOpen && (tab === 'NSE' || tab === 'BSE') && (
         <div style={{ padding: '3px 8px', background: '#0A0B0D', borderBottom: '1px solid #181B21', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#4A4F57', display: 'inline-block' }} />
           <span style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.06em' }}>NSE CLOSED · last close prices</span>

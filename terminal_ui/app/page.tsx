@@ -211,7 +211,7 @@ export default function TerminalPage() {
       <div style={{
         flex: 1, minHeight: 0,
         display: 'grid',
-        gridTemplateColumns: 'minmax(220px, 250px) 1fr minmax(280px, 320px)',
+        gridTemplateColumns: 'minmax(270px, 330px) 1fr minmax(280px, 320px)',
         gridTemplateRows: 'minmax(0, 1fr) 190px 210px',
         gap: 7,
         padding: '7px 9px',

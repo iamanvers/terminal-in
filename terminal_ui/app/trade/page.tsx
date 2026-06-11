@@ -206,8 +206,8 @@ function LeftRail({
       {/* Attribution bars */}
       {byStrat.length > 0 && (
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, padding: '8px 10px' }}>
-          <div style={{ fontSize: 9.5, color: C.dim, letterSpacing: '.08em', fontWeight: 700, marginBottom: 8 }}>ALPHA ATTRIBUTION</div>
-          {byStrat.map(([sid, rec]) => (
+          <div style={{ fontSize: 9.5, color: C.dim, letterSpacing: '.08em', fontWeight: 700, marginBottom: 8 }}>TOP ATTRIBUTION</div>
+          {byStrat.slice(0, 3).map(([sid, rec]) => (
             <div key={sid} style={{ marginBottom: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
                 <span style={{ fontSize: 10, color: C.text, fontWeight: 600 }}>{sid}</span>
@@ -226,6 +226,11 @@ function LeftRail({
               </div>
             </div>
           ))}
+          {byStrat.length > 3 && (
+            <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>
+              +{byStrat.length - 3} more in PERFORMANCE tab
+            </div>
+          )}
         </div>
       )}
 
