@@ -3,7 +3,7 @@ import { useConnStatus } from '@/hooks/useSocket'
 
 export default function StatusDot({ connected: _ }: { connected?: boolean }) {
   const status = useConnStatus()
-  const color  = status === 'connected' ? '#2DBD80' : status === 'reconnecting' ? '#FFB02E' : '#F2495C'
+  const color  = status === 'connected' ? '#2DBD80' : status === 'reconnecting' ? '#0094FB' : '#F2495C'
   const label  = status === 'connected' ? 'LIVE' : status === 'reconnecting' ? 'RECONNECTING…' : 'DISCONNECTED'
   return (
     <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>

@@ -51,7 +51,7 @@ export default function PositionsPanel() {
       </div>
       <div className="panel-body">
         {positions.length === 0
-          ? <p className="text-muted text-center mt-4 text-[11px]">No open positions</p>
+          ? <p className="text-muted text-center mt-4 text-[11.5px]">No open positions</p>
           : (
             <table>
               <thead>

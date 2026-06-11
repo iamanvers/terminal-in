@@ -26,7 +26,7 @@ const KIND_STYLE: Record<Toast['kind'], { color: string; icon: string }> = {
   reject:  { color: '#EAB308', icon: '⊘' },
   news:    { color: '#3B8CFF', icon: '▣' },
   risk:    { color: '#F2495C', icon: '⚠' },
-  planner: { color: '#FFB02E', icon: '⚖' },
+  planner: { color: '#0094FB', icon: '⚖' },
   error:   { color: '#F2495C', icon: '✕' },
 }
 

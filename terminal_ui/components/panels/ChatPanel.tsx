@@ -155,9 +155,9 @@ export default function ChatPanel() {
                 <pre style={{
                   margin: 0, fontSize: 10.5, color: '#CFD3D9', lineHeight: 1.55,
                   fontFamily: 'inherit', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                  borderLeft: m.type === 'command_applied' ? '2px solid #FFB02E'
+                  borderLeft: m.type === 'command_applied' ? '2px solid #0094FB'
                             : m.type === 'error' ? '2px solid #F2495C'
-                            : m.type === 'welcome' ? '2px solid #FFB02E'
+                            : m.type === 'welcome' ? '2px solid #0094FB'
                             : '2px solid #333841',
                   paddingLeft: 8,
                 }}>
@@ -215,7 +215,7 @@ export default function ChatPanel() {
           disabled={loading || !input.trim()}
           style={{
             padding: '4px 10px', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
-            background: input.trim() && !loading ? '#FFB02E' : '#23272E',
+            background: input.trim() && !loading ? '#0094FB' : '#23272E',
             color: input.trim() && !loading ? '#000' : '#4A4F57',
             border: 'none', borderRadius: 3, cursor: input.trim() && !loading ? 'pointer' : 'default',
           }}

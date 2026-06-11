@@ -43,7 +43,7 @@ type SignalEntry = {
 
 function ConfBar({ value }: { value: number }) {
   const pct = Math.round(value * 100)
-  const color = value >= 0.7 ? '#2DBD80' : value >= 0.5 ? '#FFB02E' : '#F2495C'
+  const color = value >= 0.7 ? '#2DBD80' : value >= 0.5 ? '#0094FB' : '#F2495C'
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       <div style={{ flex: 1, height: 3, background: '#23272E', borderRadius: 2 }}>

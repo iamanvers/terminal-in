@@ -30,7 +30,7 @@ export default function Badge({ variant, value }: Props) {
   if (variant === 'regime') {
     return (
       <span className={clsx(
-        'px-2 py-0.5 rounded text-[10px] font-semibold border uppercase tracking-wide',
+        'px-2 py-0.5 rounded text-[10.5px] font-semibold border uppercase tracking-wide',
         REGIME_COLORS[value] ?? 'bg-gray-900 text-gray-300 border-gray-700',
       )}>
         {value.replace('_', ' ')}
@@ -38,14 +38,14 @@ export default function Badge({ variant, value }: Props) {
     )
   }
   if (variant === 'sentiment') {
-    return <span className={clsx('text-[10px]', SENTIMENT_COLORS[value])}>{value}</span>
+    return <span className={clsx('text-[10.5px]', SENTIMENT_COLORS[value])}>{value}</span>
   }
   if (variant === 'impact') {
-    return <span className={clsx('text-[10px]', IMPACT_COLORS[value])}>{value}</span>
+    return <span className={clsx('text-[10.5px]', IMPACT_COLORS[value])}>{value}</span>
   }
   if (variant === 'side') {
     return (
-      <span className={clsx('text-[10px] font-bold', value === 'BUY' ? 'text-pos' : 'text-neg')}>
+      <span className={clsx('text-[10.5px] font-bold', value === 'BUY' ? 'text-pos' : 'text-neg')}>
         {value}
       </span>
     )

@@ -186,7 +186,7 @@ export default function InstrumentModal({ token, label, onClose, onChartSelect }
             {chartIdx !== undefined && onChartSelect && (
               <button
                 onClick={() => { onChartSelect(chartIdx); onClose() }}
-                style={{ fontSize: 10, padding: '4px 12px', background: '#23272E', border: '1px solid #333', borderRadius: 3, color: '#FFB02E', cursor: 'pointer', letterSpacing: '0.06em' }}
+                style={{ fontSize: 10, padding: '4px 12px', background: '#23272E', border: '1px solid #333', borderRadius: 3, color: '#0094FB', cursor: 'pointer', letterSpacing: '0.06em' }}
               >
                 LOAD CHART
               </button>
@@ -206,7 +206,7 @@ export default function InstrumentModal({ token, label, onClose, onChartSelect }
               <IndicatorCell label="Open"     value={open   > 0 ? open.toLocaleString('en-IN',   { maximumFractionDigits: 2 }) : '—'} />
               <IndicatorCell label="30d High" value={high30 > 0 ? high30.toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '—'} />
               <IndicatorCell label="30d Low"  value={low30  > 0 ? low30.toLocaleString('en-IN',  { maximumFractionDigits: 0 }) : '—'} />
-              <IndicatorCell label="Regime"   value={analysis?.regime?.toUpperCase() ?? '—'} color="#FFB02E" />
+              <IndicatorCell label="Regime"   value={analysis?.regime?.toUpperCase() ?? '—'} color="#0094FB" />
             </div>
 
             {/* Indicators */}
@@ -221,7 +221,7 @@ export default function InstrumentModal({ token, label, onClose, onChartSelect }
                   <IndicatorCell label="52W High" value={ind.high_52w.toLocaleString('en-IN', { maximumFractionDigits: 0 })} />
                   <IndicatorCell label="52W Low" value={ind.low_52w.toLocaleString('en-IN', { maximumFractionDigits: 0 })} />
                   <IndicatorCell label="20d Return" value={`${ind.ret_20d_pct > 0 ? '+' : ''}${ind.ret_20d_pct.toFixed(1)}%`} color={ind.ret_20d_pct > 0 ? '#2DBD80' : '#F2495C'} />
-                  <IndicatorCell label="Vol vs Avg" value={`${ind.vol_vs_avg.toFixed(2)}×`} color={ind.vol_vs_avg > 1.5 ? '#FFB02E' : '#CFD3D9'} />
+                  <IndicatorCell label="Vol vs Avg" value={`${ind.vol_vs_avg.toFixed(2)}×`} color={ind.vol_vs_avg > 1.5 ? '#0094FB' : '#CFD3D9'} />
                   <IndicatorCell label="India VIX" value={ind.india_vix.toFixed(1)} color={ind.india_vix > 20 ? '#F2495C' : '#CFD3D9'} />
                 </div>
                 {analysis && (
@@ -249,7 +249,7 @@ export default function InstrumentModal({ token, label, onClose, onChartSelect }
                 ? <p style={{ fontSize: 10.5, color: '#4A4F57', margin: 0 }}>No active signals — engine evaluates every 60s</p>
                 : signals.map((s, i) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 10.5, flexWrap: 'wrap' }}>
-                      <span style={{ color: '#FFB02E', minWidth: 32, fontWeight: 600 }}>{s.strategy_id}</span>
+                      <span style={{ color: '#0094FB', minWidth: 32, fontWeight: 600 }}>{s.strategy_id}</span>
                       <Badge variant="side" value={s.side} />
                       <span style={{ color: '#7E838C' }}>{(s.confidence * 100).toFixed(0)}%</span>
                       {s.target    && <span style={{ color: '#2DBD80' }}>T {s.target.toFixed(0)}</span>}
@@ -276,17 +276,17 @@ export default function InstrumentModal({ token, label, onClose, onChartSelect }
                   key={i}
                   style={{
                     padding: '10px', borderBottom: '1px solid #111',
-                    borderLeft: `3px solid ${lens.triggered ? (lens.side === 'BUY' ? '#2DBD80' : lens.side === 'SELL' ? '#F2495C' : '#FFB02E') : '#23272E'}`,
+                    borderLeft: `3px solid ${lens.triggered ? (lens.side === 'BUY' ? '#2DBD80' : lens.side === 'SELL' ? '#F2495C' : '#0094FB') : '#23272E'}`,
                     opacity: lens.triggered ? 1 : 0.5,
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: '#FFB02E' }}>{lens.strategy}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#0094FB' }}>{lens.strategy}</span>
                     <span style={{ fontSize: 10, color: '#71767F' }}>{lens.name}</span>
                     {lens.triggered && <Badge variant="side" value={lens.side} />}
                     {!lens.triggered && <span style={{ fontSize: 9.5, color: '#4A4F57' }}>NOT TRIGGERED</span>}
                     {lens.triggered && (
-                      <span style={{ marginLeft: 'auto', fontSize: 10, color: lens.confidence >= 0.65 ? '#2DBD80' : '#FFB02E' }}>
+                      <span style={{ marginLeft: 'auto', fontSize: 10, color: lens.confidence >= 0.65 ? '#2DBD80' : '#0094FB' }}>
                         {(lens.confidence * 100).toFixed(0)}%
                       </span>
                     )}
@@ -314,7 +314,7 @@ export default function InstrumentModal({ token, label, onClose, onChartSelect }
                         <span>{n.source}</span>
                         <span>·</span>
                         <span>{new Date(n.published_at).toLocaleDateString('en-IN')}</span>
-                        <span style={{ color: n.impact === 'high' ? '#F2495C' : n.impact === 'medium' ? '#FFB02E' : '#71767F', textTransform: 'uppercase' }}>{n.impact}</span>
+                        <span style={{ color: n.impact === 'high' ? '#F2495C' : n.impact === 'medium' ? '#0094FB' : '#71767F', textTransform: 'uppercase' }}>{n.impact}</span>
                       </div>
                     </div>
                   ))

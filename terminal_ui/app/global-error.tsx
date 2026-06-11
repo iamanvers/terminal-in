@@ -16,7 +16,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
         <button onClick={reset} style={{
           fontFamily: 'monospace', fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em',
           padding: '8px 22px', borderRadius: 4, cursor: 'pointer',
-          border: '1px solid #FFB02E55', background: '#FFB02E0E', color: '#FFB02E',
+          border: '1px solid #0094FB55', background: '#0094FB0E', color: '#0094FB',
         }}>↺ RELOAD TERMINAL</button>
       </body>
     </html>

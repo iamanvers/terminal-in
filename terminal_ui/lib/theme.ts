@@ -27,12 +27,16 @@ export const THEME = {
   muted:   '#71767F',
   dim:     '#4A4F57',
 
-  // Primary accent — gold (per the design file). `amber` = legacy alias.
-  accent:  '#FFB02E',
-  amber:   '#FFB02E',
-  // Secondary accent — deep metallic blue, flat.
-  steel:   '#3A64B0',
-  warn:    '#FFB02E',
+  // Primary accent — electric blue ramp (user-specified).
+  accent:       '#0094FB',
+  amber:        '#0094FB',   // legacy alias — hundreds of C.amber refs = accent
+  accentBright: '#00B9FC',   // hover / emphasis
+  accentMid:    '#006FF9',   // fills
+  accentDeep:   '#004AF8',   // borders / selected fills
+  accentInk:    '#0025F6',   // deepest — large fills only (poor small-text contrast)
+  steel:        '#3A64B0',
+  // Gold is now EXCLUSIVELY the warning color — warnings mean something again.
+  warn:         '#FFB02E',
 
   // Semantic
   green:   '#2DBD80',

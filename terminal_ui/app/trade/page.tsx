@@ -145,7 +145,7 @@ function AccountBar({
       {/* Module + mode badge */}
       <div style={{ padding: '0 16px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 2, minWidth: 86 }}>
         <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text, letterSpacing: '.1em' }}>EQUITIES</span>
-        <span style={{ fontSize: 9.5, fontWeight: 700, color: C.amber, letterSpacing: '.1em', background: '#1F1709', border: `1px solid ${C.amber}33`, borderRadius: 3, padding: '1px 6px' }}>PAPER · CASH</span>
+        <span style={{ fontSize: 9.5, fontWeight: 700, color: C.amber, letterSpacing: '.1em', background: '#06182B', border: `1px solid ${C.amber}33`, borderRadius: 3, padding: '1px 6px' }}>PAPER · CASH</span>
       </div>
       {chips.map(c => (
         <div key={c.label} style={{ flex: 1, padding: '0 12px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
@@ -190,7 +190,7 @@ function LeftRail({
         {STRATS.map(s => (
           <button key={s} onClick={() => onFilter(s)} style={{
             width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: '6px 10px', background: filter === s ? '#FFB02E0A' : 'transparent',
+            padding: '6px 10px', background: filter === s ? '#0094FB0A' : 'transparent',
             borderLeft: `2px solid ${filter === s ? C.amber : 'transparent'}`,
             border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: filter === s ? 700 : 400,
             color: filter === s ? C.amber : C.sub, letterSpacing: '.04em',
@@ -357,7 +357,7 @@ function PositionsTable({
               style={{
                 display: 'grid', gridTemplateColumns: PCOLS, gap: 0, padding: '6px 10px',
                 borderBottom: `1px solid ${C.border}`, cursor: 'pointer', alignItems: 'center',
-                background: sel ? '#FFB02E08' : (unr != null && unr > 0) ? '#2DBD800A' : (unr != null && unr < 0) ? '#F2495C0A' : 'transparent',
+                background: sel ? '#0094FB08' : (unr != null && unr > 0) ? '#2DBD800A' : (unr != null && unr < 0) ? '#F2495C0A' : 'transparent',
                 borderLeft: `2px solid ${sel ? C.amber : (unr != null && unr > 0) ? '#2DBD8033' : (unr != null && unr < 0) ? '#F2495C33' : 'transparent'}`,
                 opacity: isClosing ? 0.4 : 1,
               }}>
@@ -440,7 +440,7 @@ function TradeHistory({
                 style={{
                   display: 'grid', gridTemplateColumns: HCOLS, gap: 0, padding: '5px 10px',
                   borderBottom: `1px solid ${C.border}`, cursor: 'pointer', alignItems: 'center',
-                  background: sel ? '#FFB02E08' : 'transparent',
+                  background: sel ? '#0094FB08' : 'transparent',
                   borderLeft: `2px solid ${sel ? C.amber : (t.net_pnl ?? 0) > 0 ? '#2DBD8022' : '#F2495C22'}`,
                 }}>
                 <span style={{ fontSize: 9.5, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{extMs ? tsFmt(extMs) : '—'}</span>

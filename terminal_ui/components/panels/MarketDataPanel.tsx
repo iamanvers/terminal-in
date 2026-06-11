@@ -225,8 +225,8 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
           <button key={t} onClick={() => setTab(t)} style={{
             flex: 1, padding: '5px 0', fontSize: 10, fontWeight: 600,
             letterSpacing: '0.06em', background: 'none', border: 'none', cursor: 'pointer',
-            color: tab === t ? '#FFB02E' : '#71767F',
-            borderBottom: tab === t ? '2px solid #FFB02E' : '2px solid transparent',
+            color: tab === t ? '#0094FB' : '#71767F',
+            borderBottom: tab === t ? '2px solid #0094FB' : '2px solid transparent',
           }}>{t}</button>
         ))}
       </div>
@@ -262,7 +262,7 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
                     const hist  = priceHistory[token] ?? []
                     return (
                       <tr key={token} onClick={() => setSelected({ token, label })} style={{ cursor: 'pointer' }}>
-                        <td className="text-[11px] text-gray-300">{label}</td>
+                        <td className="text-[11.5px] text-gray-300">{label}</td>
                         <td style={{ padding: '2px 4px' }}>
                           <Sparkline prices={hist} up={chg >= 0} />
                         </td>
@@ -289,7 +289,7 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
           return (
             <>
               <div style={{ padding: '8px 10px', borderBottom: '1px solid #23272E', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 10.5, color: '#FFB02E', fontWeight: 700, letterSpacing: '0.06em' }}>SENSEX</span>
+                <span style={{ fontSize: 10.5, color: '#0094FB', fontWeight: 700, letterSpacing: '0.06em' }}>SENSEX</span>
                 {sensex ? (
                   <>
                     <span style={{ fontSize: 14, fontWeight: 700, color: '#ECEEF1', fontVariantNumeric: 'tabular-nums' }}>
@@ -301,7 +301,7 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
                     <span style={{ fontSize: 9.5, color: '#71767F', marginLeft: 'auto' }}>DELAYED</span>
                   </>
                 ) : (
-                  <button onClick={fetchGlobal} style={{ fontSize: 9.5, color: '#FFB02E', background: 'none', border: '1px solid #333', borderRadius: 3, padding: '2px 8px', cursor: 'pointer' }}>
+                  <button onClick={fetchGlobal} style={{ fontSize: 9.5, color: '#0094FB', background: 'none', border: '1px solid #333', borderRadius: 3, padding: '2px 8px', cursor: 'pointer' }}>
                     {globalLoading ? '…' : 'LOAD'}
                   </button>
                 )}
@@ -326,7 +326,7 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
                         const hist  = priceHistory[token] ?? []
                         return (
                           <tr key={token} onClick={() => setSelected({ token, label })} style={{ cursor: 'pointer' }}>
-                            <td className="text-[11px] text-gray-300">{label}</td>
+                            <td className="text-[11.5px] text-gray-300">{label}</td>
                             <td style={{ padding: '2px 4px' }}><Sparkline prices={hist} up={chg >= 0} /></td>
                             <td>{price > 0 ? <PriceTag value={price} prev={prev} /> : <span className="text-muted">—</span>}</td>
                             <td className={chg >= 0 ? 'text-pos' : 'text-neg'}>
@@ -354,7 +354,7 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
               ? (
                 <div style={{ textAlign: 'center', marginTop: 20 }}>
                   <p style={{ color: '#71767F', fontSize: 10.5 }}>No data yet</p>
-                  <button onClick={fetchGlobal} style={{ marginTop: 6, fontSize: 10, color: '#FFB02E', background: 'none', border: '1px solid #333', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>
+                  <button onClick={fetchGlobal} style={{ marginTop: 6, fontSize: 10, color: '#0094FB', background: 'none', border: '1px solid #333', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>
                     REFRESH
                   </button>
                 </div>
@@ -371,7 +371,7 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
                   <tbody>
                     {filteredGlobal.map(q => (
                       <tr key={q.symbol} onClick={() => setSelectedGlobal(q)} style={{ cursor: 'pointer' }}>
-                        <td className="text-[11px] text-gray-300">{q.label}</td>
+                        <td className="text-[11.5px] text-gray-300">{q.label}</td>
                         <td className="text-gray-200">
                           {tab === 'FX' ? q.price.toFixed(4) : q.price.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                         </td>

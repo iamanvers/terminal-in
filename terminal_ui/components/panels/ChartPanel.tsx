@@ -128,7 +128,7 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
         borderUpColor: '#2DBD80', borderDownColor: '#F2495C',
         wickUpColor: '#2DBD80', wickDownColor: '#F2495C',
       })
-      const ema9  = chart.addLineSeries({ color: '#FFB02E', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+      const ema9  = chart.addLineSeries({ color: '#0094FB', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
       const ema21 = chart.addLineSeries({ color: '#4488FF', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
 
       let vol: unknown = null
@@ -288,7 +288,7 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
           <span className="accent">▸</span> CHART ·{' '}
           <span style={{ color: '#ECEEF1' }}>{symbolLabel}</span>
           <span style={{ fontSize: 9.5, color: '#71767F', marginLeft: 8 }}>
-            EMA <span style={{ color: '#FFB02E' }}>9</span> / <span style={{ color: '#4488FF' }}>21</span>
+            EMA <span style={{ color: '#0094FB' }}>9</span> / <span style={{ color: '#4488FF' }}>21</span>
           </span>
         </span>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -313,7 +313,7 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
               <button key={t} onClick={() => setTf(t)}
                 style={{
                   padding: '1px 8px', borderRadius: 3, fontSize: 10.5, cursor: 'pointer', border: 'none',
-                  background: tf === t ? '#FFB02E' : 'transparent',
+                  background: tf === t ? '#0094FB' : 'transparent',
                   color:      tf === t ? '#000' : '#AEB3BB',
                   fontWeight: tf === t ? 700 : 400,
                 }}>

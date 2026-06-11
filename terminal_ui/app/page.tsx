@@ -51,7 +51,7 @@ function BootScreen({ error }: { error: boolean }) {
           color: error ? '#F2495C' : '#ECEEF1',
           fontFamily: 'monospace',
         }}>
-          TERMINAL<span style={{ color: error ? '#F2495C' : '#FFB02E' }}>//</span>IN
+          TERMINAL<span style={{ color: error ? '#F2495C' : '#0094FB' }}>//</span>IN
         </div>
         <div style={{ fontSize: 10, color: '#4A4F57', letterSpacing: '.2em', marginTop: 5 }}>
           NSE · BSE · ALGORITHMIC TRADING
@@ -81,7 +81,7 @@ function BootScreen({ error }: { error: boolean }) {
             </div>
             <div style={{
               background: '#1C1F25', border: '1px solid #23272E', borderRadius: 4,
-              padding: '10px 14px', fontFamily: 'monospace', fontSize: 10, color: '#FFB02E',
+              padding: '10px 14px', fontFamily: 'monospace', fontSize: 10, color: '#0094FB',
               lineHeight: 1.8, width: '100%',
             }}>
               <div style={{ color: '#4A4F57', marginBottom: 4 }}># Start the backend</div>
@@ -107,7 +107,7 @@ function BootScreen({ error }: { error: boolean }) {
               <div style={{
                 position: 'absolute', inset: 0, borderRadius: '50%',
                 border: '2px solid #181B21',
-                borderTopColor: '#FFB02E',
+                borderTopColor: '#0094FB',
                 animation: 'spin 0.9s linear infinite',
               }} />
               <style dangerouslySetInnerHTML={{ __html: '@keyframes spin { to { transform: rotate(360deg) } }' }} />
@@ -116,7 +116,7 @@ function BootScreen({ error }: { error: boolean }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}>
               {STEPS.slice(0, step + 1).map((s, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 10, color: i < step ? '#2A4A2A' : '#FFB02E', minWidth: 12 }}>
+                  <span style={{ fontSize: 10, color: i < step ? '#2A4A2A' : '#0094FB', minWidth: 12 }}>
                     {i < step ? '✓' : '›'}
                   </span>
                   <span style={{ fontSize: 10, color: i < step ? '#2A4A2A' : '#AEB3BB', fontVariantNumeric: 'tabular-nums' }}>

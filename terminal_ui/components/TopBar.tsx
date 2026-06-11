@@ -139,9 +139,23 @@ function NavHeader() {
       padding: '0 18px', borderBottom: '1px solid var(--border-strong, #333841)',
       background: '#121419', flexShrink: 0,
     }}>
-      <span style={{ fontFamily: 'var(--font-mono, monospace)', fontWeight: 700, color: '#FFB02E', letterSpacing: '0.12em', fontSize: 13, flexShrink: 0 }}>
-        TERMINAL<span style={{ color: '#565B63' }}>//</span>IN
-        <span style={{ fontSize: 9.5, color: '#4A4F57', marginLeft: 10, letterSpacing: '0.08em', fontWeight: 500 }}>NSE · PAPER</span>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
+        {/* Brand mark (same artwork as the favicon at app/icon.svg) */}
+        <svg width="20" height="20" viewBox="0 0 64 64" aria-hidden="true">
+          <rect width="64" height="64" rx="14" fill="#111317" />
+          <rect x="12" y="30" width="7" height="16" rx="1.5" fill="#004AF8" />
+          <rect x="15" y="25" width="1.6" height="26" fill="#004AF8" />
+          <rect x="26" y="20" width="7" height="20" rx="1.5" fill="#0094FB" />
+          <rect x="29" y="14" width="1.6" height="32" fill="#0094FB" />
+          <rect x="40" y="12" width="7" height="16" rx="1.5" fill="#00B9FC" />
+          <rect x="43" y="7" width="1.6" height="28" fill="#00B9FC" />
+          <path d="M30 56 L38 40" stroke="#ECEEF1" strokeWidth="3.4" strokeLinecap="round" />
+          <path d="M39 56 L47 40" stroke="#ECEEF1" strokeWidth="3.4" strokeLinecap="round" />
+        </svg>
+        <span style={{ fontFamily: 'var(--font-mono, monospace)', fontWeight: 700, color: '#ECEEF1', letterSpacing: '0.12em', fontSize: 13 }}>
+          TERMINAL<span style={{ color: '#0094FB' }}>//</span>IN
+          <span style={{ fontSize: 9.5, color: '#4A4F57', marginLeft: 10, letterSpacing: '0.08em', fontWeight: 500 }}>NSE · PAPER</span>
+        </span>
       </span>
 
       {/* Module navigation tabs */}
@@ -157,9 +171,9 @@ function NavHeader() {
                 fontSize: 10.5, fontWeight: active ? 700 : 500,
                 letterSpacing: '0.09em', padding: '0 16px',
                 textDecoration: 'none', cursor: 'pointer',
-                background:   active ? 'var(--accent-soft, #FFB02E0E)' : 'transparent',
-                color:        active ? '#FFB02E' : '#71767F',
-                boxShadow:    active ? 'inset 0 -2px 0 #FFB02E' : 'none',
+                background:   active ? 'var(--accent-soft, #0094FB0E)' : 'transparent',
+                color:        active ? '#0094FB' : '#71767F',
+                boxShadow:    active ? 'inset 0 -2px 0 #0094FB' : 'none',
                 transition: 'color 0.15s, background 0.15s',
               }}
             >

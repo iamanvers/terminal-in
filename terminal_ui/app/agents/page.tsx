@@ -139,10 +139,10 @@ function CommandStrip({ health, regime, portfolio, globalPaused, decisions }:
   const regC = regime?.regime?.includes('bull') ? C.run : regime?.regime?.includes('bear') ? C.err : C.warn
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', background: C.panel, border: `1px solid ${globalPaused ? '#F2495C33' : C.border}`, borderRadius: 5, height: 52, flexShrink: 0, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', alignItems: 'center', background: C.panel, border: `1px solid ${globalPaused ? '#F2495C33' : C.border}`, borderRadius: 5, minHeight: 56, flexShrink: 0, overflow: 'hidden' }}>
       {/* System health */}
       <div style={{ padding: '0 16px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, minWidth: 76, height: '100%', justifyContent: 'center' }}>
-        <span style={{ fontSize: 18, fontWeight: 800, color: hColor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{hPct}<span style={{ fontSize: 10.5 }}>%</span></span>
+        <span style={{ fontSize: 18, fontWeight: 800, color: hColor, lineHeight: 1.15, fontVariantNumeric: 'tabular-nums' }}>{hPct}<span style={{ fontSize: 10.5 }}>%</span></span>
         <span style={{ fontSize: 9, color: hColor, letterSpacing: '.1em', fontWeight: 700 }}>
           {globalPaused ? 'KILL ACTIVE' : (health?.errored ?? 0) > 0 ? 'DEGRADED' : hPct >= 100 ? 'NOMINAL' : 'PARTIAL'}
         </span>
@@ -257,7 +257,7 @@ function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh,
         {FILTER_LABELS.map(({ key, label }) => (
           <button key={key} onClick={() => onFilter(key)} style={{
             width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '6px 12px', background: filter === key ? '#FFB02E0A' : 'transparent',
+            padding: '6px 12px', background: filter === key ? '#0094FB0A' : 'transparent',
             border: 'none', borderLeft: `2px solid ${filter === key ? C.warn : 'transparent'}`,
             cursor: 'pointer', fontSize: 10, fontWeight: filter === key ? 700 : 500,
             color: filter === key ? C.warn : '#71767F', letterSpacing: '.06em', textAlign: 'left',
@@ -456,7 +456,7 @@ function OrchestratorPanel({ state, onScan }: { state: OrchestratorState | null;
                 style={{
                   display: 'grid', gridTemplateColumns: '80px 56px 70px 60px 56px 56px 56px 56px 1fr', gap: 0,
                   padding: '6px 12px', borderBottom: `1px solid #121419`,
-                  background: expandedSym === r.symbol ? '#FFB02E05' : r.side === 'BUY' ? '#2DBD8005' : r.side === 'SELL' ? '#F2495C05' : 'transparent',
+                  background: expandedSym === r.symbol ? '#0094FB05' : r.side === 'BUY' ? '#2DBD8005' : r.side === 'SELL' ? '#F2495C05' : 'transparent',
                   cursor: 'pointer', alignItems: 'center',
                 }}
               >
@@ -522,7 +522,7 @@ function SystemAgentCard({ agent, scorecard, onRefresh, selected, onClick }:
   return (
     <div onClick={onClick} style={{
       background: agent.status === 'error' ? '#0E0808' : isPaused ? '#0E0A06' : '#0E0E0E',
-      border: `1px solid ${agent.status === 'error' ? '#F2495C22' : isPaused ? '#FFB02E22' : selected ? '#FFB02E18' : C.border}`,
+      border: `1px solid ${agent.status === 'error' ? '#F2495C22' : isPaused ? '#0094FB22' : selected ? '#0094FB18' : C.border}`,
       borderRadius: 5, padding: '11px 13px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 9,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -531,7 +531,7 @@ function SystemAgentCard({ agent, scorecard, onRefresh, selected, onClick }:
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
             <span style={{ fontSize: 11.5, fontWeight: 800, color: '#ECEEF1', letterSpacing: '.03em' }}>{agent.agent_id}</span>
-            <span style={{ fontSize: 9, color: C.warn, background: '#FFB02E11', border: '1px solid #FFB02E22', borderRadius: 2, padding: '0 5px', letterSpacing: '.05em' }}>
+            <span style={{ fontSize: 9, color: C.warn, background: '#0094FB11', border: '1px solid #0094FB22', borderRadius: 2, padding: '0 5px', letterSpacing: '.05em' }}>
               {agent.agent_type.toUpperCase()}
             </span>
           </div>
@@ -585,7 +585,7 @@ function StrategyCard({ agent, scorecard, learner, alloc, onRefresh, selected, o
   return (
     <div onClick={onClick} style={{
       background: agent.status === 'error' ? '#0E0808' : isPaused ? '#0E0A06' : C.card,
-      border: `1px solid ${agent.status === 'error' ? '#F2495C22' : isPaused ? '#FFB02E22' : selected ? '#FFB02E22' : C.border}`,
+      border: `1px solid ${agent.status === 'error' ? '#F2495C22' : isPaused ? '#0094FB22' : selected ? '#0094FB22' : C.border}`,
       borderRadius: 4, padding: '10px 11px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 7,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -727,7 +727,7 @@ function DecisionRow({ d, onClick, selected }: { d: DecisionRecord; onClick: () 
   return (
     <div className="row-in" onClick={onClick} style={{
       display: 'grid', gridTemplateColumns: DCOLS, alignItems: 'center', gap: 8,
-      padding: '6px 12px', background: selected ? '#FFB02E08' : 'transparent',
+      padding: '6px 12px', background: selected ? '#0094FB08' : 'transparent',
       borderLeft: `2px solid ${selected ? C.warn : 'transparent'}`,
       borderBottom: `1px solid ${C.border}`, cursor: 'pointer',
     }}>
@@ -772,7 +772,7 @@ function PipelineTab({ agents, decisions, selectedId, onSelect }:
           <button key={s} onClick={() => setStratFilter(s)} style={{
             fontSize: 9.5, padding: '2px 7px', borderRadius: 3,
             border: `1px solid ${stratFilter === s ? C.warn : '#23272E'}`,
-            background: stratFilter === s ? '#FFB02E11' : 'transparent',
+            background: stratFilter === s ? '#0094FB11' : 'transparent',
             color: stratFilter === s ? C.warn : '#71767F', cursor: 'pointer', fontWeight: stratFilter === s ? 700 : 400,
           }}>{s}</button>
         ))}
@@ -826,7 +826,7 @@ function BroadcastTab({ events }: { events: EventRecord[] }) {
         <button onClick={() => setPaused(p => !p)} style={{
           fontSize: 9.5, padding: '2px 10px', borderRadius: 3,
           border: `1px solid ${paused ? C.warn : '#23272E'}`,
-          background: paused ? '#FFB02E11' : 'transparent',
+          background: paused ? '#0094FB11' : 'transparent',
           color: paused ? C.warn : '#71767F', cursor: 'pointer', fontWeight: 700,
         }}>{paused ? '▶ RESUME' : '⏸ PAUSE'}</button>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="search…"
@@ -835,7 +835,7 @@ function BroadcastTab({ events }: { events: EventRecord[] }) {
           <button key={t} onClick={() => setTopicFilter(t)} style={{
             fontSize: 9, padding: '2px 6px', borderRadius: 3,
             border: `1px solid ${topicFilter === t ? C.amber : '#23272E'}`,
-            background: topicFilter === t ? '#FFB02E0A' : 'transparent',
+            background: topicFilter === t ? '#0094FB0A' : 'transparent',
             color: topicFilter === t ? C.amber : '#4A4F57', cursor: 'pointer', letterSpacing: '.04em',
           }}>{t.toUpperCase()}</button>
         ))}
@@ -1434,7 +1434,7 @@ function DecisionLogTab({ decisions }: { decisions: AgentDecision[] }) {
         <button onClick={() => setMissedOnly(m => !m)} style={{
           fontSize: 9.5, fontWeight: 700, padding: '3px 10px', borderRadius: 3, cursor: 'pointer',
           border: `1px solid ${missedOnly ? C.amber : C.border2}`,
-          background: missedOnly ? '#FFB02E0A' : 'transparent',
+          background: missedOnly ? '#0094FB0A' : 'transparent',
           color: missedOnly ? C.amber : '#71767F',
         }}>MISSED WINNERS</button>
       </div>
@@ -1673,7 +1673,7 @@ export default function AgentsPage() {
                 <button key={key} onClick={() => setFilter(key)} style={{
                   fontSize: 9.5, padding: '2px 7px', borderRadius: 3,
                   border: `1px solid ${filter === key ? C.warn : 'transparent'}`,
-                  background: filter === key ? '#FFB02E0A' : 'transparent',
+                  background: filter === key ? '#0094FB0A' : 'transparent',
                   color: filter === key ? C.warn : '#71767F', cursor: 'pointer',
                 }}>{label}</button>
               ))}

@@ -81,12 +81,12 @@ const SENT_COLOR = { positive: '#2DBD80', negative: '#F2495C', neutral: '#71767F
 function NewsCard({ n }: { n: NewsItem }) {
   const sentColor = SENT_COLOR[n.sentiment] ?? '#71767F'
   const impactColor = n.impact === 'high' ? '#F2495C'
-    : n.impact === 'medium' ? '#FFB02E' : '#71767F'
+    : n.impact === 'medium' ? '#0094FB' : '#71767F'
 
   const headline = n.url ? (
     <a href={n.url} target="_blank" rel="noopener noreferrer"
       style={{ color: '#DFE2E7', textDecoration: 'none' }}
-      onMouseEnter={e => (e.currentTarget.style.color = '#FFB02E')}
+      onMouseEnter={e => (e.currentTarget.style.color = '#0094FB')}
       onMouseLeave={e => (e.currentTarget.style.color = '#DFE2E7')}>
       {n.headline}
     </a>
@@ -187,7 +187,7 @@ export default function SignalFeedPanel() {
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`text-[10px] px-2 py-0.5 rounded ${tab === t ? 'bg-accent text-black font-bold' : 'text-muted hover:text-gray-300'}`}
+              className={`text-[10.5px] px-2 py-0.5 rounded ${tab === t ? 'bg-accent text-black font-bold' : 'text-muted hover:text-gray-300'}`}
             >
               {t === 'signals' ? `SIGNALS (${signals.length})`
                 : t === 'news' ? `NEWS (${newsCountLabel})`
@@ -212,7 +212,7 @@ export default function SignalFeedPanel() {
               const full   = STRAT_FULL[s.strategy_id] ?? s.strategy_id
               const liveP  = ticks[s.instrument_id]?.last_price
               const pct    = Math.round(s.confidence * 100)
-              const confColor = s.confidence >= 0.7 ? '#2DBD80' : s.confidence >= 0.5 ? '#FFB02E' : '#F2495C'
+              const confColor = s.confidence >= 0.7 ? '#2DBD80' : s.confidence >= 0.5 ? '#0094FB' : '#F2495C'
               const sideColor = s.side === 'BUY' ? '#2DBD80' : '#F2495C'
               const rr = (s.target && s.stop_loss && liveP && Math.abs(liveP - s.stop_loss) > 0)
                 ? ((s.target - liveP) / (liveP - s.stop_loss)).toFixed(1)
@@ -229,7 +229,7 @@ export default function SignalFeedPanel() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                     <span style={{ fontSize: 12.5, fontWeight: 700, color: '#ECEEF1' }}>{sym}</span>
                     <Badge variant="side" value={s.side} />
-                    <span style={{ fontSize: 10, color: '#FFB02E', marginLeft: 2 }}>{s.strategy_id}</span>
+                    <span style={{ fontSize: 10, color: '#0094FB', marginLeft: 2 }}>{s.strategy_id}</span>
                     <span style={{ fontSize: 10, color: '#71767F' }}>· {full}</span>
                     <span style={{ fontSize: 10, color: '#4A4F57', marginLeft: 'auto' }}>{s.ts ? fmtTime(s.ts) : ''}</span>
                   </div>
@@ -272,14 +272,14 @@ export default function SignalFeedPanel() {
                 <button key={key} onClick={() => setNewsFilter(key)} style={{
                   fontSize: 9.5, fontWeight: 700, letterSpacing: '0.05em', padding: '2px 8px',
                   borderRadius: 3, cursor: 'pointer',
-                  border: `1px solid ${newsFilter === key ? '#FFB02E55' : '#333841'}`,
-                  background: newsFilter === key ? '#FFB02E0E' : 'transparent',
-                  color: newsFilter === key ? '#FFB02E' : '#565B63',
+                  border: `1px solid ${newsFilter === key ? '#0094FB55' : '#333841'}`,
+                  background: newsFilter === key ? '#0094FB0E' : 'transparent',
+                  color: newsFilter === key ? '#0094FB' : '#565B63',
                 }}>{label}</button>
               ))}
             </div>
             {allNews.length === 0
-              ? <p className="text-muted text-center mt-4 text-[11px]">No news matching this filter yet — RSS feeds refresh every 15 min.</p>
+              ? <p className="text-muted text-center mt-4 text-[11.5px]">No news matching this filter yet — RSS feeds refresh every 15 min.</p>
               : allNews.map((n, i) => <NewsCard key={n.id ?? i} n={n} />)}
           </>
         )}
@@ -287,7 +287,7 @@ export default function SignalFeedPanel() {
         {/* ── Events ───────────────────────────────────────── */}
         {tab === 'events' && (
           events.length === 0
-            ? <p className="text-muted text-center mt-4 text-[11px]">No upcoming events</p>
+            ? <p className="text-muted text-center mt-4 text-[11.5px]">No upcoming events</p>
             : (
               <table>
                 <thead>

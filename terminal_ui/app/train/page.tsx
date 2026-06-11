@@ -53,7 +53,7 @@ function PipelineDiagram({ state }: { state: string }) {
             <div style={{
               flex: 1, padding: '10px 12px', borderRadius: 4,
               border: `1px solid ${active ? C.amber + '66' : C.border}`,
-              background: active ? '#FFB02E0A' : C.card,
+              background: active ? '#0094FB0A' : C.card,
             }}>
               <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.08em', color: active ? C.amber : done ? C.green : C.muted }}>
                 {done ? '✓ ' : ''}{s.label}
