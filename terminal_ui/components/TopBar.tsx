@@ -112,11 +112,7 @@ function TickerTape() {
 
   return (
     <div style={{ height: 24, overflow: 'hidden', background: '#0A0B0D', borderBottom: '1px solid #23272E', display: 'flex', alignItems: 'center' }}>
-      {!marketOpen && (
-        <span style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '0.08em', padding: '0 10px', flexShrink: 0, borderRight: '1px solid #23272E' }}>
-          CLOSED
-        </span>
-      )}
+      {/* Market state lives in the top-right StatusDot — never inside the tape */}
       {/* Two identical sets with distinct key namespaces for seamless CSS marquee loop */}
       <div className="ticker-track">
         {items.map(({ label, token, price, chg }) => (

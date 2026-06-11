@@ -1088,15 +1088,46 @@ function FinancialAgentPanel() {
     setLoading(true)
     try {
       const history = messages.slice(-10).map(m => ({ role: m.role === 'error' ? 'user' : m.role, content: m.content }))
-      const resp = await api.agentQuery(text.trim(), history)
-      setOllama(resp.online)
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: resp.answer || '(no response)',
-        toolCalls: resp.tool_calls,
-        model: resp.model,
-        online: resp.online,
-      }])
+      // streaming: tokens render as they arrive (NDJSON events)
+      const res = await fetch('/api/agents/query/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: text.trim(), history }),
+      })
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
+      // open an empty assistant message and grow it in place
+      setMessages(prev => [...prev, { role: 'assistant', content: '', model: undefined, online: true }])
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      let buf = ''
+      let acc = ''
+      const patch = (content: string, extra?: Partial<ConvMsg>) =>
+        setMessages(prev => {
+          const next = [...prev]
+          next[next.length - 1] = { ...next[next.length - 1], content, ...extra }
+          return next
+        })
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        let nl
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim()
+          buf = buf.slice(nl + 1)
+          if (!line) continue
+          try {
+            const ev = JSON.parse(line)
+            if (ev.type === 'token') { acc += ev.text; patch(acc) }
+            else if (ev.type === 'tool') { acc += acc ? '' : ''; patch(acc || `⟲ ${ev.name}…`) }
+            else if (ev.type === 'done') {
+              patch(acc || '(no response)', { toolCalls: ev.tool_calls ?? [], model: ev.model, online: ev.model !== 'rule-based' })
+              setOllama(ev.model !== 'rule-based')
+            }
+            else if (ev.type === 'error') { patch(acc + `\n\n⚠ ${ev.message}`) }
+          } catch { /* partial line */ }
+        }
+      }
     } catch (e) {
       setMessages(prev => [...prev, { role: 'error', content: String(e) }])
     } finally {

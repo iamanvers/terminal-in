@@ -74,6 +74,10 @@ def main():
 
     # Operator settings (PRD 5b.2): stored overrides beat .env. They are
     # pushed into os.environ and Config is rebuilt before anything reads it.
+    # Warm the analyst LLM so the first AI ANALYST question answers fast
+    from terminal_in.agents.financial_agent import warmup_async
+    warmup_async()
+
     from terminal_in import app_settings
     if app_settings.apply_overrides(db):
         cfg = load_config()

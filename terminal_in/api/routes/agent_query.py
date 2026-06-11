@@ -32,6 +32,29 @@ def query():
         return jsonify({'error': str(e)}), 500
 
 
+@bp.route('/query/stream', methods=['POST'])
+def query_stream():
+    """NDJSON streaming variant — one JSON event per line:
+    {'type':'tool'|'token'|'done'|'error', ...}. The UI renders tokens as
+    they arrive instead of waiting out the full generation."""
+    body = request.get_json(silent=True) or {}
+    text = (body.get('query') or body.get('text') or '').strip()
+    if not text:
+        return jsonify({'error': 'query required'}), 400
+    history = body.get('history') or []
+
+    from flask import Response, stream_with_context
+    import json as _json
+    from terminal_in.agents.financial_agent import get_agent
+
+    def gen():
+        for event in get_agent().query_stream(text, history=history):
+            yield _json.dumps(event) + '\n'
+
+    return Response(stream_with_context(gen()), mimetype='application/x-ndjson',
+                    headers={'X-Accel-Buffering': 'no', 'Cache-Control': 'no-cache'})
+
+
 @bp.route('/symbols/search')
 def symbol_search():
     q = request.args.get('q', '').strip()

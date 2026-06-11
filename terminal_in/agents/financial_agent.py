@@ -24,14 +24,55 @@ OLLAMA_BASE  = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
 OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen2.5:3b')
 
 _SYSTEM_PROMPT = """\
-You are a professional NSE/BSE equity analyst with deep expertise in Indian financial markets.
-You help traders and investors analyse stocks, indices, and market conditions.
+You are the AI ANALYST inside TERMINAL//IN — an agentic algorithmic trading terminal \
+for Indian markets (NSE) that you are part of. You are not a generic chatbot.
 
-Available tools let you fetch real-time price data, technical indicators, fundamental metrics,
-and run market scans. Always use tools to retrieve live data before drawing conclusions.
-Respond in a clear, structured format. Cite specific numbers (prices, RSI, EMA levels) in your analysis.
-When giving recommendations, always state the basis (technicals, fundamentals, or both) and relevant risk factors.
-Never fabricate prices or indicators — use the tools."""
+What TERMINAL//IN does (so you can answer questions about it):
+- Runs 8 rule strategies (S1 ORB, S2 52-week breakout, S4 RSI reversion, S5 EMA pullback, \
+S6 pairs, S8 VIX fade, S9 momentum) over a 72-symbol NSE universe every 60s.
+- An orchestrator scans 6 lenses every 120s; noise filters (persistence, EV hysteresis, \
+data quality) pick candidates; a local LLM Trade Planner approves/rejects/sizes them; \
+a 13-check risk gate has final say; a paper broker fills at real prices with MIS/CNC \
+products and stop-loss/target-driven exits. A supervisor suppresses losing lenses and \
+can kill-switch everything.
+- Every decision is stored and re-judged in hindsight; the system retrains its own LoRA \
+model on its trading record from the TRAIN page.
+- Pages: MARKET (watchlist/news), EQUITIES (cash book + order ticket), F&O (index complex), \
+AGENTS (the decision pipeline you live in), TRAIN, LEARN.
+
+Your job: analyse stocks/indices/market conditions, explain the system's signals and \
+portfolio, and answer questions about how TERMINAL//IN works.
+Use tools for any price/indicator/fundamental claim — never fabricate numbers.
+A LIVE CONTEXT block accompanies each question with the current regime, VIX, portfolio \
+and recent system activity — use it; do not re-fetch what it already tells you.
+Be concise and structured; state the basis and the risk for every recommendation."""
+
+
+def _live_context() -> str:
+    """Current app state injected into every query — keeps the analyst
+    grounded in what the system is actually doing right now."""
+    from terminal_in.bus import bus
+    lines = []
+    try:
+        r = bus.get_cached('regime.update') or {}
+        if r:
+            lines.append(f"regime={r.get('regime', '?')} vix={float(r.get('india_vix') or 0):.1f} "
+                         f"size_mult={float(r.get('size_multiplier') or 1):.2f}")
+        p = bus.get_cached('pnl.update') or {}
+        if p:
+            lines.append(f"equity=Rs {float(p.get('equity') or 0):,.0f} day_pnl={float(p.get('daily_pnl') or 0):+,.0f}")
+        scan = bus.get_cached('orchestrator.scan_done') or {}
+        top = [f"{x.get('symbol')}:{x.get('side')}@EV{x.get('ev', 0):.1f}"
+               for x in (scan.get('top_results') or [])[:3] if x.get('side') in ('BUY', 'SELL')]
+        if top:
+            lines.append('top_scan=' + ' '.join(top))
+        v = bus.get_cached('planner.verdict') or {}
+        if v.get('verdicts'):
+            acts = [f"{x.get('symbol')}:{x.get('action')}" for x in v['verdicts'][:3]]
+            lines.append(f"planner[{v.get('mode', '?')}]=" + ' '.join(acts))
+    except Exception:
+        pass
+    return ('LIVE CONTEXT: ' + ' | '.join(lines)) if lines else ''
 
 # ── Tool definitions (OpenAI-compatible schema for Ollama) ─────────────────
 
@@ -182,23 +223,24 @@ def _ollama_available() -> bool:
         return False
 
 
-def _ollama_chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
+def _ollama_chat(messages: list[dict], tools: list[dict] | None = None,
+                 stream: bool = False):
     payload: dict = {
         'model':  OLLAMA_MODEL,
         'messages': messages,
-        'stream': False,
-        'options': {'temperature': 0.1, 'num_predict': 1024},
+        'stream': stream,
+        'keep_alive': '30m',   # don't pay the model-reload tax between questions
+        'options': {'temperature': 0.1, 'num_predict': 700},
     }
     if tools:
         payload['tools'] = tools
 
-    r = requests.post(
-        f'{OLLAMA_BASE}/api/chat',
-        json=payload,
-        timeout=120,
-    )
+    r = requests.post(f'{OLLAMA_BASE}/api/chat', json=payload,
+                      timeout=120, stream=stream)
     r.raise_for_status()
-    return r.json()
+    if not stream:
+        return r.json()
+    return r  # caller iterates .iter_lines()
 
 
 # ── Rule-based fallback ──────────────────────────────────────────────────────
@@ -267,13 +309,15 @@ class FinancialAgent:
                 'online':     False,
             }
 
+        ctx = _live_context()
         messages: list[dict] = [{'role': 'system', 'content': _SYSTEM_PROMPT}]
         if history:
             messages.extend(history[-10:])  # keep last 10 turns for context
-        messages.append({'role': 'user', 'content': user_text})
+        messages.append({'role': 'user',
+                         'content': (ctx + '\n\n' + user_text) if ctx else user_text})
 
         executed_calls: list[dict] = []
-        max_rounds = 6
+        max_rounds = 3
 
         for round_num in range(max_rounds):
             try:
@@ -329,6 +373,75 @@ class FinancialAgent:
             'online':     True,
         }
 
+    def query_stream(self, user_text: str, history: list[dict] | None = None):
+        """Streaming variant: yields event dicts as the answer forms.
+          {'type':'tool',  'name': str}            — a tool is executing
+          {'type':'token', 'text': str}            — answer text delta
+          {'type':'done',  'model': str, 'tool_calls': [...]}
+          {'type':'error', 'message': str}
+        Tool rounds run non-streamed (short generations); the final answer
+        streams token-by-token so the UI renders immediately."""
+        if not _ollama_available():
+            yield {'type': 'token', 'text': _rule_based_analysis(user_text)}
+            yield {'type': 'done', 'model': 'rule-based', 'tool_calls': []}
+            return
+
+        ctx = _live_context()
+        messages: list[dict] = [{'role': 'system', 'content': _SYSTEM_PROMPT}]
+        if history:
+            messages.extend(history[-10:])
+        messages.append({'role': 'user',
+                         'content': (ctx + '\n\n' + user_text) if ctx else user_text})
+
+        executed_calls: list[dict] = []
+        try:
+            # Every round streams: content deltas forward immediately; if the
+            # model emits tool calls instead, execute them and loop (final
+            # round drops tools so it must answer).
+            for round_num in range(3):
+                tools = _TOOLS if round_num < 2 else None
+                r = _ollama_chat(messages, tools=tools, stream=True)
+                content_parts: list[str] = []
+                tool_calls: list[dict] = []
+                for line in r.iter_lines():
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    msg = chunk.get('message') or {}
+                    delta = msg.get('content') or ''
+                    if delta:
+                        content_parts.append(delta)
+                        yield {'type': 'token', 'text': delta}
+                    if msg.get('tool_calls'):
+                        tool_calls.extend(msg['tool_calls'])
+                    if chunk.get('done'):
+                        break
+                if not tool_calls:
+                    break
+                messages.append({'role': 'assistant',
+                                 'content': ''.join(content_parts),
+                                 'tool_calls': tool_calls})
+                for tc in tool_calls:
+                    fn = tc.get('function', {})
+                    name = fn.get('name', '')
+                    try:
+                        raw = fn.get('arguments', {})
+                        args = raw if isinstance(raw, dict) else json.loads(raw)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    yield {'type': 'tool', 'name': name}
+                    result = _execute_tool(name, args)
+                    executed_calls.append({'tool': name, 'args': args, 'result': result})
+                    messages.append({'role': 'tool',
+                                     'content': json.dumps(result, default=str)})
+            yield {'type': 'done', 'model': OLLAMA_MODEL, 'tool_calls': executed_calls}
+        except Exception as e:
+            log.exception('analyst stream failed')
+            yield {'type': 'error', 'message': str(e)[:200]}
+
     @property
     def is_online(self) -> bool:
         return _ollama_available()
@@ -341,6 +454,24 @@ class FinancialAgent:
 # ── Singleton ────────────────────────────────────────────────────────────────
 
 _agent: FinancialAgent | None = None
+
+
+def warmup_async() -> None:
+    """Load the analyst model into Ollama at boot (keep_alive 30m) so the
+    first question doesn't pay the multi-GB model load."""
+    from threading import Thread
+
+    def _w():
+        try:
+            requests.post(f'{OLLAMA_BASE}/api/chat', json={
+                'model': OLLAMA_MODEL, 'stream': False, 'keep_alive': '30m',
+                'messages': [{'role': 'user', 'content': 'ok'}],
+                'options': {'num_predict': 2},
+            }, timeout=180)
+            log.info('analyst model %s warmed', OLLAMA_MODEL)
+        except Exception:
+            log.info('analyst warmup skipped (Ollama offline)')
+    Thread(target=_w, daemon=True, name='analyst-warmup').start()
 
 
 def get_agent() -> FinancialAgent:

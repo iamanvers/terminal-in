@@ -18,6 +18,7 @@ import {
   api, OrchestratorState, OrchestratorResult, RegimeState, SignalRec, Instrument,
 } from '@/lib/api'
 import { useTickMap } from '@/hooks/useSocket'
+import HoldingsPanel from '@/components/panels/HoldingsPanel'
 
 const C = THEME
 
@@ -136,34 +137,75 @@ function SignalLog({ signals }: { signals: SignalRec[] }) {
   )
 }
 
-// ── Phase 2 scaffold ──────────────────────────────────────────────────────────
-function DerivativesRoadmap() {
-  const items = [
-    { phase: 'P2', title: 'Contract chain', desc: 'NIFTY/BANKNIFTY weekly + monthly option chains, futures curve, OI and IV per strike (Kite Connect instruments dump).' },
-    { phase: 'P2', title: 'Lot-based paper execution', desc: 'Orders in lots (NIFTY 75 / BANKNIFTY 35), expiry-aware positions, auto square-off on expiry day.' },
-    { phase: 'P2', title: 'SPAN margin estimation', desc: 'Realistic margin blocking for short options / futures instead of the 30% cash notional rule.' },
-    { phase: 'P3', title: 'Options strategies', desc: 'Spreads, straddles, iron condors as first-class multi-leg positions with combined greeks and payoff curves.' },
-    { phase: 'P3', title: 'FX & commodities', desc: 'CDS currency futures (USDINR), MCX commodities (gold, crude) — then global venues. See PRD roadmap.' },
-  ]
+// ── Contract reference — live notional and margin math per index ─────────────
+function ContractReference() {
+  const ticks = useTickMap()
+  const [closes, setCloses] = useState<Record<string, { close: number }>>({})
+  const [equity, setEquity] = useState(0)
+  useEffect(() => {
+    api.lastCloses().then(c => setCloses(c as never)).catch(() => {})
+    fetch('/api/portfolio/holdings').then(r => r.json())
+      .then(d => setEquity(d?.equity ?? 0)).catch(() => {})
+  }, [])
+  const FUT_MARGIN = 0.115   // NSE index futures initial margin ≈ 11–12% of notional
+
   return (
     <div className="panel" style={{ borderRadius: 5 }}>
-      <div className="panel-header">DERIVATIVES EXECUTION <span className="chip chip--accent" style={{ marginLeft: 4 }}>PHASE 2 — PLANNED</span></div>
-      <div className="panel-body" style={{ padding: 10 }}>
-        <div style={{ fontSize: 10.5, color: C.sub, marginBottom: 10, lineHeight: 1.6 }}>
-          Index underlyings are F&amp;O-only — the risk gate correctly blocks them as cash trades today.
-          Derivative execution lands here as a separate pipeline (lot sizing, expiry, SPAN margin),
-          not a bolt-on to the equities path.
+      <div className="panel-header">CONTRACT REFERENCE <span style={{ color: '#4A4F57' }}>FUTURES · LIVE NOTIONAL</span></div>
+      <div className="panel-body" style={{ padding: 0 }}>
+        <table style={{ width: '100%' }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left', padding: '6px 10px' }}>INDEX</th>
+              <th style={{ textAlign: 'right' }}>LOT</th>
+              <th style={{ textAlign: 'right' }}>SPOT</th>
+              <th style={{ textAlign: 'right' }}>NOTIONAL/LOT</th>
+              <th style={{ textAlign: 'right' }}>≈MARGIN/LOT</th>
+              <th style={{ textAlign: 'right', paddingRight: 10 }}>MAX LOTS*</th>
+            </tr>
+          </thead>
+          <tbody>
+            {INDICES.map(({ token, label, lot }) => {
+              const spot = ticks[token]?.last_price ?? closes[String(token)]?.close ?? 0
+              const notional = spot * lot
+              const margin = notional * FUT_MARGIN
+              const maxLots = margin > 0 && equity > 0 ? Math.floor((equity * 0.25) / margin) : 0
+              return (
+                <tr key={token}>
+                  <td style={{ padding: '6px 10px', fontWeight: 600, color: C.text }}>{label}</td>
+                  <td style={{ textAlign: 'right' }}>{lot}</td>
+                  <td style={{ textAlign: 'right', color: C.text }}>{spot > 0 ? spot.toLocaleString('en-IN', { maximumFractionDigits: 1 }) : '—'}</td>
+                  <td style={{ textAlign: 'right' }}>₹{(notional / 100000).toFixed(1)}L</td>
+                  <td style={{ textAlign: 'right', color: C.amber }}>₹{(margin / 100000).toFixed(2)}L</td>
+                  <td style={{ textAlign: 'right', paddingRight: 10, color: C.sub }}>{maxLots}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        <div style={{ fontSize: 9.5, color: C.muted, padding: '6px 10px', borderTop: `1px solid ${C.border}` }}>
+          *at 25% of equity per position · margin ≈ {(FUT_MARGIN * 100).toFixed(0)}% of notional (SPAN approximation — exact SPAN lands with P2 execution)
         </div>
-        {items.map(i => (
-          <div key={i.title} style={{ display: 'flex', gap: 10, padding: '7px 0', borderTop: `1px solid ${C.border}`, alignItems: 'baseline' }}>
-            <span style={{ fontSize: 9.5, fontWeight: 700, color: i.phase === 'P2' ? C.amber : C.muted, border: `1px solid ${i.phase === 'P2' ? C.amber + '44' : C.border2}`, borderRadius: 3, padding: '1px 6px', flexShrink: 0 }}>{i.phase}</span>
-            <div>
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: C.text }}>{i.title}</div>
-              <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.5 }}>{i.desc}</div>
-            </div>
-          </div>
-        ))}
       </div>
+    </div>
+  )
+}
+
+// ── Phase 2 footer strip ──────────────────────────────────────────────────────
+function RoadmapStrip() {
+  const items = ['Contract chain', 'Lot-based fills', 'SPAN margin', 'Multi-leg options (P3)']
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', flexShrink: 0,
+      background: C.card, border: `1px solid ${C.border}`, borderRadius: 5,
+    }}>
+      <span style={{ fontSize: 9.5, fontWeight: 700, color: C.amber, letterSpacing: '.08em', flexShrink: 0 }}>EXECUTION · PHASE 2</span>
+      {items.map(i => (
+        <span key={i} style={{ fontSize: 9.5, color: C.muted, border: `1px solid ${C.border2}`, borderRadius: 3, padding: '1px 7px', whiteSpace: 'nowrap' }}>{i}</span>
+      ))}
+      <span style={{ fontSize: 9.5, color: C.muted, marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        index signals route via NIFTYBEES until then — see PRD
+      </span>
     </div>
   )
 }
@@ -191,14 +233,22 @@ export default function FnoPage() {
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: C.bg, overflow: 'hidden' }}>
       <IndexStrip regime={regime} />
-      <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '1.3fr 1fr', gridTemplateRows: '1fr 1fr', gap: 8, padding: '8px 10px', overflow: 'hidden' }}>
-        <div style={{ gridRow: '1 / 3', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 8, padding: '8px 10px', overflow: 'hidden' }}>
+        <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <IndexSignals results={orch?.results ?? []} />
           <SignalLog signals={signals} />
         </div>
-        <div style={{ gridRow: '1 / 3', minHeight: 0 }}>
-          <DerivativesRoadmap />
+        <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ flex: '0 0 auto', maxHeight: '42%', overflow: 'auto' }}>
+            <HoldingsPanel segment="FNO" />
+          </div>
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            <ContractReference />
+          </div>
         </div>
+      </div>
+      <div style={{ padding: '0 10px 8px', flexShrink: 0 }}>
+        <RoadmapStrip />
       </div>
     </div>
   )
