@@ -45,7 +45,7 @@ export default function PositionsPanel() {
       <div className="panel-header justify-between">
         <span><span className="accent">▸</span> OPEN POSITIONS</span>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {!marketOpen && <span style={{ fontSize: 8, color: '#555', letterSpacing: '0.06em' }}>MARKET CLOSED</span>}
+          {!marketOpen && <span style={{ fontSize: 9.5, color: '#5F6772', letterSpacing: '0.06em' }}>MARKET CLOSED</span>}
           <span className="text-muted">{positions.length} open</span>
         </div>
       </div>

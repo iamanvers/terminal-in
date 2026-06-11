@@ -114,20 +114,20 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
     import('lightweight-charts').then(({ createChart, CrosshairMode }) => {
       if (cancelled || !containerRef.current) return
       const chart = createChart(containerRef.current, {
-        layout: { background: { color: '#111111' }, textColor: '#666666' },
-        grid:   { vertLines: { color: '#161616' }, horzLines: { color: '#161616' } },
+        layout: { background: { color: '#14161A' }, textColor: '#666666' },
+        grid:   { vertLines: { color: '#20242B' }, horzLines: { color: '#20242B' } },
         crosshair: { mode: CrosshairMode.Normal },
-        rightPriceScale: { borderColor: '#1E1E1E', scaleMargins: { top: 0.08, bottom: 0.22 } },
-        timeScale: { borderColor: '#1E1E1E', timeVisible: true },
+        rightPriceScale: { borderColor: '#2B303A', scaleMargins: { top: 0.08, bottom: 0.22 } },
+        timeScale: { borderColor: '#2B303A', timeVisible: true },
         width:  containerRef.current.clientWidth,
         height: containerRef.current.clientHeight,
       })
       const series = chart.addCandlestickSeries({
-        upColor: '#00C853', downColor: '#D32F2F',
-        borderUpColor: '#00C853', borderDownColor: '#D32F2F',
-        wickUpColor: '#00C853', wickDownColor: '#D32F2F',
+        upColor: '#2FBF71', downColor: '#E5484D',
+        borderUpColor: '#2FBF71', borderDownColor: '#E5484D',
+        wickUpColor: '#2FBF71', wickDownColor: '#E5484D',
       })
-      const ema9  = chart.addLineSeries({ color: '#F7931E', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+      const ema9  = chart.addLineSeries({ color: '#4E80B4', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
       const ema21 = chart.addLineSeries({ color: '#4488FF', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
 
       let vol: unknown = null
@@ -197,7 +197,7 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         volRef.current.setData(bars.map((b: any) => ({
           time: b.time, value: b.volume,
-          color: b.close >= b.open ? '#00C85318' : '#D32F2F18',
+          color: b.close >= b.open ? '#2FBF7118' : '#E5484D18',
         })) as any)
       }
 
@@ -266,11 +266,11 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
 
   // ── Status badge ─────────────────────────────────────────────────────────────
   const badge = (() => {
-    if (loadState === 'loading') return { text: 'UPDATING', color: '#888', bg: '#111' }
+    if (loadState === 'loading') return { text: 'UPDATING', color: '#9BA3AD', bg: '#14161A' }
     if (loadState === 'error')   return { text: 'NO DATA',  color: '#f87171', bg: '#1a0000' }
     if (loadState === 'cached')  return { text: 'CACHED',   color: '#fb923c', bg: '#1f1000' }
     if (marketOpen)              return { text: 'LIVE',     color: '#4ade80', bg: '#001a00' }
-    return { text: 'CLOSED', color: '#555', bg: '#111' }
+    return { text: 'CLOSED', color: '#5F6772', bg: '#14161A' }
   })()
 
   const age = lastUpdated
@@ -285,15 +285,15 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
       <div className="panel-header justify-between">
         <span>
           <span className="accent">▸</span> CHART ·{' '}
-          <span style={{ color: '#E0E0E0' }}>{symbolLabel}</span>
-          <span style={{ fontSize: 8, color: '#555', marginLeft: 8 }}>
-            EMA <span style={{ color: '#F7931E' }}>9</span> / <span style={{ color: '#4488FF' }}>21</span>
+          <span style={{ color: '#E6E9ED' }}>{symbolLabel}</span>
+          <span style={{ fontSize: 9.5, color: '#5F6772', marginLeft: 8 }}>
+            EMA <span style={{ color: '#4E80B4' }}>9</span> / <span style={{ color: '#4488FF' }}>21</span>
           </span>
         </span>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Market / data status badge */}
           <span style={{
-            fontSize: 8, padding: '1px 5px', borderRadius: 3, letterSpacing: '0.08em',
+            fontSize: 9.5, padding: '1px 5px', borderRadius: 3, letterSpacing: '0.08em',
             background: badge.bg, color: badge.color,
             border: `1px solid ${badge.color}44`,
           }}>
@@ -303,7 +303,7 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
           <select
             value={symbolIdx}
             onChange={e => setSymbolIdx(Number(e.target.value))}
-            style={{ background: '#111111', color: '#ccc', border: '1px solid #1E1E1E', borderRadius: 3, padding: '0 4px', fontSize: 10, outline: 'none' }}
+            style={{ background: '#14161A', color: '#ccc', border: '1px solid #2B303A', borderRadius: 3, padding: '0 4px', fontSize: 10.5, outline: 'none' }}
           >
             {SYMBOLS.map((s, i) => <option key={s.key} value={i}>{s.label}</option>)}
           </select>
@@ -311,9 +311,9 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
             {TIMEFRAMES.map(t => (
               <button key={t} onClick={() => setTf(t)}
                 style={{
-                  padding: '1px 8px', borderRadius: 3, fontSize: 10, cursor: 'pointer', border: 'none',
-                  background: tf === t ? '#F7931E' : 'transparent',
-                  color:      tf === t ? '#000' : '#888',
+                  padding: '1px 8px', borderRadius: 3, fontSize: 10.5, cursor: 'pointer', border: 'none',
+                  background: tf === t ? '#4E80B4' : 'transparent',
+                  color:      tf === t ? '#000' : '#9BA3AD',
                   fontWeight: tf === t ? 700 : 400,
                 }}>
                 {t}
@@ -326,12 +326,12 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
         <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
         {loadState === 'error' && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-            <span style={{ color: '#333', fontSize: 11 }}>NO DATA — waiting for OHLCV…</span>
+            <span style={{ color: '#3C424B', fontSize: 11.5 }}>NO DATA — waiting for OHLCV…</span>
           </div>
         )}
         {loadState === 'loading' && lastUpdated === null && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-            <span style={{ color: '#333', fontSize: 11 }}>loading…</span>
+            <span style={{ color: '#3C424B', fontSize: 11.5 }}>loading…</span>
           </div>
         )}
       </div>

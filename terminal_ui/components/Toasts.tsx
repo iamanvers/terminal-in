@@ -22,12 +22,12 @@ type Toast = {
 }
 
 const KIND_STYLE: Record<Toast['kind'], { color: string; icon: string }> = {
-  trade:   { color: '#22C55E', icon: '◉' },
+  trade:   { color: '#2FBF71', icon: '◉' },
   reject:  { color: '#EAB308', icon: '⊘' },
-  news:    { color: '#38BDF8', icon: '▣' },
-  risk:    { color: '#EF4444', icon: '⚠' },
-  planner: { color: '#F7931E', icon: '⚖' },
-  error:   { color: '#EF4444', icon: '✕' },
+  news:    { color: '#4CA8E8', icon: '▣' },
+  risk:    { color: '#E5484D', icon: '⚠' },
+  planner: { color: '#4E80B4', icon: '⚖' },
+  error:   { color: '#E5484D', icon: '✕' },
 }
 
 let _nextId = 1
@@ -36,26 +36,26 @@ function ToastCard({ t, onClose }: { t: Toast; onClose: (id: number) => void }) 
   const s = KIND_STYLE[t.kind]
   return (
     <div className="fade-up" style={{
-      width: 320, background: '#101010', border: '1px solid #242424',
+      width: 320, background: '#111317', border: '1px solid #2B303A',
       borderLeft: `3px solid ${s.color}`, borderRadius: 5, overflow: 'hidden',
       boxShadow: '0 6px 24px rgba(0,0,0,.55)', pointerEvents: 'auto',
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 10px 7px' }}>
-        <span style={{ color: s.color, fontSize: 12, lineHeight: '14px', flexShrink: 0 }}>{s.icon}</span>
+        <span style={{ color: s.color, fontSize: 12.5, lineHeight: '14px', flexShrink: 0 }}>{s.icon}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#E4E4E4', letterSpacing: '.04em' }}>{t.title}</div>
-          {t.body && <div style={{ fontSize: 10, color: '#9A9A9A', marginTop: 2, lineHeight: 1.45, overflowWrap: 'break-word' }}>{t.body}</div>}
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: '#E6E9ED', letterSpacing: '.04em' }}>{t.title}</div>
+          {t.body && <div style={{ fontSize: 10.5, color: '#9BA3AD', marginTop: 2, lineHeight: 1.45, overflowWrap: 'break-word' }}>{t.body}</div>}
         </div>
         <button onClick={() => onClose(t.id)} aria-label="dismiss" style={{
-          background: 'none', border: 'none', color: '#5C5C5C', cursor: 'pointer',
-          fontSize: 11, lineHeight: '14px', padding: 0, flexShrink: 0,
+          background: 'none', border: 'none', color: '#5F6772', cursor: 'pointer',
+          fontSize: 11.5, lineHeight: '14px', padding: 0, flexShrink: 0,
         }}
-          onMouseEnter={e => (e.currentTarget.style.color = '#E4E4E4')}
-          onMouseLeave={e => (e.currentTarget.style.color = '#5C5C5C')}
+          onMouseEnter={e => (e.currentTarget.style.color = '#E6E9ED')}
+          onMouseLeave={e => (e.currentTarget.style.color = '#5F6772')}
         >✕</button>
       </div>
       {/* TTL progress bar */}
-      <div style={{ height: 2, background: '#1A1A1A' }}>
+      <div style={{ height: 2, background: '#20242B' }}>
         <div style={{
           height: '100%', background: `${s.color}88`, transformOrigin: 'left',
           animation: `toast-ttl ${TOAST_TTL_MS}ms linear forwards`,

@@ -1,4 +1,5 @@
 'use client'
+import { THEME } from '@/lib/theme'
 /**
  * LEARN MODULE — curated market education.
  * External resources (Varsity, Investopedia, quant reading) organized by
@@ -6,11 +7,7 @@
  */
 import React, { useState } from 'react'
 
-const C = {
-  bg: '#070707', panel: '#0D0D0D', card: '#111111',
-  border: '#1A1A1A', text: '#E4E4E4', sub: '#9A9A9A', muted: '#5C5C5C',
-  amber: '#F7931E', green: '#22C55E', blue: '#38BDF8', purple: '#AB47BC',
-}
+const C = THEME
 
 type Resource = { title: string; url: string; desc: string; level: 'beginner' | 'intermediate' | 'advanced' }
 type Track = { id: string; label: string; color: string; blurb: string; resources: Resource[] }
@@ -59,7 +56,7 @@ const TRACKS: Track[] = [
   },
 ]
 
-const LEVEL_C = { beginner: C.green, intermediate: C.amber, advanced: '#EF4444' } as const
+const LEVEL_C = { beginner: C.green, intermediate: C.amber, advanced: '#E5484D' } as const
 
 export default function LearnPage() {
   const [track, setTrack] = useState<string>(TRACKS[0].id)
@@ -79,7 +76,7 @@ export default function LearnPage() {
       <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
         {TRACKS.map(t => (
           <button key={t.id} onClick={() => setTrack(t.id)} style={{
-            fontSize: 9, fontWeight: 700, letterSpacing: '.08em', padding: '7px 16px',
+            fontSize: 10, fontWeight: 700, letterSpacing: '.08em', padding: '7px 16px',
             borderRadius: 4, cursor: 'pointer',
             border: `1px solid ${track === t.id ? t.color + '66' : C.border}`,
             background: track === t.id ? `${t.color}0E` : C.panel,
@@ -88,7 +85,7 @@ export default function LearnPage() {
         ))}
       </div>
 
-      <div style={{ fontSize: 10, color: C.muted, padding: '0 2px', flexShrink: 0 }}>{active.blurb}</div>
+      <div style={{ fontSize: 10.5, color: C.muted, padding: '0 2px', flexShrink: 0 }}>{active.blurb}</div>
 
       {/* Resource cards */}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: 8, alignContent: 'start' }}>
@@ -102,12 +99,12 @@ export default function LearnPage() {
             onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
               <span className="t-headline" style={{ color: C.text, fontWeight: 700, flex: 1 }}>{r.title}</span>
-              <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '.06em', color: LEVEL_C[r.level], flexShrink: 0 }}>
+              <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.06em', color: LEVEL_C[r.level], flexShrink: 0 }}>
                 {r.level.toUpperCase()}
               </span>
             </div>
-            <div className="t-prose" style={{ fontSize: 11, marginTop: 5 }}>{r.desc}</div>
-            <div style={{ fontSize: 9, color: C.muted, marginTop: 7 }}>{new URL(r.url).hostname} ↗</div>
+            <div className="t-prose" style={{ fontSize: 11.5, marginTop: 5 }}>{r.desc}</div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 7 }}>{new URL(r.url).hostname} ↗</div>
           </a>
         ))}
       </div>

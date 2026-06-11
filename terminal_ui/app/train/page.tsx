@@ -1,4 +1,5 @@
 'use client'
+import { THEME } from '@/lib/theme'
 /**
  * TRAIN MODULE — recursive model training.
  *
@@ -12,12 +13,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { api, TrainingRun, TrainingStatus } from '@/lib/api'
 import { getSocket } from '@/lib/socket'
 
-const C = {
-  bg: '#070707', panel: '#0D0D0D', card: '#111111',
-  border: '#1A1A1A', border2: '#242424',
-  text: '#E4E4E4', sub: '#9A9A9A', muted: '#5C5C5C', dim: '#383838',
-  green: '#22C55E', red: '#EF4444', amber: '#F7931E', blue: '#38BDF8', purple: '#AB47BC',
-}
+const C = THEME
 
 const STATE_LABEL: Record<string, { label: string; color: string; busy: boolean }> = {
   idle:             { label: 'IDLE',              color: C.muted,  busy: false },
@@ -57,15 +53,15 @@ function PipelineDiagram({ state }: { state: string }) {
             <div style={{
               flex: 1, padding: '10px 12px', borderRadius: 4,
               border: `1px solid ${active ? C.amber + '66' : C.border}`,
-              background: active ? '#F7931E0A' : C.card,
+              background: active ? '#4E80B40A' : C.card,
             }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.08em', color: active ? C.amber : done ? C.green : C.muted }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.08em', color: active ? C.amber : done ? C.green : C.muted }}>
                 {done ? '✓ ' : ''}{s.label}
               </div>
-              <div style={{ fontSize: 8, color: C.muted, marginTop: 3, lineHeight: 1.4 }}>{s.desc}</div>
+              <div style={{ fontSize: 9.5, color: C.muted, marginTop: 3, lineHeight: 1.4 }}>{s.desc}</div>
             </div>
             {i < steps.length - 1 && (
-              <div style={{ alignSelf: 'center', color: C.dim, padding: '0 6px', fontSize: 12 }}>→</div>
+              <div style={{ alignSelf: 'center', color: C.dim, padding: '0 6px', fontSize: 12.5 }}>→</div>
             )}
           </React.Fragment>
         )
@@ -81,7 +77,7 @@ function RunHistory({ runs }: { runs: TrainingRun[] }) {
       <div className="panel-header">RUN HISTORY</div>
       <div className="panel-body">
         {runs.length === 0 ? (
-          <div style={{ padding: 30, textAlign: 'center', fontSize: 10, color: C.muted }}>
+          <div style={{ padding: 30, textAlign: 'center', fontSize: 10.5, color: C.muted }}>
             No training runs yet. Start a smoke test (200 steps) to validate the pipeline,
             then a full run overnight.
           </div>
@@ -172,13 +168,13 @@ export default function TrainPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 5, padding: '10px 14px', flexShrink: 0 }}>
         <div>
           <div className="t-display" style={{ fontSize: 16 }}>Recursive Model Training</div>
-          <div className="t-prose" style={{ fontSize: 11, marginTop: 2 }}>
+          <div className="t-prose" style={{ fontSize: 11.5, marginTop: 2 }}>
             The financial SLM retrains on its own trading record — every closed trade and hindsight-judged planner decision becomes training signal.
           </div>
         </div>
         <div style={{ flex: 1 }} />
         <span style={{
-          fontSize: 9, fontWeight: 700, letterSpacing: '.08em', padding: '3px 10px', borderRadius: 3,
+          fontSize: 10, fontWeight: 700, letterSpacing: '.08em', padding: '3px 10px', borderRadius: 3,
           border: `1px solid ${stCfg.color}55`, color: stCfg.color, background: `${stCfg.color}10`,
         }}>
           {running && <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: stCfg.color, marginRight: 6, animation: 'blink 1s infinite' }} />}
@@ -196,24 +192,24 @@ export default function TrainPage() {
         )}
       </div>
 
-      {msg && <div style={{ fontSize: 10, color: C.amber, padding: '0 4px', flexShrink: 0 }}>{msg}</div>}
+      {msg && <div style={{ fontSize: 10.5, color: C.amber, padding: '0 4px', flexShrink: 0 }}>{msg}</div>}
 
       {/* Pipeline + current run */}
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 5, padding: 14, flexShrink: 0 }}>
         <PipelineDiagram state={state} />
         {cur && (
           <div style={{ display: 'flex', gap: 24, marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
-            <span style={{ fontSize: 9, color: C.muted }}>RUN <span style={{ color: C.text }}>{cur.run_id}</span></span>
-            {cur.dataset_samples != null && <span style={{ fontSize: 9, color: C.muted }}>SAMPLES <span style={{ color: C.text }}>{cur.dataset_samples.toLocaleString()}</span></span>}
+            <span style={{ fontSize: 10, color: C.muted }}>RUN <span style={{ color: C.text }}>{cur.run_id}</span></span>
+            {cur.dataset_samples != null && <span style={{ fontSize: 10, color: C.muted }}>SAMPLES <span style={{ color: C.text }}>{cur.dataset_samples.toLocaleString()}</span></span>}
             {counts && (
-              <span style={{ fontSize: 9, color: C.muted }}>
+              <span style={{ fontSize: 10, color: C.muted }}>
                 OWN DATA <span style={{ color: C.amber }}>{(counts.local_trades ?? 0) + (counts.agent_decisions ?? 0)}</span>
                 <span style={{ color: C.dim }}> ({counts.local_trades ?? 0} trades · {counts.agent_decisions ?? 0} judged decisions)</span>
               </span>
             )}
-            {cur.max_steps != null && cur.max_steps > 0 && <span style={{ fontSize: 9, color: C.muted }}>CAP <span style={{ color: C.text }}>{cur.max_steps} steps</span></span>}
-            {cur.final_loss != null && <span style={{ fontSize: 9, color: C.muted }}>FINAL LOSS <span style={{ color: C.green }}>{cur.final_loss}</span></span>}
-            {cur.error && <span style={{ fontSize: 9, color: C.red }}>{cur.error}</span>}
+            {cur.max_steps != null && cur.max_steps > 0 && <span style={{ fontSize: 10, color: C.muted }}>CAP <span style={{ color: C.text }}>{cur.max_steps} steps</span></span>}
+            {cur.final_loss != null && <span style={{ fontSize: 10, color: C.muted }}>FINAL LOSS <span style={{ color: C.green }}>{cur.final_loss}</span></span>}
+            {cur.error && <span style={{ fontSize: 10, color: C.red }}>{cur.error}</span>}
           </div>
         )}
       </div>
@@ -224,7 +220,7 @@ export default function TrainPage() {
       </div>
 
       {/* Deploy note */}
-      <div style={{ fontSize: 9, color: C.dim, padding: '2px 4px', flexShrink: 0 }}>
+      <div style={{ fontSize: 10, color: C.dim, padding: '2px 4px', flexShrink: 0 }}>
         Deploy: completed adapters live in data/training/runs/&lt;run_id&gt;/adapter — merge → GGUF (llama.cpp) → <code style={{ color: C.muted }}>ollama create financial-analyst</code>. Until then the planner uses the prompt-tuned base model.
       </div>
     </div>

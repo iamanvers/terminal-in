@@ -1,4 +1,5 @@
 'use client'
+import { THEME } from '@/lib/theme'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   api, type Instrument, type JournalEntry, type LearnerParams,
@@ -8,22 +9,16 @@ import {
 import { useSocketEvent, useTickMap } from '@/hooks/useSocket'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
-const C = {
-  bg: '#070707', card: '#0C0C0C', panel: '#0D0D0D',
-  border: '#161616', border2: '#1E1E1E',
-  text: '#D0D0D0', sub: '#888', muted: '#444', dim: '#222',
-  green: '#00C853', red: '#E53935', amber: '#F7931E',
-  blue: '#1E88E5', purple: '#AB47BC',
-}
+const C = THEME
 
 const CSS = `
-@keyframes flash-up   { 0%{background:#00C85330}100%{background:transparent} }
-@keyframes flash-down { 0%{background:#E5393530}100%{background:transparent} }
+@keyframes flash-up   { 0%{background:#2FBF7130}100%{background:transparent} }
+@keyframes flash-down { 0%{background:#E5484D30}100%{background:transparent} }
 .flash-up   { animation: flash-up   0.7s ease-out }
 .flash-down { animation: flash-down 0.7s ease-out }
 ::-webkit-scrollbar { width:3px;height:3px }
 ::-webkit-scrollbar-track { background:#080808 }
-::-webkit-scrollbar-thumb { background:#1E1E1E;border-radius:2px }
+::-webkit-scrollbar-thumb { background:#2B303A;border-radius:2px }
 `
 const StyleTag = () => <style dangerouslySetInnerHTML={{ __html: CSS }} />
 
@@ -41,7 +36,7 @@ function Pnl({ v, dec = 0, size = 11 }: { v: number | null | undefined; dec?: nu
 function Pct({ v }: { v: number | null | undefined }) {
   if (v == null) return <span style={{ color: C.dim }}>—</span>
   const col = v > 0 ? C.green : v < 0 ? C.red : C.muted
-  return <span style={{ color: col, fontSize: 10, fontVariantNumeric: 'tabular-nums' }}>
+  return <span style={{ color: col, fontSize: 10.5, fontVariantNumeric: 'tabular-nums' }}>
     {v >= 0 ? '+' : ''}{v.toFixed(2)}%
   </span>
 }
@@ -79,24 +74,24 @@ function Side({ v }: { v: string }) {
   const buy = v === 'BUY'
   return (
     <span style={{
-      fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 2,
+      fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 2,
       background: buy ? '#001a08' : '#1a0004',
       color: buy ? C.green : C.red,
-      border: `1px solid ${buy ? '#00C85333' : '#E5393533'}`,
+      border: `1px solid ${buy ? '#2FBF7133' : '#E5484D33'}`,
       letterSpacing: '.05em',
     }}>{v}</span>
   )
 }
 
 function ReasBadge({ r }: { r: string | null | undefined }) {
-  if (!r) return <span style={{ color: C.dim, fontSize: 9 }}>—</span>
+  if (!r) return <span style={{ color: C.dim, fontSize: 10 }}>—</span>
   const MAP: Record<string, [string, string]> = {
     stop_loss: ['#2a0000', C.red], target: ['#002a0a', C.green],
     time_exit: ['#00112a', C.blue], manual: ['#1a0d00', C.amber],
     eod_settlement: ['#140022', C.purple],
   }
-  const [bg, fg] = MAP[r] ?? ['#111', C.muted]
-  return <span style={{ fontSize: 9, background: bg, color: fg, padding: '1px 5px', borderRadius: 2, whiteSpace: 'nowrap' }}>
+  const [bg, fg] = MAP[r] ?? ['#14161A', C.muted]
+  return <span style={{ fontSize: 10, background: bg, color: fg, padding: '1px 5px', borderRadius: 2, whiteSpace: 'nowrap' }}>
     {r.replace(/_/g, ' ')}
   </span>
 }
@@ -114,9 +109,9 @@ function DistBar({ pct, col, w = 52 }: { pct: number; col: string; w?: number })
 function MetricCard({ label, value, sub, color }: { label: string; value: React.ReactNode; sub?: string; color?: string }) {
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 4, padding: '7px 10px' }}>
-      <div style={{ fontSize: 8, color: C.dim, letterSpacing: '.08em', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 9.5, color: C.dim, letterSpacing: '.08em', marginBottom: 3 }}>{label}</div>
       <div style={{ fontSize: 15, fontWeight: 700, color: color ?? C.text, lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: 8, color: C.muted, marginTop: 3 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 9.5, color: C.muted, marginTop: 3 }}>{sub}</div>}
     </div>
   )
 }
@@ -146,17 +141,17 @@ function AccountBar({
   ]
 
   return (
-    <div style={{ display: 'flex', alignItems: 'stretch', background: '#090909', borderBottom: `1px solid ${C.border}`, flexShrink: 0, height: 52 }}>
+    <div style={{ display: 'flex', alignItems: 'stretch', background: '#0C0D10', borderBottom: `1px solid ${C.border}`, flexShrink: 0, height: 52 }}>
       {/* Module + mode badge */}
       <div style={{ padding: '0 16px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 2, minWidth: 86 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: C.text, letterSpacing: '.1em' }}>EQUITIES</span>
-        <span style={{ fontSize: 8, fontWeight: 700, color: C.amber, letterSpacing: '.1em', background: '#1A0D00', border: `1px solid ${C.amber}33`, borderRadius: 3, padding: '1px 6px' }}>PAPER · CASH</span>
+        <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text, letterSpacing: '.1em' }}>EQUITIES</span>
+        <span style={{ fontSize: 9.5, fontWeight: 700, color: C.amber, letterSpacing: '.1em', background: '#0F1826', border: `1px solid ${C.amber}33`, borderRadius: 3, padding: '1px 6px' }}>PAPER · CASH</span>
       </div>
       {chips.map(c => (
         <div key={c.label} style={{ flex: 1, padding: '0 12px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
-          <span style={{ fontSize: 7, color: C.dim, letterSpacing: '.07em' }}>{c.label}</span>
+          <span style={{ fontSize: 9, color: C.dim, letterSpacing: '.07em' }}>{c.label}</span>
           <span style={{ fontSize: 13, lineHeight: 1, color: c.c, fontVariantNumeric: 'tabular-nums' }}>{c.v}</span>
-          <span style={{ fontSize: 8, color: C.muted }}>{c.sub}</span>
+          <span style={{ fontSize: 9.5, color: C.muted }}>{c.sub}</span>
         </div>
       ))}
     </div>
@@ -191,13 +186,13 @@ function LeftRail({
     <div style={{ width: 190, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto' }}>
       {/* Strategy filter */}
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
-        <div style={{ padding: '7px 10px', borderBottom: `1px solid ${C.border}`, fontSize: 8, color: C.dim, letterSpacing: '.08em', fontWeight: 700 }}>FILTER BY STRATEGY</div>
+        <div style={{ padding: '7px 10px', borderBottom: `1px solid ${C.border}`, fontSize: 9.5, color: C.dim, letterSpacing: '.08em', fontWeight: 700 }}>FILTER BY STRATEGY</div>
         {STRATS.map(s => (
           <button key={s} onClick={() => onFilter(s)} style={{
             width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: '6px 10px', background: filter === s ? '#F7931E0A' : 'transparent',
+            padding: '6px 10px', background: filter === s ? '#4E80B40A' : 'transparent',
             borderLeft: `2px solid ${filter === s ? C.amber : 'transparent'}`,
-            border: 'none', cursor: 'pointer', fontSize: 9, fontWeight: filter === s ? 700 : 400,
+            border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: filter === s ? 700 : 400,
             color: filter === s ? C.amber : C.sub, letterSpacing: '.04em',
           }}>
             <span>{s}</span>
@@ -211,14 +206,14 @@ function LeftRail({
       {/* Attribution bars */}
       {byStrat.length > 0 && (
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, padding: '8px 10px' }}>
-          <div style={{ fontSize: 8, color: C.dim, letterSpacing: '.08em', fontWeight: 700, marginBottom: 8 }}>ALPHA ATTRIBUTION</div>
+          <div style={{ fontSize: 9.5, color: C.dim, letterSpacing: '.08em', fontWeight: 700, marginBottom: 8 }}>ALPHA ATTRIBUTION</div>
           {byStrat.map(([sid, rec]) => (
             <div key={sid} style={{ marginBottom: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                <span style={{ fontSize: 9, color: C.text, fontWeight: 600 }}>{sid}</span>
-                <span style={{ fontSize: 8, color: rec.win_rate >= 0.5 ? C.green : C.red }}>{(rec.win_rate*100).toFixed(0)}% WR</span>
+                <span style={{ fontSize: 10, color: C.text, fontWeight: 600 }}>{sid}</span>
+                <span style={{ fontSize: 9.5, color: rec.win_rate >= 0.5 ? C.green : C.red }}>{(rec.win_rate*100).toFixed(0)}% WR</span>
               </div>
-              <div style={{ height: 4, background: '#111', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ height: 4, background: '#14161A', borderRadius: 2, overflow: 'hidden' }}>
                 <div style={{
                   width: `${Math.abs(rec.pnl) / maxPnl * 100}%`,
                   height: '100%', borderRadius: 2,
@@ -226,7 +221,7 @@ function LeftRail({
                 }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-                <span style={{ fontSize: 8, color: C.muted }}>{rec.trades} trades</span>
+                <span style={{ fontSize: 9.5, color: C.muted }}>{rec.trades} trades</span>
                 <Pnl v={rec.pnl} size={8} />
               </div>
             </div>
@@ -236,34 +231,34 @@ function LeftRail({
 
       {/* Risk summary */}
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, padding: '8px 10px' }}>
-        <div style={{ fontSize: 8, color: C.dim, letterSpacing: '.08em', fontWeight: 700, marginBottom: 8 }}>SESSION</div>
+        <div style={{ fontSize: 9.5, color: C.dim, letterSpacing: '.08em', fontWeight: 700, marginBottom: 8 }}>SESSION</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 8, color: C.muted }}>Today trades</span>
-            <span style={{ fontSize: 9, color: C.text }}>{stats?.today_trades ?? 0}</span>
+            <span style={{ fontSize: 9.5, color: C.muted }}>Today trades</span>
+            <span style={{ fontSize: 10, color: C.text }}>{stats?.today_trades ?? 0}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 8, color: C.muted }}>Today P&L</span>
+            <span style={{ fontSize: 9.5, color: C.muted }}>Today P&L</span>
             <Pnl v={stats?.today_pnl ?? null} size={9} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 8, color: C.muted }}>Best trade</span>
+            <span style={{ fontSize: 9.5, color: C.muted }}>Best trade</span>
             <Pnl v={stats?.best_trade_pnl ?? null} size={9} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 8, color: C.muted }}>Worst trade</span>
+            <span style={{ fontSize: 9.5, color: C.muted }}>Worst trade</span>
             <Pnl v={stats?.worst_trade_pnl ?? null} size={9} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 8, color: C.muted }}>Avg win</span>
+            <span style={{ fontSize: 9.5, color: C.muted }}>Avg win</span>
             <Pnl v={stats?.avg_win ?? null} size={9} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 8, color: C.muted }}>Avg loss</span>
+            <span style={{ fontSize: 9.5, color: C.muted }}>Avg loss</span>
             <Pnl v={stats?.avg_loss ?? null} size={9} />
           </div>
           <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 5, display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 8, color: C.muted }}>{nowIST()}</span>
+            <span style={{ fontSize: 9.5, color: C.muted }}>{nowIST()}</span>
           </div>
         </div>
       </div>
@@ -315,16 +310,16 @@ function PositionsTable({
   const rows = filter === 'ALL' ? positions : positions.filter(p => p.strategy_id === filter)
 
   const TH = ({ children, align = 'left' }: { children?: React.ReactNode; align?: string }) => (
-    <span style={{ fontSize: 8, color: C.dim, letterSpacing: '.07em', textAlign: align as never }}>{children}</span>
+    <span style={{ fontSize: 9.5, color: C.dim, letterSpacing: '.07em', textAlign: align as never }}>{children}</span>
   )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '6px 10px', borderBottom: `1px solid ${C.border}`, flexShrink: 0, gap: 8 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: C.text, letterSpacing: '.06em' }}>OPEN POSITIONS</span>
-        <span style={{ fontSize: 9, color: rows.length > 7 ? C.red : C.muted }}>{rows.length}/10</span>
+        <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text, letterSpacing: '.06em' }}>OPEN POSITIONS</span>
+        <span style={{ fontSize: 10, color: rows.length > 7 ? C.red : C.muted }}>{rows.length}/10</span>
         {rows.length > 0 && (
-          <span style={{ fontSize: 9, color: C.muted, marginLeft: 4 }}>
+          <span style={{ fontSize: 10, color: C.muted, marginLeft: 4 }}>
             Unreal:&nbsp;
             <Pnl v={rows.reduce((s, p) => {
               const live = ticks[p.instrument_id]?.last_price
@@ -342,7 +337,7 @@ function PositionsTable({
       </div>
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {rows.length === 0 ? (
-          <div style={{ textAlign: 'center', color: C.dim, fontSize: 10, padding: 32 }}>No open positions</div>
+          <div style={{ textAlign: 'center', color: C.dim, fontSize: 10.5, padding: 32 }}>No open positions</div>
         ) : rows.map(pos => {
           const live  = ticks[pos.instrument_id]?.last_price ?? null
           const sign  = pos.side === 'BUY' ? 1 : -1
@@ -362,33 +357,33 @@ function PositionsTable({
               style={{
                 display: 'grid', gridTemplateColumns: PCOLS, gap: 0, padding: '6px 10px',
                 borderBottom: `1px solid ${C.border}`, cursor: 'pointer', alignItems: 'center',
-                background: sel ? '#F7931E08' : (unr != null && unr > 0) ? '#00C8530A' : (unr != null && unr < 0) ? '#E539350A' : 'transparent',
-                borderLeft: `2px solid ${sel ? C.amber : (unr != null && unr > 0) ? '#00C85333' : (unr != null && unr < 0) ? '#E5393533' : 'transparent'}`,
+                background: sel ? '#4E80B408' : (unr != null && unr > 0) ? '#2FBF710A' : (unr != null && unr < 0) ? '#E5484D0A' : 'transparent',
+                borderLeft: `2px solid ${sel ? C.amber : (unr != null && unr > 0) ? '#2FBF7133' : (unr != null && unr < 0) ? '#E5484D33' : 'transparent'}`,
                 opacity: isClosing ? 0.4 : 1,
               }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{useSym(pos.instrument_id, tokenMap)}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: C.text }}>{useSym(pos.instrument_id, tokenMap)}</span>
               <Side v={pos.side} />
-              <span style={{ fontSize: 9, color: C.amber }}>{pos.strategy_id}</span>
-              <span style={{ fontSize: 10, color: C.sub, textAlign: 'right' }}>{pos.quantity}</span>
-              <span style={{ fontSize: 10, color: C.muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pos.entry_price.toFixed(2)}</span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: C.text, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{live?.toFixed(2) ?? '—'}</span>
+              <span style={{ fontSize: 10, color: C.amber }}>{pos.strategy_id}</span>
+              <span style={{ fontSize: 10.5, color: C.sub, textAlign: 'right' }}>{pos.quantity}</span>
+              <span style={{ fontSize: 10.5, color: C.muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pos.entry_price.toFixed(2)}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: C.text, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{live?.toFixed(2) ?? '—'}</span>
               <span style={{ textAlign: 'right' }}><Pnl v={unr} /></span>
               <Pct v={unrPct} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {toSL != null && <>
                   <DistBar pct={toSL / 3 * 100} col={toSL < 0.5 ? C.red : toSL < 1.5 ? C.amber : C.green} />
-                  <span style={{ fontSize: 8, color: toSL < 0.5 ? C.red : C.muted }}>{toSL.toFixed(2)}%</span>
+                  <span style={{ fontSize: 9.5, color: toSL < 0.5 ? C.red : C.muted }}>{toSL.toFixed(2)}%</span>
                 </>}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {toTgt != null && <>
                   <DistBar pct={(1 - toTgt / 5) * 100} col={toTgt < 1 ? C.green : C.blue} />
-                  <span style={{ fontSize: 8, color: toTgt < 1 ? C.green : C.muted }}>{toTgt.toFixed(2)}%</span>
+                  <span style={{ fontSize: 9.5, color: toTgt < 1 ? C.green : C.muted }}>{toTgt.toFixed(2)}%</span>
                 </>}
               </div>
-              <span style={{ fontSize: 9, color: C.muted, textAlign: 'right' }}>{ageFmt(openMs)}</span>
+              <span style={{ fontSize: 10, color: C.muted, textAlign: 'right' }}>{ageFmt(openMs)}</span>
               <button onClick={e => { e.stopPropagation(); !isClosing && close(pos.trade_id) }} disabled={isClosing}
-                style={{ fontSize: 9, padding: '2px 5px', borderRadius: 2, border: `1px solid ${C.red}44`, background: '#1A0404', color: C.red, cursor: 'pointer' }}>
+                style={{ fontSize: 10, padding: '2px 5px', borderRadius: 2, border: `1px solid ${C.red}44`, background: '#1A0404', color: C.red, cursor: 'pointer' }}>
                 {isClosing ? '…' : '✕'}
               </button>
             </div>
@@ -418,16 +413,16 @@ function TradeHistory({
     .filter(t => !search || (tokenMap[t.instrument_token] ?? '').toLowerCase().includes(search.toLowerCase()) || (t.strategy_id ?? '').toLowerCase().includes(search.toLowerCase()))
 
   const TH = ({ children, align = 'left' }: { children?: React.ReactNode; align?: string }) => (
-    <span style={{ fontSize: 8, color: C.dim, letterSpacing: '.07em', textAlign: align as never }}>{children}</span>
+    <span style={{ fontSize: 9.5, color: C.dim, letterSpacing: '.07em', textAlign: align as never }}>{children}</span>
   )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '6px 10px', borderBottom: `1px solid ${C.border}`, flexShrink: 0, gap: 8 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: C.text, letterSpacing: '.06em' }}>CLOSED TRADES</span>
-        <span style={{ fontSize: 9, color: C.muted }}>{rows.length}</span>
+        <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text, letterSpacing: '.06em' }}>CLOSED TRADES</span>
+        <span style={{ fontSize: 10, color: C.muted }}>{rows.length}</span>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="filter…"
-          style={{ marginLeft: 'auto', background: '#090909', border: `1px solid ${C.border}`, color: C.sub, fontSize: 9, padding: '2px 7px', borderRadius: 3, width: 80 }} />
+          style={{ marginLeft: 'auto', background: '#0C0D10', border: `1px solid ${C.border}`, color: C.sub, fontSize: 10, padding: '2px 7px', borderRadius: 3, width: 80 }} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: HCOLS, gap: 0, padding: '4px 10px', background: '#080808', flexShrink: 0 }}>
         <TH>TIME</TH><TH>INSTRUMENT</TH><TH>SIDE</TH><TH>STRAT</TH>
@@ -435,7 +430,7 @@ function TradeHistory({
       </div>
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {rows.length === 0
-          ? <div style={{ textAlign: 'center', color: C.dim, fontSize: 10, padding: 24 }}>No closed trades</div>
+          ? <div style={{ textAlign: 'center', color: C.dim, fontSize: 10.5, padding: 24 }}>No closed trades</div>
           : rows.map(t => {
             const sel = selectedId === t.trade_id
             const entMs = typeof t.entry_time === 'number' ? t.entry_time : new Date(t.entry_time ?? 0).getTime()
@@ -445,17 +440,17 @@ function TradeHistory({
                 style={{
                   display: 'grid', gridTemplateColumns: HCOLS, gap: 0, padding: '5px 10px',
                   borderBottom: `1px solid ${C.border}`, cursor: 'pointer', alignItems: 'center',
-                  background: sel ? '#F7931E08' : 'transparent',
-                  borderLeft: `2px solid ${sel ? C.amber : (t.net_pnl ?? 0) > 0 ? '#00C85322' : '#E5393522'}`,
+                  background: sel ? '#4E80B408' : 'transparent',
+                  borderLeft: `2px solid ${sel ? C.amber : (t.net_pnl ?? 0) > 0 ? '#2FBF7122' : '#E5484D22'}`,
                 }}>
-                <span style={{ fontSize: 8, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{extMs ? tsFmt(extMs) : '—'}</span>
-                <span style={{ fontSize: 10, fontWeight: 700, color: C.text }}>{useSym(t.instrument_token, tokenMap)}</span>
+                <span style={{ fontSize: 9.5, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{extMs ? tsFmt(extMs) : '—'}</span>
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text }}>{useSym(t.instrument_token, tokenMap)}</span>
                 <Side v={t.side} />
-                <span style={{ fontSize: 9, color: C.amber }}>{t.strategy_id}</span>
-                <span style={{ fontSize: 10, color: C.muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{t.entry_price.toFixed(2)}</span>
-                <span style={{ fontSize: 10, color: C.muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{t.exit_price?.toFixed(2) ?? '—'}</span>
+                <span style={{ fontSize: 10, color: C.amber }}>{t.strategy_id}</span>
+                <span style={{ fontSize: 10.5, color: C.muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{t.entry_price.toFixed(2)}</span>
+                <span style={{ fontSize: 10.5, color: C.muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{t.exit_price?.toFixed(2) ?? '—'}</span>
                 <span style={{ textAlign: 'right' }}><Pnl v={t.net_pnl} /></span>
-                <span style={{ fontSize: 9, color: C.muted }}>{durFmt(entMs, extMs)}</span>
+                <span style={{ fontSize: 10, color: C.muted }}>{durFmt(entMs, extMs)}</span>
                 <ReasBadge r={t.exit_reason} />
               </div>
             )
@@ -493,7 +488,7 @@ function BookView({ positions, trades, ticks, tokenMap, filter, selectedId, onSe
 function EquityCurve({ snapshots }: { snapshots: Record<string, number>[] }) {
   const containerRef = useRef<HTMLDivElement>(null)
   if (snapshots.length < 2) return (
-    <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dim, fontSize: 10 }}>Accumulating equity data…</div>
+    <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dim, fontSize: 10.5 }}>Accumulating equity data…</div>
   )
   const eqs = snapshots.map(s => s.equity)
   const min = Math.min(...eqs), max = Math.max(...eqs)
@@ -542,10 +537,10 @@ function PerformanceView({ stats, scorecards, snapshots }: {
       {/* Equity curve */}
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
         <div style={{ padding: '6px 10px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 10, fontWeight: 700, color: C.text }}>EQUITY CURVE</span>
-          <span style={{ fontSize: 9, color: C.muted }}>{snapshots.length} snapshots</span>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text }}>EQUITY CURVE</span>
+          <span style={{ fontSize: 10, color: C.muted }}>{snapshots.length} snapshots</span>
           {snapshots.length >= 2 && (
-            <span style={{ marginLeft: 'auto', fontSize: 9, color: C.muted }}>
+            <span style={{ marginLeft: 'auto', fontSize: 10, color: C.muted }}>
               <Pnl v={(snapshots.at(-1)?.equity ?? 0) - (snapshots[0]?.equity ?? 0)} size={9} />
             </span>
           )}
@@ -565,23 +560,23 @@ function PerformanceView({ stats, scorecards, snapshots }: {
       {/* Strategy scorecards */}
       {scorecards.length > 0 && (
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
-          <div style={{ padding: '6px 10px', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.text }}>STRATEGY SCORECARDS</div>
+          <div style={{ padding: '6px 10px', borderBottom: `1px solid ${C.border}`, fontSize: 10.5, fontWeight: 700, color: C.text }}>STRATEGY SCORECARDS</div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#080808' }}>
                   {['STRATEGY','TRADES','WIN RATE','BAYES WR','EXPECTANCY','AVG WIN','AVG LOSS','TOTAL P&L'].map(h => (
-                    <th key={h} style={{ fontSize: 8, color: C.dim, letterSpacing: '.07em', padding: '5px 10px', fontWeight: 400, textAlign: 'left', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                    <th key={h} style={{ fontSize: 9.5, color: C.dim, letterSpacing: '.07em', padding: '5px 10px', fontWeight: 400, textAlign: 'left', borderBottom: `1px solid ${C.border}` }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {scorecards.sort((a, b) => b.total_pnl - a.total_pnl).map(sc => (
                   <tr key={sc.strategy_id} style={{ borderBottom: `1px solid ${C.border}` }}>
-                    <td style={{ padding: '6px 10px', fontSize: 10, fontWeight: 700, color: C.amber }}>{sc.strategy_id}</td>
-                    <td style={{ padding: '6px 10px', fontSize: 10, color: C.sub }}>{sc.total_trades}</td>
-                    <td style={{ padding: '6px 10px', fontSize: 10, color: sc.win_rate >= 0.5 ? C.green : C.red }}>{(sc.win_rate*100).toFixed(1)}%</td>
-                    <td style={{ padding: '6px 10px', fontSize: 10, color: sc.bayesian_wr >= 0.5 ? C.green : C.red }}>{(sc.bayesian_wr*100).toFixed(1)}%</td>
+                    <td style={{ padding: '6px 10px', fontSize: 10.5, fontWeight: 700, color: C.amber }}>{sc.strategy_id}</td>
+                    <td style={{ padding: '6px 10px', fontSize: 10.5, color: C.sub }}>{sc.total_trades}</td>
+                    <td style={{ padding: '6px 10px', fontSize: 10.5, color: sc.win_rate >= 0.5 ? C.green : C.red }}>{(sc.win_rate*100).toFixed(1)}%</td>
+                    <td style={{ padding: '6px 10px', fontSize: 10.5, color: sc.bayesian_wr >= 0.5 ? C.green : C.red }}>{(sc.bayesian_wr*100).toFixed(1)}%</td>
                     <td style={{ padding: '6px 10px' }}><Pnl v={sc.expectancy} size={10} /></td>
                     <td style={{ padding: '6px 10px' }}><Pnl v={sc.avg_win} size={10} /></td>
                     <td style={{ padding: '6px 10px' }}><Pnl v={sc.avg_loss} size={10} /></td>
@@ -597,7 +592,7 @@ function PerformanceView({ stats, scorecards, snapshots }: {
       {/* Attribution detail */}
       {byStrat.length > 0 && (
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
-          <div style={{ padding: '6px 10px', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.text }}>STRATEGY ATTRIBUTION</div>
+          <div style={{ padding: '6px 10px', borderBottom: `1px solid ${C.border}`, fontSize: 10.5, fontWeight: 700, color: C.text }}>STRATEGY ATTRIBUTION</div>
           <div style={{ padding: '10px' }}>
             {byStrat.map(([sid, rec]) => {
               const pnlAbs = Math.abs(rec.pnl)
@@ -606,13 +601,13 @@ function PerformanceView({ stats, scorecards, snapshots }: {
                 <div key={sid} style={{ marginBottom: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: C.amber, minWidth: 36 }}>{sid}</span>
-                      <span style={{ fontSize: 9, color: C.muted }}>{rec.trades} trades</span>
-                      <span style={{ fontSize: 9, color: rec.win_rate >= 0.5 ? C.green : C.red }}>{(rec.win_rate*100).toFixed(0)}% WR</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: C.amber, minWidth: 36 }}>{sid}</span>
+                      <span style={{ fontSize: 10, color: C.muted }}>{rec.trades} trades</span>
+                      <span style={{ fontSize: 10, color: rec.win_rate >= 0.5 ? C.green : C.red }}>{(rec.win_rate*100).toFixed(0)}% WR</span>
                     </div>
                     <Pnl v={rec.pnl} size={11} />
                   </div>
-                  <div style={{ height: 5, background: '#111', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ height: 5, background: '#14161A', borderRadius: 2, overflow: 'hidden' }}>
                     <div style={{ width: `${pnlAbs / maxAbs * 100}%`, height: '100%', background: rec.pnl >= 0 ? C.green : C.red, borderRadius: 2 }} />
                   </div>
                 </div>
@@ -680,20 +675,20 @@ function SignalsView({ tokenMap }: { tokenMap: TokenMap }) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 6 }}>
       {/* Scan header */}
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, padding: '7px 12px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: C.text }}>ORCHESTRATOR</span>
-        <span style={{ fontSize: 9, color: C.muted }}>scan #{state?.scan_count ?? 0} · {lastAge}</span>
-        <span style={{ fontSize: 9, color: tradeable.length > 0 ? C.green : C.muted }}>
+        <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text }}>ORCHESTRATOR</span>
+        <span style={{ fontSize: 10, color: C.muted }}>scan #{state?.scan_count ?? 0} · {lastAge}</span>
+        <span style={{ fontSize: 10, color: tradeable.length > 0 ? C.green : C.muted }}>
           {tradeable.length > 0 ? `⚡ ${tradeable.length} setups` : 'no setups'}
         </span>
         <button onClick={scan} disabled={scanning} style={{
-          marginLeft: 'auto', fontSize: 9, padding: '3px 12px', borderRadius: 3,
-          background: scanning ? '#0A0A0A' : '#001A08', border: `1px solid ${scanning ? C.border : C.green}`,
+          marginLeft: 'auto', fontSize: 10, padding: '3px 12px', borderRadius: 3,
+          background: scanning ? '#0A0B0D' : '#001A08', border: `1px solid ${scanning ? C.border : C.green}`,
           color: scanning ? C.muted : C.green, cursor: scanning ? 'wait' : 'pointer', fontWeight: 700, letterSpacing: '.06em',
         }}>{scanning ? '⟳ SCANNING…' : '⟳ SCAN NOW'}</button>
         <div style={{ display: 'flex', gap: 0 }}>
           {(['opps','signals'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} style={{
-              fontSize: 9, padding: '3px 10px', background: tab === t ? '#1A1A1A' : 'transparent',
+              fontSize: 10, padding: '3px 10px', background: tab === t ? '#20242B' : 'transparent',
               border: 'none', color: tab === t ? C.text : C.muted, cursor: 'pointer', fontWeight: tab === t ? 700 : 400,
               borderBottom: `2px solid ${tab === t ? C.amber : 'transparent'}`,
             }}>
@@ -708,18 +703,18 @@ function SignalsView({ tokenMap }: { tokenMap: TokenMap }) {
         {tab === 'opps' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {results.length === 0 && (
-              <div style={{ textAlign: 'center', color: C.dim, fontSize: 10, padding: 32 }}>
+              <div style={{ textAlign: 'center', color: C.dim, fontSize: 10.5, padding: 32 }}>
                 {scanning ? '⟳ Scanning all instruments…' : 'No scan yet — click SCAN NOW or wait for auto-scan'}
               </div>
             )}
             {tradeable.map(r => <OppCard key={r.symbol} r={r} />)}
-            {watching.length > 0 && tradeable.length > 0 && <div style={{ fontSize: 8, color: C.dim, padding: '8px 0 4px', letterSpacing: '.07em', borderTop: `1px solid ${C.border}` }}>WATCHING ({watching.length})</div>}
+            {watching.length > 0 && tradeable.length > 0 && <div style={{ fontSize: 9.5, color: C.dim, padding: '8px 0 4px', letterSpacing: '.07em', borderTop: `1px solid ${C.border}` }}>WATCHING ({watching.length})</div>}
             {watching.map(r => <OppCard key={r.symbol} r={r} dim />)}
           </div>
         ) : (
           <div>
             {signals.length === 0
-              ? <div style={{ textAlign: 'center', color: C.dim, fontSize: 10, padding: 32 }}>No signals yet</div>
+              ? <div style={{ textAlign: 'center', color: C.dim, fontSize: 10.5, padding: 32 }}>No signals yet</div>
               : signals.map(s => <SigRow key={s.decision_id} s={s} tokenMap={tokenMap} />)
             }
           </div>
@@ -743,26 +738,26 @@ function OppCard({ r, dim = false }: { r: OrchestratorResult; dim?: boolean }) {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{r.symbol}</span>
           {active && <Side v={r.side} />}
-          <span style={{ fontSize: 9, color: C.muted }}>₹{r.price.toFixed(0)}</span>
+          <span style={{ fontSize: 10, color: C.muted }}>₹{r.price.toFixed(0)}</span>
         </div>
         {active && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: r.ev >= 2 ? C.green : r.ev >= 1.5 ? C.amber : C.muted }}>EV {r.ev.toFixed(2)}</span>
-            <span style={{ fontSize: 9, color: C.sub }}>R:R {r.rr?.toFixed(1) ?? '—'}</span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: r.ev >= 2 ? C.green : r.ev >= 1.5 ? C.amber : C.muted }}>EV {r.ev.toFixed(2)}</span>
+            <span style={{ fontSize: 10, color: C.sub }}>R:R {r.rr?.toFixed(1) ?? '—'}</span>
           </div>
         )}
       </div>
       {active && (
         <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 9, color: C.muted }}>conf {(r.confidence*100).toFixed(0)}%</span>
-          <span style={{ fontSize: 9, color: C.muted }}>regime {r.regime}</span>
-          <span style={{ fontSize: 9, color: C.muted }}>RSI {r.rsi}</span>
-          <span style={{ fontSize: 9, color: C.muted }}>SL {r.suggested_sl > 0 ? inr(r.suggested_sl, 0) : '—'}</span>
-          <span style={{ fontSize: 9, color: C.muted }}>Tgt {r.suggested_target > 0 ? inr(r.suggested_target, 0) : '—'}</span>
-          {r.lenses?.length > 0 && <span style={{ fontSize: 9, color: C.dim }}>{r.lenses.map(l => l.strategy).join('＋')}</span>}
+          <span style={{ fontSize: 10, color: C.muted }}>conf {(r.confidence*100).toFixed(0)}%</span>
+          <span style={{ fontSize: 10, color: C.muted }}>regime {r.regime}</span>
+          <span style={{ fontSize: 10, color: C.muted }}>RSI {r.rsi}</span>
+          <span style={{ fontSize: 10, color: C.muted }}>SL {r.suggested_sl > 0 ? inr(r.suggested_sl, 0) : '—'}</span>
+          <span style={{ fontSize: 10, color: C.muted }}>Tgt {r.suggested_target > 0 ? inr(r.suggested_target, 0) : '—'}</span>
+          {r.lenses?.length > 0 && <span style={{ fontSize: 10, color: C.dim }}>{r.lenses.map(l => l.strategy).join('＋')}</span>}
         </div>
       )}
-      {!active && <div style={{ fontSize: 9, color: C.dim, marginTop: 2 }}>RSI {r.rsi} · {r.ret_20d > 0 ? '+' : ''}{r.ret_20d?.toFixed(1)}% 20d · {r.verdict}</div>}
+      {!active && <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>RSI {r.rsi} · {r.ret_20d > 0 ? '+' : ''}{r.ret_20d?.toFixed(1)}% 20d · {r.verdict}</div>}
     </div>
   )
 }
@@ -774,14 +769,14 @@ function SigRow({ s, tokenMap }: { s: SignalRec; tokenMap: TokenMap }) {
     <div style={{
       display: 'grid', gridTemplateColumns: '52px 14px 100px 56px 56px 1fr',
       gap: 8, padding: '5px 10px', borderBottom: `1px solid ${C.border}`,
-      alignItems: 'center', background: ok ? '#00C8530A' : 'transparent',
+      alignItems: 'center', background: ok ? '#2FBF710A' : 'transparent',
     }}>
-      <span style={{ fontSize: 8, color: C.dim, fontVariantNumeric: 'tabular-nums' }}>{tsFmt(s.decided_at)}</span>
-      <span style={{ fontSize: 10, color: ok ? C.green : C.red, fontWeight: 700 }}>{ok ? '✓' : '✗'}</span>
-      <span style={{ fontSize: 10, fontWeight: 700, color: C.text }}>{label}</span>
+      <span style={{ fontSize: 9.5, color: C.dim, fontVariantNumeric: 'tabular-nums' }}>{tsFmt(s.decided_at)}</span>
+      <span style={{ fontSize: 10.5, color: ok ? C.green : C.red, fontWeight: 700 }}>{ok ? '✓' : '✗'}</span>
+      <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text }}>{label}</span>
       {s.side ? <Side v={s.side} /> : <span />}
-      <span style={{ fontSize: 9, color: C.amber }}>{s.strategy_id}</span>
-      <span style={{ fontSize: 9, color: ok ? C.muted : C.red, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: 10, color: C.amber }}>{s.strategy_id}</span>
+      <span style={{ fontSize: 10, color: ok ? C.muted : C.red, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {ok ? `conf ${((s.confidence ?? 0)*100).toFixed(0)}% · ${s.regime ?? ''}` : s.reason ?? 'rejected'}
       </span>
     </div>
@@ -820,12 +815,12 @@ function TradeInspector({
   return (
     <div style={{ width: 270, display: 'flex', flexDirection: 'column', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '7px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-        <span style={{ fontSize: 9, color: C.muted, letterSpacing: '.07em', fontWeight: 700, flex: 1 }}>
+        <span style={{ fontSize: 10, color: C.muted, letterSpacing: '.07em', fontWeight: 700, flex: 1 }}>
           {showOrder ? 'ORDER TICKET' : kind === 'position' ? 'POSITION DETAIL' : kind === 'trade' ? 'TRADE DETAIL' : 'ORDER TICKET'}
         </span>
-        {!showOrder && <button onClick={() => setOrderTab(true)} style={{ fontSize: 9, color: C.amber, background: 'none', border: `1px solid ${C.amber}33`, borderRadius: 3, padding: '2px 7px', cursor: 'pointer', marginRight: 6 }}>⊕ ORDER</button>}
-        {showOrder && kind !== 'order' && <button onClick={() => setOrderTab(false)} style={{ fontSize: 9, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', marginRight: 6 }}>← BACK</button>}
-        <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 12 }}>✕</button>
+        {!showOrder && <button onClick={() => setOrderTab(true)} style={{ fontSize: 10, color: C.amber, background: 'none', border: `1px solid ${C.amber}33`, borderRadius: 3, padding: '2px 7px', cursor: 'pointer', marginRight: 6 }}>⊕ ORDER</button>}
+        {showOrder && kind !== 'order' && <button onClick={() => setOrderTab(false)} style={{ fontSize: 10, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', marginRight: 6 }}>← BACK</button>}
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 12.5 }}>✕</button>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px' }}>
@@ -836,13 +831,13 @@ function TradeInspector({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{useSym(pos.instrument_id, tokenMap)}</span>
               <Side v={pos.side} />
-              <span style={{ fontSize: 9, color: C.amber, fontWeight: 600 }}>{pos.strategy_id}</span>
+              <span style={{ fontSize: 10, color: C.amber, fontWeight: 600 }}>{pos.strategy_id}</span>
             </div>
             <div style={{ background: '#080808', borderRadius: 4, padding: '10px' }}>
               <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 2 }}><Pnl v={unr} size={20} /></div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <Pct v={unrPct} />
-                <span style={{ fontSize: 9, color: C.muted }}>{pos.quantity} shares</span>
+                <span style={{ fontSize: 10, color: C.muted }}>{pos.quantity} shares</span>
               </div>
             </div>
             {[
@@ -857,12 +852,12 @@ function TradeInspector({
               ['Age', pos.opened_at ? ageFmt(new Date(pos.opened_at).getTime()) : '—'],
             ].map(([k, v]) => (
               <div key={String(k)} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: `1px solid ${C.border}` }}>
-                <span style={{ fontSize: 9, color: C.muted }}>{k}</span>
-                <span style={{ fontSize: 9, color: C.text, fontVariantNumeric: 'tabular-nums' }}>{String(v)}</span>
+                <span style={{ fontSize: 10, color: C.muted }}>{k}</span>
+                <span style={{ fontSize: 10, color: C.text, fontVariantNumeric: 'tabular-nums' }}>{String(v)}</span>
               </div>
             ))}
             <button onClick={() => { setPrefill({ symbol: useSym(pos.instrument_id, tokenMap), side: pos.side === 'BUY' ? 'SELL' : 'BUY' }); setOrderTab(true) }}
-              style={{ marginTop: 4, padding: '7px', width: '100%', fontSize: 10, fontWeight: 700, borderRadius: 3, cursor: 'pointer', background: pos.side === 'BUY' ? '#1A0004' : '#001A08', color: pos.side === 'BUY' ? C.red : C.green, border: `1px solid ${pos.side === 'BUY' ? C.red + '44' : C.green + '44'}` }}>
+              style={{ marginTop: 4, padding: '7px', width: '100%', fontSize: 10.5, fontWeight: 700, borderRadius: 3, cursor: 'pointer', background: pos.side === 'BUY' ? '#1A0004' : '#001A08', color: pos.side === 'BUY' ? C.red : C.green, border: `1px solid ${pos.side === 'BUY' ? C.red + '44' : C.green + '44'}` }}>
               CLOSE POSITION
             </button>
           </div>
@@ -871,7 +866,7 @@ function TradeInspector({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{useSym(trade.instrument_token, tokenMap)}</span>
               <Side v={trade.side} />
-              <span style={{ fontSize: 9, color: C.amber }}>{trade.strategy_id}</span>
+              <span style={{ fontSize: 10, color: C.amber }}>{trade.strategy_id}</span>
             </div>
             <div style={{ background: '#080808', borderRadius: 4, padding: '10px' }}>
               <div style={{ fontSize: 20, fontWeight: 700 }}><Pnl v={trade.net_pnl} size={20} /></div>
@@ -886,8 +881,8 @@ function TradeInspector({
               ['Confidence', trade.confidence != null ? `${(trade.confidence*100).toFixed(0)}%` : '—'],
             ].map(([k, v]) => (
               <div key={String(k)} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid ${C.border}` }}>
-                <span style={{ fontSize: 9, color: C.muted }}>{k}</span>
-                <span style={{ fontSize: 9, color: C.text, fontVariantNumeric: 'tabular-nums' }}>{String(v)}</span>
+                <span style={{ fontSize: 10, color: C.muted }}>{k}</span>
+                <span style={{ fontSize: 10, color: C.text, fontVariantNumeric: 'tabular-nums' }}>{String(v)}</span>
               </div>
             ))}
           </div>
@@ -953,20 +948,20 @@ function InlineOrderTicket({
     finally { setLoading(false) }
   }
 
-  const inp = { width: '100%', background: '#090909', border: `1px solid ${C.border}`, color: C.text, fontSize: 11, padding: '4px 7px', borderRadius: 3, boxSizing: 'border-box' as const }
+  const inp = { width: '100%', background: '#0C0D10', border: `1px solid ${C.border}`, color: C.text, fontSize: 11.5, padding: '4px 7px', borderRadius: 3, boxSizing: 'border-box' as const }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {live != null && sym2 && <div style={{ fontSize: 11, color: C.green, fontWeight: 600 }}>{sym2} ₹{live.toFixed(2)}</div>}
+      {live != null && sym2 && <div style={{ fontSize: 11.5, color: C.green, fontWeight: 600 }}>{sym2} ₹{live.toFixed(2)}</div>}
       <div style={{ position: 'relative' }}>
-        <label style={{ fontSize: 8, color: C.dim, display: 'block', marginBottom: 2 }}>SYMBOL</label>
+        <label style={{ fontSize: 9.5, color: C.dim, display: 'block', marginBottom: 2 }}>SYMBOL</label>
         <input value={search} onChange={e => { setSearch(e.target.value); setSym('') }} placeholder="search…" style={{ ...inp, color: sym2 ? C.green : C.text }} />
         {showD && (
-          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#111', border: `1px solid ${C.border2}`, borderRadius: 3, maxHeight: 120, overflow: 'auto' }}>
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#14161A', border: `1px solid ${C.border2}`, borderRadius: 3, maxHeight: 120, overflow: 'auto' }}>
             {filt.slice(0, 8).map(i => (
               <div key={i.token} onClick={() => { setSym(i.symbol); setSearch(i.symbol) }}
-                style={{ padding: '4px 8px', fontSize: 10, cursor: 'pointer', color: C.sub }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#1A1A1A')}
+                style={{ padding: '4px 8px', fontSize: 10.5, cursor: 'pointer', color: C.sub }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#20242B')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                 {i.symbol}
               </div>
@@ -977,42 +972,42 @@ function InlineOrderTicket({
       <div style={{ display: 'flex', gap: 5 }}>
         {(['BUY','SELL'] as const).map(s => (
           <button key={s} onClick={() => setSide(s)} style={{
-            flex: 1, padding: '5px 0', fontSize: 10, fontWeight: 700, cursor: 'pointer', borderRadius: 3, border: 'none', letterSpacing: '.07em',
-            background: side === s ? (s === 'BUY' ? '#001A08' : '#1A0004') : '#111',
+            flex: 1, padding: '5px 0', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', borderRadius: 3, border: 'none', letterSpacing: '.07em',
+            background: side === s ? (s === 'BUY' ? '#001A08' : '#1A0004') : '#14161A',
             color: side === s ? (s === 'BUY' ? C.green : C.red) : C.muted,
           }}>{s}</button>
         ))}
       </div>
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-          <label style={{ fontSize: 8, color: C.dim }}>QTY</label>
-          <button onClick={autoSz} disabled={!live} style={{ fontSize: 8, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>auto-size</button>
+          <label style={{ fontSize: 9.5, color: C.dim }}>QTY</label>
+          <button onClick={autoSz} disabled={!live} style={{ fontSize: 9.5, color: C.muted, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>auto-size</button>
         </div>
         <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} placeholder="0" style={inp} />
-        {notional != null && <div style={{ fontSize: 8, color: C.muted, marginTop: 2 }}>{inr(notional)} notional{rr ? ` · ${rr}` : ''}</div>}
+        {notional != null && <div style={{ fontSize: 9.5, color: C.muted, marginTop: 2 }}>{inr(notional)} notional{rr ? ` · ${rr}` : ''}</div>}
       </div>
       <div>
-        <label style={{ fontSize: 8, color: C.red, display: 'block', marginBottom: 2 }}>STOP LOSS</label>
+        <label style={{ fontSize: 9.5, color: C.red, display: 'block', marginBottom: 2 }}>STOP LOSS</label>
         <input type="number" value={sl} onChange={e => setSl(e.target.value)} placeholder="0.00" style={{ ...inp, color: C.red }} />
       </div>
       <div>
-        <label style={{ fontSize: 8, color: C.green, display: 'block', marginBottom: 2 }}>TARGET</label>
+        <label style={{ fontSize: 9.5, color: C.green, display: 'block', marginBottom: 2 }}>TARGET</label>
         <input type="number" value={target} onChange={e => setTarget(e.target.value)} placeholder="0.00" style={{ ...inp, color: C.green }} />
       </div>
       {confirm ? (
         <div style={{ display: 'flex', gap: 5 }}>
-          <button onClick={submit} style={{ flex: 2, padding: '7px 0', fontSize: 10, fontWeight: 700, borderRadius: 3, cursor: 'pointer', border: 'none', background: side === 'BUY' ? '#001A08' : '#1A0004', color: side === 'BUY' ? C.green : C.red }}>CONFIRM {side}</button>
-          <button onClick={() => setConfirm(false)} style={{ flex: 1, padding: '7px 0', fontSize: 10, borderRadius: 3, cursor: 'pointer', border: `1px solid ${C.border}`, background: '#0A0A0A', color: C.muted }}>CANCEL</button>
+          <button onClick={submit} style={{ flex: 2, padding: '7px 0', fontSize: 10.5, fontWeight: 700, borderRadius: 3, cursor: 'pointer', border: 'none', background: side === 'BUY' ? '#001A08' : '#1A0004', color: side === 'BUY' ? C.green : C.red }}>CONFIRM {side}</button>
+          <button onClick={() => setConfirm(false)} style={{ flex: 1, padding: '7px 0', fontSize: 10.5, borderRadius: 3, cursor: 'pointer', border: `1px solid ${C.border}`, background: '#0A0B0D', color: C.muted }}>CANCEL</button>
         </div>
       ) : (
         <button onClick={submit} disabled={loading || !sym2 || !qty} style={{
-          padding: '7px 0', fontSize: 10, fontWeight: 700, borderRadius: 3, letterSpacing: '.07em',
+          padding: '7px 0', fontSize: 10.5, fontWeight: 700, borderRadius: 3, letterSpacing: '.07em',
           cursor: loading || !sym2 || !qty ? 'not-allowed' : 'pointer', border: 'none',
-          background: loading || !sym2 || !qty ? '#111' : (side === 'BUY' ? '#001A08' : '#1A0004'),
+          background: loading || !sym2 || !qty ? '#14161A' : (side === 'BUY' ? '#001A08' : '#1A0004'),
           color: loading || !sym2 || !qty ? C.dim : (side === 'BUY' ? C.green : C.red),
         }}>{loading ? 'SENDING…' : `PLACE ${side}`}</button>
       )}
-      {msg && <div style={{ fontSize: 10, padding: '4px 7px', borderRadius: 3, background: msg.ok ? '#001A08' : '#1A0004', color: msg.ok ? C.green : C.red, border: `1px solid ${msg.ok ? C.green + '44' : C.red + '44'}` }}>{msg.text}</div>}
+      {msg && <div style={{ fontSize: 10.5, padding: '4px 7px', borderRadius: 3, background: msg.ok ? '#001A08' : '#1A0004', color: msg.ok ? C.green : C.red, border: `1px solid ${msg.ok ? C.green + '44' : C.red + '44'}` }}>{msg.text}</div>}
     </div>
   )
 }
@@ -1082,7 +1077,7 @@ export default function TradePage() {
             <div style={{ display: 'flex', alignItems: 'center', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden', flexShrink: 0, height: 34 }}>
               {(['book', 'performance', 'signals'] as Tab[]).map(t => (
                 <button key={t} onClick={() => setTab(t)} style={{
-                  padding: '0 18px', height: '100%', fontSize: 9, fontWeight: tab === t ? 700 : 400,
+                  padding: '0 18px', height: '100%', fontSize: 10, fontWeight: tab === t ? 700 : 400,
                   letterSpacing: '.08em', background: 'transparent', border: 'none',
                   borderBottom: `2px solid ${tab === t ? C.amber : 'transparent'}`,
                   color: tab === t ? C.amber : C.muted, cursor: 'pointer', textTransform: 'uppercase',
@@ -1090,10 +1085,10 @@ export default function TradePage() {
               ))}
               <div style={{ flex: 1 }} />
               <button onClick={() => setSel({ kind: 'order' })} style={{
-                height: '100%', padding: '0 14px', fontSize: 9, fontWeight: 700, background: '#001A08',
+                height: '100%', padding: '0 14px', fontSize: 10, fontWeight: 700, background: '#001A08',
                 border: 'none', borderLeft: `1px solid ${C.border}`, color: C.green, cursor: 'pointer', letterSpacing: '.06em',
               }}>⊕ ORDER</button>
-              <button onClick={load} style={{ height: '100%', padding: '0 12px', fontSize: 9, color: C.muted, background: 'none', border: 'none', borderLeft: `1px solid ${C.border}`, cursor: 'pointer' }}>↺</button>
+              <button onClick={load} style={{ height: '100%', padding: '0 12px', fontSize: 10, color: C.muted, background: 'none', border: 'none', borderLeft: `1px solid ${C.border}`, cursor: 'pointer' }}>↺</button>
             </div>
 
             {/* Content */}

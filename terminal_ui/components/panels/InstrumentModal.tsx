@@ -68,9 +68,9 @@ const LABEL_TO_SYMBOL: Record<string, string> = {
 
 function IndicatorCell({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div style={{ padding: '6px 10px', borderRight: '1px solid #1A1A1A', borderBottom: '1px solid #1A1A1A' }}>
-      <div style={{ fontSize: 8, color: '#444', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{label}</div>
-      <div style={{ fontSize: 11, fontWeight: 600, color: color ?? '#C0C0C0', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    <div style={{ padding: '6px 10px', borderRight: '1px solid #20242B', borderBottom: '1px solid #20242B' }}>
+      <div style={{ fontSize: 9.5, color: '#5F6772', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 11.5, fontWeight: 600, color: color ?? '#C3CAD3', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
   )
 }
@@ -125,7 +125,7 @@ export default function InstrumentModal({ token, label, onClose, onChartSelect }
     const w = canvas.width, h = canvas.height
     const min = Math.min(...closes), max = Math.max(...closes)
     const range = max - min || 1
-    const color = chg >= 0 ? '#00C853' : '#D32F2F'
+    const color = chg >= 0 ? '#2FBF71' : '#E5484D'
     ctx.clearRect(0, 0, w, h)
     const grad = ctx.createLinearGradient(0, 0, 0, h)
     grad.addColorStop(0, color + '40')
@@ -158,18 +158,18 @@ export default function InstrumentModal({ token, label, onClose, onChartSelect }
       onClick={onClose}
     >
       <div
-        style={{ background: '#0C0C0C', border: '1px solid #2A2A2A', borderRadius: 6, width: '92vw', maxWidth: 1100, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+        style={{ background: '#0F1114', border: '1px solid #3C424B', borderRadius: 6, width: '92vw', maxWidth: 1100, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
         onClick={e => e.stopPropagation()}
       >
         {/* ── Header ─────────────────────────────────────────────── */}
-        <div style={{ padding: '14px 18px', borderBottom: '1px solid #1E1E1E', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid #2B303A', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#E0E0E0', letterSpacing: '0.08em' }}>{label}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#E6E9ED', letterSpacing: '0.08em' }}>{label}</span>
               <span style={{ fontSize: 22, fontWeight: 700, color: '#F0F0F0', fontVariantNumeric: 'tabular-nums' }}>
                 {price > 0 ? price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
               </span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: chg >= 0 ? '#00C853' : '#D32F2F' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: chg >= 0 ? '#2FBF71' : '#E5484D' }}>
                 {price > 0 ? `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%` : ''}
               </span>
             </div>
@@ -178,7 +178,7 @@ export default function InstrumentModal({ token, label, onClose, onChartSelect }
                 <span style={{ fontSize: 13, fontWeight: 700, color: analysis.verdict_color, letterSpacing: '0.12em' }}>
                   {analysis.verdict}
                 </span>
-                <span style={{ fontSize: 9, color: '#555', maxWidth: 500 }}>{analysis.summary}</span>
+                <span style={{ fontSize: 10, color: '#5F6772', maxWidth: 500 }}>{analysis.summary}</span>
               </div>
             )}
           </div>
@@ -186,49 +186,49 @@ export default function InstrumentModal({ token, label, onClose, onChartSelect }
             {chartIdx !== undefined && onChartSelect && (
               <button
                 onClick={() => { onChartSelect(chartIdx); onClose() }}
-                style={{ fontSize: 9, padding: '4px 12px', background: '#1A1A1A', border: '1px solid #333', borderRadius: 3, color: '#F7931E', cursor: 'pointer', letterSpacing: '0.06em' }}
+                style={{ fontSize: 10, padding: '4px 12px', background: '#20242B', border: '1px solid #333', borderRadius: 3, color: '#4E80B4', cursor: 'pointer', letterSpacing: '0.06em' }}
               >
                 LOAD CHART
               </button>
             )}
-            <button onClick={onClose} style={{ color: '#444', background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>✕</button>
+            <button onClick={onClose} style={{ color: '#5F6772', background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>✕</button>
           </div>
         </div>
 
         {/* ── Two-column body ─────────────────────────────────────── */}
-        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#1E1E1E transparent', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#2B303A transparent', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
 
           {/* ─ LEFT COLUMN ─ */}
-          <div style={{ borderRight: '1px solid #1A1A1A' }}>
+          <div style={{ borderRight: '1px solid #20242B' }}>
 
             {/* Price stats grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', borderBottom: '1px solid #1A1A1A' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', borderBottom: '1px solid #20242B' }}>
               <IndicatorCell label="Open"     value={open   > 0 ? open.toLocaleString('en-IN',   { maximumFractionDigits: 2 }) : '—'} />
               <IndicatorCell label="30d High" value={high30 > 0 ? high30.toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '—'} />
               <IndicatorCell label="30d Low"  value={low30  > 0 ? low30.toLocaleString('en-IN',  { maximumFractionDigits: 0 }) : '—'} />
-              <IndicatorCell label="Regime"   value={analysis?.regime?.toUpperCase() ?? '—'} color="#F7931E" />
+              <IndicatorCell label="Regime"   value={analysis?.regime?.toUpperCase() ?? '—'} color="#4E80B4" />
             </div>
 
             {/* Indicators */}
             {ind && (
-              <div style={{ borderBottom: '1px solid #1A1A1A' }}>
-                <div style={{ padding: '6px 10px', fontSize: 9, color: '#444', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #1A1A1A' }}>Technical Indicators</div>
+              <div style={{ borderBottom: '1px solid #20242B' }}>
+                <div style={{ padding: '6px 10px', fontSize: 10, color: '#5F6772', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #20242B' }}>Technical Indicators</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)' }}>
-                  <IndicatorCell label="RSI-14" value={ind.rsi_14.toFixed(1)} color={ind.rsi_14 < 35 ? '#00C853' : ind.rsi_14 > 65 ? '#D32F2F' : '#C0C0C0'} />
+                  <IndicatorCell label="RSI-14" value={ind.rsi_14.toFixed(1)} color={ind.rsi_14 < 35 ? '#2FBF71' : ind.rsi_14 > 65 ? '#E5484D' : '#C3CAD3'} />
                   <IndicatorCell label="EMA 20" value={ind.ema_20.toLocaleString('en-IN', { maximumFractionDigits: 0 })} />
                   <IndicatorCell label="EMA 50" value={ind.ema_50.toLocaleString('en-IN', { maximumFractionDigits: 0 })} />
                   <IndicatorCell label="ATR-14" value={ind.atr_14.toFixed(0)} />
                   <IndicatorCell label="52W High" value={ind.high_52w.toLocaleString('en-IN', { maximumFractionDigits: 0 })} />
                   <IndicatorCell label="52W Low" value={ind.low_52w.toLocaleString('en-IN', { maximumFractionDigits: 0 })} />
-                  <IndicatorCell label="20d Return" value={`${ind.ret_20d_pct > 0 ? '+' : ''}${ind.ret_20d_pct.toFixed(1)}%`} color={ind.ret_20d_pct > 0 ? '#00C853' : '#D32F2F'} />
-                  <IndicatorCell label="Vol vs Avg" value={`${ind.vol_vs_avg.toFixed(2)}×`} color={ind.vol_vs_avg > 1.5 ? '#F7931E' : '#C0C0C0'} />
-                  <IndicatorCell label="India VIX" value={ind.india_vix.toFixed(1)} color={ind.india_vix > 20 ? '#D32F2F' : '#C0C0C0'} />
+                  <IndicatorCell label="20d Return" value={`${ind.ret_20d_pct > 0 ? '+' : ''}${ind.ret_20d_pct.toFixed(1)}%`} color={ind.ret_20d_pct > 0 ? '#2FBF71' : '#E5484D'} />
+                  <IndicatorCell label="Vol vs Avg" value={`${ind.vol_vs_avg.toFixed(2)}×`} color={ind.vol_vs_avg > 1.5 ? '#4E80B4' : '#C3CAD3'} />
+                  <IndicatorCell label="India VIX" value={ind.india_vix.toFixed(1)} color={ind.india_vix > 20 ? '#E5484D' : '#C3CAD3'} />
                 </div>
                 {analysis && (
-                  <div style={{ padding: '8px 10px', borderTop: '1px solid #1A1A1A', display: 'flex', gap: 16, fontSize: 9 }}>
-                    <span style={{ color: '#444' }}>SL <span style={{ color: '#D32F2F', fontWeight: 600 }}>{analysis.suggested_sl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span></span>
-                    <span style={{ color: '#444' }}>Target <span style={{ color: '#00C853', fontWeight: 600 }}>{analysis.suggested_target.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span></span>
-                    <span style={{ color: '#444' }}>R:R <span style={{ color: '#888' }}>{price > 0 && analysis.suggested_sl !== price ? ((analysis.suggested_target - price) / Math.abs(price - analysis.suggested_sl)).toFixed(1) : '—'}</span></span>
+                  <div style={{ padding: '8px 10px', borderTop: '1px solid #20242B', display: 'flex', gap: 16, fontSize: 10 }}>
+                    <span style={{ color: '#5F6772' }}>SL <span style={{ color: '#E5484D', fontWeight: 600 }}>{analysis.suggested_sl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span></span>
+                    <span style={{ color: '#5F6772' }}>Target <span style={{ color: '#2FBF71', fontWeight: 600 }}>{analysis.suggested_target.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span></span>
+                    <span style={{ color: '#5F6772' }}>R:R <span style={{ color: '#9BA3AD' }}>{price > 0 && analysis.suggested_sl !== price ? ((analysis.suggested_target - price) / Math.abs(price - analysis.suggested_sl)).toFixed(1) : '—'}</span></span>
                   </div>
                 )}
               </div>
@@ -236,24 +236,24 @@ export default function InstrumentModal({ token, label, onClose, onChartSelect }
 
             {/* 60-day sparkline */}
             {ohlcv.length > 2 && (
-              <div style={{ padding: '10px', borderBottom: '1px solid #1A1A1A' }}>
-                <div style={{ fontSize: 9, color: '#444', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>60-Day Price</div>
+              <div style={{ padding: '10px', borderBottom: '1px solid #20242B' }}>
+                <div style={{ fontSize: 10, color: '#5F6772', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>60-Day Price</div>
                 <canvas ref={canvasRef} width={500} height={64} style={{ width: '100%', height: 64, display: 'block' }} />
               </div>
             )}
 
             {/* Live strategy signals */}
             <div style={{ padding: '10px' }}>
-              <div style={{ fontSize: 9, color: '#444', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Live Signals</div>
+              <div style={{ fontSize: 10, color: '#5F6772', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Live Signals</div>
               {signals.length === 0
-                ? <p style={{ fontSize: 10, color: '#2A2A2A', margin: 0 }}>No active signals — engine evaluates every 60s</p>
+                ? <p style={{ fontSize: 10.5, color: '#3C424B', margin: 0 }}>No active signals — engine evaluates every 60s</p>
                 : signals.map((s, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 10, flexWrap: 'wrap' }}>
-                      <span style={{ color: '#F7931E', minWidth: 32, fontWeight: 600 }}>{s.strategy_id}</span>
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 10.5, flexWrap: 'wrap' }}>
+                      <span style={{ color: '#4E80B4', minWidth: 32, fontWeight: 600 }}>{s.strategy_id}</span>
                       <Badge variant="side" value={s.side} />
-                      <span style={{ color: '#666' }}>{(s.confidence * 100).toFixed(0)}%</span>
-                      {s.target    && <span style={{ color: '#00C853' }}>T {s.target.toFixed(0)}</span>}
-                      {s.stop_loss && <span style={{ color: '#D32F2F' }}>SL {s.stop_loss.toFixed(0)}</span>}
+                      <span style={{ color: '#6E7682' }}>{(s.confidence * 100).toFixed(0)}%</span>
+                      {s.target    && <span style={{ color: '#2FBF71' }}>T {s.target.toFixed(0)}</span>}
+                      {s.stop_loss && <span style={{ color: '#E5484D' }}>SL {s.stop_loss.toFixed(0)}</span>}
                     </div>
                   ))
               }
@@ -263,58 +263,58 @@ export default function InstrumentModal({ token, label, onClose, onChartSelect }
           {/* ─ RIGHT COLUMN ─ */}
           <div>
             {/* Strategy analysis lenses */}
-            <div style={{ borderBottom: '1px solid #1A1A1A' }}>
-              <div style={{ padding: '6px 10px', fontSize: 9, color: '#444', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #1A1A1A' }}>
+            <div style={{ borderBottom: '1px solid #20242B' }}>
+              <div style={{ padding: '6px 10px', fontSize: 10, color: '#5F6772', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #20242B' }}>
                 Strategy Analysis
-                {loading && <span style={{ color: '#333', marginLeft: 8 }}>computing…</span>}
+                {loading && <span style={{ color: '#3C424B', marginLeft: 8 }}>computing…</span>}
               </div>
               {!analysis && !loading && (
-                <p style={{ padding: '10px', fontSize: 10, color: '#333', margin: 0 }}>No analysis available</p>
+                <p style={{ padding: '10px', fontSize: 10.5, color: '#3C424B', margin: 0 }}>No analysis available</p>
               )}
               {analysis?.lenses.map((lens, i) => (
                 <div
                   key={i}
                   style={{
                     padding: '10px', borderBottom: '1px solid #111',
-                    borderLeft: `3px solid ${lens.triggered ? (lens.side === 'BUY' ? '#00C853' : lens.side === 'SELL' ? '#D32F2F' : '#F7931E') : '#1A1A1A'}`,
+                    borderLeft: `3px solid ${lens.triggered ? (lens.side === 'BUY' ? '#2FBF71' : lens.side === 'SELL' ? '#E5484D' : '#4E80B4') : '#20242B'}`,
                     opacity: lens.triggered ? 1 : 0.5,
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontSize: 9, fontWeight: 700, color: '#F7931E' }}>{lens.strategy}</span>
-                    <span style={{ fontSize: 9, color: '#555' }}>{lens.name}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#4E80B4' }}>{lens.strategy}</span>
+                    <span style={{ fontSize: 10, color: '#5F6772' }}>{lens.name}</span>
                     {lens.triggered && <Badge variant="side" value={lens.side} />}
-                    {!lens.triggered && <span style={{ fontSize: 8, color: '#333' }}>NOT TRIGGERED</span>}
+                    {!lens.triggered && <span style={{ fontSize: 9.5, color: '#3C424B' }}>NOT TRIGGERED</span>}
                     {lens.triggered && (
-                      <span style={{ marginLeft: 'auto', fontSize: 9, color: lens.confidence >= 0.65 ? '#00C853' : '#F7931E' }}>
+                      <span style={{ marginLeft: 'auto', fontSize: 10, color: lens.confidence >= 0.65 ? '#2FBF71' : '#4E80B4' }}>
                         {(lens.confidence * 100).toFixed(0)}%
                       </span>
                     )}
                   </div>
-                  <p style={{ margin: 0, fontSize: 10, color: '#777', lineHeight: 1.5 }}>{lens.detail}</p>
+                  <p style={{ margin: 0, fontSize: 10.5, color: '#777', lineHeight: 1.5 }}>{lens.detail}</p>
                 </div>
               ))}
             </div>
 
             {/* Related news */}
             <div>
-              <div style={{ padding: '6px 10px', fontSize: 9, color: '#444', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #1A1A1A' }}>Related News</div>
+              <div style={{ padding: '6px 10px', fontSize: 10, color: '#5F6772', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #20242B' }}>Related News</div>
               {news.length === 0
-                ? <p style={{ padding: '10px', fontSize: 10, color: '#2A2A2A', margin: 0 }}>No related news for {label}</p>
+                ? <p style={{ padding: '10px', fontSize: 10.5, color: '#3C424B', margin: 0 }}>No related news for {label}</p>
                 : news.slice(0, 8).map((n, i) => (
                     <div
                       key={i}
                       style={{
                         padding: '8px 10px', borderBottom: '1px solid #111',
-                        borderLeft: `2px solid ${n.sentiment === 'positive' ? '#00C85360' : n.sentiment === 'negative' ? '#D32F2F60' : '#2A2A2A'}`,
+                        borderLeft: `2px solid ${n.sentiment === 'positive' ? '#2FBF7160' : n.sentiment === 'negative' ? '#E5484D60' : '#3C424B'}`,
                       }}
                     >
-                      <p style={{ margin: '0 0 3px', fontSize: 10, color: '#C8C8C8', lineHeight: 1.45 }}>{n.headline}</p>
-                      <div style={{ display: 'flex', gap: 6, fontSize: 8, color: '#444', alignItems: 'center' }}>
+                      <p style={{ margin: '0 0 3px', fontSize: 10.5, color: '#C8C8C8', lineHeight: 1.45 }}>{n.headline}</p>
+                      <div style={{ display: 'flex', gap: 6, fontSize: 9.5, color: '#5F6772', alignItems: 'center' }}>
                         <span>{n.source}</span>
                         <span>·</span>
                         <span>{new Date(n.published_at).toLocaleDateString('en-IN')}</span>
-                        <span style={{ color: n.impact === 'high' ? '#D32F2F' : n.impact === 'medium' ? '#F7931E' : '#444', textTransform: 'uppercase' }}>{n.impact}</span>
+                        <span style={{ color: n.impact === 'high' ? '#E5484D' : n.impact === 'medium' ? '#4E80B4' : '#5F6772', textTransform: 'uppercase' }}>{n.impact}</span>
                       </div>
                     </div>
                   ))

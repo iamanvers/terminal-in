@@ -8,37 +8,37 @@
    Layered dark surfaces + amber accent. Numbers always tabular mono.       */
 :root {
   /* Surfaces (darkest → lightest) */
-  --bg:        #070707;
-  --surface-0: #0A0A0A;
-  --surface-1: #0D0D0D;   /* panels */
-  --surface-2: #111111;   /* cards inside panels */
-  --surface-3: #161616;   /* hover / raised */
+  --bg:        #0A0B0D;
+  --surface-0: #0C0D10;
+  --surface-1: #0F1114;   /* panels */
+  --surface-2: #14161A;   /* cards inside panels */
+  --surface-3: #191C21;   /* hover / raised */
 
   /* Borders */
-  --border:        #1A1A1A;
-  --border-strong: #242424;
+  --border:        #20242B;
+  --border-strong: #2B303A;
 
   /* Accent + semantic */
-  --accent:      #F7931E;
-  --accent-dim:  #F7931E22;
-  --accent-soft: #F7931E0E;
-  --pos:         #22C55E;
-  --pos-dim:     #22C55E1A;
-  --neg:         #EF4444;
-  --neg-dim:     #EF44441A;
+  --accent:      #4E80B4;
+  --accent-dim:  #4E80B422;
+  --accent-soft: #4E80B40E;
+  --pos:         #2FBF71;
+  --pos-dim:     #2FBF711A;
+  --neg:         #E5484D;
+  --neg-dim:     #E5484D1A;
   --warn:        #EAB308;
-  --info:        #38BDF8;
+  --info:        #4CA8E8;
 
   /* Text hierarchy */
-  --text:       #E4E4E4;
-  --text-2:     #9A9A9A;
-  --text-3:     #5C5C5C;
-  --text-faint: #383838;
+  --text:       #E6E9ED;
+  --text-2:     #9BA3AD;
+  --text-3:     #5F6772;
+  --text-faint: #3C424B;
 
   /* Type scale (terminal-dense but readable) */
-  --fs-label: 9px;     /* uppercase labels, table headers */
-  --fs-body:  11px;    /* default data text */
-  --fs-num:   12px;    /* primary numbers */
+  --fs-label: 10px;     /* uppercase labels, table headers */
+  --fs-body:  11.5px;    /* default data text */
+  --fs-num:   12.5px;    /* primary numbers */
   --fs-title: 13px;    /* panel titles */
 
   --radius:    5px;
@@ -93,7 +93,7 @@ html, body {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
+  background: var(--surface-2);
 }
 
 .panel-header .accent { color: var(--accent); }
@@ -119,9 +119,9 @@ html, body {
   color: var(--text-2);
   background: var(--surface-2);
 }
-.chip--pos    { color: var(--pos);    border-color: #22C55E44; background: var(--pos-dim); }
-.chip--neg    { color: var(--neg);    border-color: #EF444444; background: var(--neg-dim); }
-.chip--accent { color: var(--accent); border-color: #F7931E44; background: var(--accent-soft); }
+.chip--pos    { color: var(--pos);    border-color: #2FBF7144; background: var(--pos-dim); }
+.chip--neg    { color: var(--neg);    border-color: #E5484D44; background: var(--neg-dim); }
+.chip--accent { color: var(--accent); border-color: #4E80B444; background: var(--accent-soft); }
 
 .btn {
   font-family: var(--font-mono);
@@ -138,7 +138,7 @@ html, body {
 }
 .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn:disabled { opacity: .4; cursor: not-allowed; }
-.btn--primary { border-color: #F7931E55; color: var(--accent); background: var(--accent-soft); }
+.btn--primary { border-color: #4E80B455; color: var(--accent); background: var(--accent-soft); }
 .btn--danger  { border-color: #EF444455; color: var(--neg);   background: var(--neg-dim); }
 
 /* ── Scrollbar ─────────────────────────────────────────────────────────── */
@@ -158,11 +158,11 @@ html, body {
 }
 @keyframes flash-pos {
   0%, 100% { background: transparent; }
-  50% { background: rgba(34,197,94,0.14); }
+  50% { background: rgba(47,191,113,0.14); }
 }
 @keyframes flash-neg {
   0%, 100% { background: transparent; }
-  50% { background: rgba(239,68,68,0.14); }
+  50% { background: rgba(229,72,77,0.14); }
 }
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(3px); }
@@ -242,4 +242,26 @@ input, select, textarea {
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--accent) !important;
+}
+
+/* ── Liquid motion (global) ────────────────────────────────────────────── */
+button {
+  transition: color .16s cubic-bezier(.4,0,.2,1),
+              background-color .16s cubic-bezier(.4,0,.2,1),
+              border-color .16s cubic-bezier(.4,0,.2,1),
+              opacity .16s cubic-bezier(.4,0,.2,1);
+}
+a { transition: color .16s cubic-bezier(.4,0,.2,1), border-color .16s cubic-bezier(.4,0,.2,1); }
+tr { transition: background-color .12s ease; }
+.panel { transition: border-color .2s ease; }
+.panel:hover { border-color: var(--border-strong); }
+* { scrollbar-width: thin; }
+
+button:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
