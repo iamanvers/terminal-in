@@ -77,22 +77,39 @@ class SettlementService:
         bus.publish('settlement.day_open', {'date': str(today)})
 
     def _on_eod_close(self, today):
+        """Real settlement mechanics: only MIS (intraday) products are squared
+        off by the broker at the close. CNC (delivery) positions CARRY
+        overnight and exit only when the market actually trades through their
+        stop-loss or target — never by an arbitrary EOD bulldozer."""
         positions = self._broker.open_positions if self._broker else []
-        log.info('Settlement: EOD auto-close %d position(s) on %s', len(positions), today)
-        for pos in positions:
+        mis = [p for p in positions if p.get('product', 'CNC') == 'MIS']
+        cnc = len(positions) - len(mis)
+        log.info('Settlement: EOD square-off %d MIS position(s); %d CNC carry overnight (%s)',
+                 len(mis), cnc, today)
+        for pos in mis:
             bus.publish('trade.close_requested', {
                 'trade_id': pos['trade_id'],
-                'reason':   'eod_settlement',
+                'reason':   'mis_square_off',
             })
         bus.publish('settlement.eod_close', {
             'date':              str(today),
-            'positions_closed':  len(positions),
+            'positions_closed':  len(mis),
+            'positions_carried': cnc,
         })
 
     def _on_eod_reset(self, today):
         equity    = self._broker.equity    if self._broker else 0.0
         daily_pnl = self._broker._daily_pnl if self._broker else 0.0
-        open_pos  = len(self._broker.open_positions) if self._broker else 0
+        positions = self._broker.open_positions if self._broker else []
+
+        # Mark-to-market the carried positions at the day's closing prices
+        unrealized = 0.0
+        for pos in positions:
+            cached = bus.get_cached(f"ticks.{pos['instrument_id']}") or {}
+            last = float(cached.get('last_price') or 0)
+            if last > 0:
+                sign = 1 if pos['side'] == 'BUY' else -1
+                unrealized += sign * (last - pos['entry_price']) * pos['quantity']
 
         # Record snapshot to DB
         try:
@@ -102,9 +119,9 @@ class SettlementService:
                 'snapshot_id':    str(uuid.uuid4()),
                 'equity':         equity,
                 'daily_pnl':      daily_pnl,
-                'unrealized_pnl': 0.0,
+                'unrealized_pnl': round(unrealized, 2),
                 'drawdown':       dd,
-                'open_positions': open_pos,
+                'open_positions': len(positions),
             })
         except Exception:
             log.exception('Settlement: failed to record equity snapshot')

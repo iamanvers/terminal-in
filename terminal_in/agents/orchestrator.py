@@ -245,11 +245,19 @@ class TradeOrchestrator:
         self._scan_count += 1
         self._last_scan = now
 
+        # Market-hours discipline: scans run any time (the table stays live for
+        # research), but candidates only become FIREABLE during the real NSE
+        # session — no planner handoffs or fills against stale prices.
+        from terminal_in.market_hours import is_market_open
+        market_open = is_market_open()
+
         # Collect fireable candidates (throttle halves the budget)
         equity = float(cached.get('equity') or self._config.initial_capital)
         batch_k = (1 if throttle else PLANNER_BATCH_K) if self._planner_enabled \
             else (1 if throttle else TOP_K)
         fireable = []
+        if not market_open:
+            batch_k = 0
         for c in candidates:
             if len(fireable) >= batch_k:
                 break
@@ -307,6 +315,7 @@ class TradeOrchestrator:
             'scan_count':   self._scan_count,
             'last_scan_ts': int(now * 1000),
             'fired':        fired,
+            'market_open':  market_open,
             'top_results':  candidates[:12],
         })
         log.info('Orchestrator scan #%d: %d candidates, %d fired (regime=%s)',

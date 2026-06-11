@@ -23,6 +23,22 @@ SLIPPAGE_PCT = 0.0003    # 0.03% slippage on fills
 COMMISSION = 20.0        # flat ₹20 per order (approximate Zerodha)
 
 
+def _product_for(payload: dict) -> str:
+    """MIS (intraday — broker squares off at EOD) vs CNC (delivery — carries
+    overnight until SL/target/manual exit). Mirrors real NSE cash products:
+    only explicitly-intraday trades die at the close.
+    S1 (opening-range breakout) and anything with a time_exit are intraday
+    by design; everything else is positional delivery."""
+    meta = payload.get('metadata') or {}
+    if str(meta.get('product', '')).upper() == 'MIS':
+        return 'MIS'
+    if payload.get('strategy_id') == 'S1':
+        return 'MIS'
+    if payload.get('time_exit'):
+        return 'MIS'
+    return 'CNC'
+
+
 class PaperBroker:
     def __init__(self, db, config):
         self._db = db
@@ -84,6 +100,7 @@ class PaperBroker:
                     'stop_loss':    sl,
                     'target':       target,
                     'time_exit':    None,
+                    'product':      _product_for({'strategy_id': t.get('strategy_id', '')}),
                     'opened_at':    t.get('opened_at', ''),
                     'regime':       t.get('regime_at_entry', ''),
                     'confidence':   t.get('confidence'),
@@ -150,6 +167,7 @@ class PaperBroker:
             'stop_loss':    float(payload.get('stop_loss') or 0),
             'target':       float(payload.get('target') or 0),
             'time_exit':    payload.get('time_exit'),
+            'product':      _product_for(payload),
             'opened_at':    datetime.now(timezone.utc).isoformat(),
             'regime':       payload.get('regime', ''),
             'confidence':   payload.get('confidence'),

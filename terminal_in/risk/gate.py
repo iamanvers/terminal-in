@@ -41,6 +41,12 @@ def _sector_of(token: int) -> str:
     return registry.sector(int(token or 0))
 
 
+def _market_open() -> bool:
+    """Module-level wrapper so tests can patch market hours."""
+    from terminal_in.market_hours import is_market_open
+    return is_market_open()
+
+
 @dataclass
 class GateResult:
     approved: bool
@@ -172,6 +178,12 @@ class RiskSupervisor:
         checks['tradeable_instrument'] = instrument_token not in NON_TRADEABLE
         if not checks['tradeable_instrument']:
             return GateResult(False, checks, f'non_tradeable={instrument_token}')
+
+        # 0d. Market hours — no fills outside the real NSE session, paper or
+        # live. A paper fill at a stale midnight price is noise, not simulation.
+        checks['market_open'] = _market_open()
+        if not checks['market_open']:
+            return GateResult(False, checks, 'market_closed')
 
         # 1. Event mask — skipped in paper mode (we want continuous signal flow for learning)
         if self._config.is_live:

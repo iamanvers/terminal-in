@@ -28,6 +28,12 @@ from terminal_in.data_ingest.instruments import registry, SECTOR_MAP, KNOWN_TOKE
 registry.load_stubs()
 
 
+@pytest.fixture(autouse=True)
+def _market_always_open(monkeypatch):
+    """Gate enforces NSE market hours; tests must not depend on wall clock."""
+    monkeypatch.setattr('terminal_in.risk.gate._market_open', lambda: True)
+
+
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 class _Cfg:
@@ -469,3 +475,15 @@ def test_max_open_positions_blocks_when_full():
     result = g.gate(_signal(instrument_id=999600))
     assert not result.approved
     assert 'max_positions' in (result.reason or '')
+
+
+# ── Market hours ──────────────────────────────────────────────────────────────
+
+def test_market_closed_rejects_everything(monkeypatch):
+    """No fills outside the real NSE session — paper or live."""
+    monkeypatch.setattr('terminal_in.risk.gate._market_open', lambda: False)
+    g = _make_gate()
+    result = g.gate(_signal(instrument_id=2800641, limit_price=100.0))
+    assert not result.approved
+    assert 'market_closed' in (result.reason or '')
+    assert result.checks.get('market_open') is False

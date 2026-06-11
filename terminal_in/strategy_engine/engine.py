@@ -60,6 +60,10 @@ class StrategyEngine:
         self._last_eval: Optional[datetime] = None
         self._event_mask: float = 1.0
         self._india_vix: float = 15.0
+        # (strategy_id, token) → last publish ts: stops the same setup being
+        # re-emitted every 60s eval cycle (daily bars barely change intra-day,
+        # so without this the gate sees a wall of duplicate signals to reject)
+        self._last_published: dict[tuple[str, int], float] = {}
 
         bus.subscribe('regime.update', self._on_regime_update)
         bus.subscribe('event.mask', self._on_event_mask)
@@ -78,15 +82,10 @@ class StrategyEngine:
         self._event_mask = float(payload.get('mask', 1.0))
 
     def _build_context(self) -> MarketContext:
-        now_ist = datetime.now(IST)
-        if self._config and not self._config.is_live:
-            # Paper mode: simulate 10:30 IST so all strategy market-hours gates pass.
-            # Strategies check time(9,15) < now.time() — without this they'd only run
-            # if the machine clock happens to be in 9:15–15:30 IST.
-            today = now_ist.date()
-            now = datetime(today.year, today.month, today.day, 10, 30, tzinfo=IST)
-        else:
-            now = now_ist
+        # REAL clock — always. The old paper-mode hack pinned "now" to 10:30
+        # IST so strategies fired 24/7 and filled at stale last-close prices.
+        # Paper simulation must obey the same market clock as live trading.
+        now = datetime.now(IST)
 
         # Fetch last prices from bus hot-cache
         last_prices: dict[int, float] = {}
@@ -200,9 +199,32 @@ class StrategyEngine:
                                         thread_name_prefix='strat') as pool:
                     results = list(pool.map(_eval_one, runnable))
 
+            # Open positions: never signal an instrument we already hold
+            try:
+                open_tokens = {int(t.get('instrument_token') or 0)
+                               for t in self._db.get_open_trades()}
+            except Exception:
+                open_tokens = set()
+
+            from terminal_in.market_hours import is_market_open
+            import time as _time_mod
+            market_open = is_market_open()
+            COOLDOWN_S = 1800   # same (strategy, token) at most once per 30 min
+
             for strategy, alloc, signal in results:
                 if signal is None:
                     continue
+                if not market_open:
+                    log.debug('Signal %s suppressed — market closed', strategy.id)
+                    continue
+                token = int(getattr(signal, 'instrument_id', 0) or 0)
+                if token in open_tokens:
+                    continue
+                key = (strategy.id, token)
+                now_s = _time_mod.time()
+                if now_s - self._last_published.get(key, 0) < COOLDOWN_S:
+                    continue
+                self._last_published[key] = now_s
                 registry.record_signal(strategy.id)
                 # Scale quantity by DSA allocation
                 signal.quantity = max(int(signal.quantity * alloc), 1)
