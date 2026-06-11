@@ -54,3 +54,4 @@ desktop.ini
 .claude/
 vendor/
 data/training/deploy/
+*.tsbuildinfo
