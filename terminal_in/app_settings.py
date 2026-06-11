@@ -36,11 +36,18 @@ SCHEMA: list[dict] = [
          help='off = deterministic pipeline only (no LLM judge)'),
     dict(env='OLLAMA_HOST', group='Planner', label='Ollama host', type='text',
          default='http://localhost:11434', hot=False),
+    # type stays 'text' for validation; the GET route upgrades it to a
+    # dropdown of installed models when Ollama is reachable
     dict(env='OLLAMA_MODEL', group='Planner', label='Model', type='text',
          default='qwen2.5:3b', hot=False),
+    dict(env='PLANNER_TIMEOUT_S', group='Planner', label='LLM timeout (s)',
+         type='number', min=10, max=110, default=60, hot=False,
+         help='must stay below the 120s scan interval'),
 
     # ── Broker (live) ────────────────────────────────────────────────────
     dict(env='KITE_API_KEY', group='Broker', label='Kite API key',
+         type='password', default='', hot=False),
+    dict(env='KITE_API_SECRET', group='Broker', label='Kite API secret',
          type='password', default='', hot=False),
     dict(env='KITE_ACCESS_TOKEN', group='Broker', label='Kite access token (daily)',
          type='password', default='', hot=False),
@@ -51,6 +58,8 @@ SCHEMA: list[dict] = [
 
     # ── Reports ──────────────────────────────────────────────────────────
     # Hot: daily_report reads these from os.environ at send time
+    dict(env='REPORTS_ENABLED', group='Reports', label='Daily PDF reports',
+         type='bool', default=True, hot=True),
     dict(env='REPORT_EMAIL_TO', group='Reports', label='Report recipient',
          type='text', default='', hot=True),
     dict(env='SMTP_HOST', group='Reports', label='SMTP host', type='text',
@@ -69,6 +78,15 @@ SCHEMA: list[dict] = [
          type='bool', default=False, hot=False),
     dict(env='PYTHON_JIT', group='System', label='Python JIT (experimental)',
          type='bool', default=False, hot=False),
+
+    # ── Training ─────────────────────────────────────────────────────────
+    dict(env='LORA_BASE_MODEL', group='Training', label='LoRA base model (HF id)',
+         type='text', default='TinyLlama/TinyLlama-1.1B-Chat-v1.0', hot=False),
+
+    # Deliberately NOT exposed: JWT_SECRET, SQLITE_PATH/DUCKDB_PATH/
+    # ARTIFACTS_DIR (moving the DB under a live process corrupts state),
+    # TIMEZONE (NSE-only product), LORA_DATASET_DIR/OUTPUT_DIR/MAX_STEPS
+    # (owned per-run by the TRAIN module).
 ]
 
 _BY_ENV = {s['env']: s for s in SCHEMA}

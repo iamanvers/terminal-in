@@ -14,7 +14,7 @@ type Setting = {
   value: string; overridden: boolean
 }
 
-const GROUP_ORDER = ['Trading', 'Planner', 'Broker', 'Data', 'Reports', 'System']
+const GROUP_ORDER = ['Trading', 'Planner', 'Broker', 'Data', 'Reports', 'System', 'Training']
 
 export default function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [settings, setSettings] = React.useState<Setting[]>([])

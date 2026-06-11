@@ -323,6 +323,10 @@ def send_email(subject: str, body: str, pdf_path: Path) -> bool:
 
 # ── Orchestration ───────────────────────────────────────────────────────────
 
+def _reports_enabled() -> bool:
+    return os.environ.get('REPORTS_ENABLED', 'true').lower() in ('1', 'true', 'yes')
+
+
 def generate(db, kind: str, email: bool = True) -> dict:
     """Build + render + (optionally) email one report. Returns metadata."""
     data = build_report_data(db, kind)
@@ -373,7 +377,9 @@ class ReportScheduler:
             bus.publish('orchestrator.scan_now', {})   # fresh candidates for the brief
         if hhmm >= PRE_OPEN_HHMM and hhmm < (9, 30) and key_pre not in self._fired:
             self._fired.add(key_pre)
-            generate(self._db, 'pre_open')
+            if _reports_enabled():
+                generate(self._db, 'pre_open')
         if hhmm >= EOD_HHMM and key_eod not in self._fired:
             self._fired.add(key_eod)
-            generate(self._db, 'eod')
+            if _reports_enabled():
+                generate(self._db, 'eod')

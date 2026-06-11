@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 OLLAMA_BASE  = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
 OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen2.5:3b')
 
-PLAN_TIMEOUT_S   = 60     # << 120s scan interval; cold model load alone is ~30s
+PLAN_TIMEOUT_S   = int(os.environ.get('PLANNER_TIMEOUT_S', '60'))  # << 120s scan interval
 PROBE_TIMEOUT_S  = 3
 MAX_APPROVED     = 3
 SIZE_FACTOR_MIN  = 0.25

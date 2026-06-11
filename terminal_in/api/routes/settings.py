@@ -17,11 +17,35 @@ def init(db=None):
     _db = db
 
 
+def _ollama_models() -> list[str]:
+    """Installed Ollama models for the model dropdown. [] when offline."""
+    import os
+
+    import requests
+    try:
+        base = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
+        r = requests.get(f'{base}/api/tags', timeout=2)
+        return [m['name'] for m in r.json().get('models', [])]
+    except Exception:
+        return []
+
+
 @bp.route('', methods=['GET'])
 def get_settings():
     if _db is None:
         return jsonify({'error': 'settings unavailable'}), 503
-    return jsonify({'settings': app_settings.describe(_db)})
+    items = app_settings.describe(_db)
+    # Upgrade the model field to a dropdown of installed models when Ollama
+    # is reachable (free text otherwise — validation stays permissive)
+    models = _ollama_models()
+    if models:
+        for item in items:
+            if item['env'] == 'OLLAMA_MODEL':
+                if item['value'] not in models:
+                    models = [item['value'], *models]
+                item['type'] = 'select'
+                item['options'] = models
+    return jsonify({'settings': items})
 
 
 @bp.route('', methods=['POST'])
