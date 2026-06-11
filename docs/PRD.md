@@ -181,7 +181,9 @@ Multi-leg positions (spreads, straddles, iron condors) as first-class objects: c
 
 Supersedes the earlier single-machine packaging decision: the app must now be **installable on any Windows machine, run standalone, and receive remote updates**. Single-process serving (static UI via Flask, `background.ps1`) shipped earlier remains the runtime foundation the installer wraps.
 
-### 5b.1 Windows installer (.exe)
+### 5b.1 Windows installer (.exe) — IN PROGRESS (2026-06-12)
+**Status:** spec + frozen-mode entry shipped (`packaging/run_app.py`, `packaging/terminal_in.spec`); data-dir contract implemented (exe chdirs to `%LOCALAPPDATA%\TerminalIN`, bundled UI via `UI_OUT_DIR`). Build iterations so far: (1) relative spec paths silently produced an empty 34 MB bundle — all paths must anchor on `SPECPATH`; (2) rebuild failed on a `dist/` file lock from a still-running boot test — kill `TerminalIN.exe` before rebuilding. Build 3 in progress. **Next:** boot-verify the onedir bundle, then the Inno Setup wrapper (Start-menu/desktop/auto-start, license page = docs/LEGAL.md) and the first-run wizard.
+
 - **PyInstaller `--onedir`** build of the backend (never `--onefile` — torch/transformers make a 3–5 GB payload; onedir avoids per-launch temp unpacking), bundling Python 3.14 runtime + `terminal_in/` + static `terminal_ui/out`.
 - **Inno Setup** wraps the onedir tree + bundled LLM (5b.3) into `TERMINAL-IN-Setup.exe`: Start-menu entry, desktop shortcut, optional logon auto-start (replaces `background.ps1 -Install`).
 - **Data separation for transferability**: all mutable state (SQLite DB, reports, models, logs, settings) moves to `%LOCALAPPDATA%\TerminalIN\`; the install dir stays read-only. Backup/transfer = copy one folder.
@@ -198,6 +200,17 @@ Supersedes the earlier single-machine packaging decision: the app must now be **
 - The personal layer (own trades + hindsight decisions) remains a **local TRAIN-module LoRA** applied on top, per machine, never distributed.
 
 ### 5b.4 Hardware maximization (CPU + GPU as available)
+
+**Measured on the reference machine (Ryzen 7 7730U, 8C/16T, Radeon iGPU, 2026-06-12), qwen2.5:3b Q4:**
+
+| Path | Prompt eval | Generation |
+|---|---|---|
+| Ollama CPU, 8 threads (default) | ~2,200 tok/s (prefix-cached) | **10.7 tok/s** |
+| Ollama CPU, 16 threads | — | 8.9 tok/s (SMT hurts — bandwidth-bound) |
+| llama.cpp **Vulkan iGPU** (full offload) | 25 tok/s | 9.5 tok/s |
+| financial-analyst-v1 (TinyLlama 1.1B Q4) | — | **~28 tok/s** |
+
+**Conclusion:** generation on this class of machine is **DDR-bandwidth-bound** — the iGPU shares the same memory bus, so neither more threads nor GPU offload helps. The levers that actually work: (1) **model size/quantization** (1.1B ≈ 3× faster than 3B), (2) prompt-prefix caching (keep_alive + stable system prompts — shipped), (3) streaming so perceived latency = first token (shipped: 6s first token). A discrete-GPU or higher-bandwidth machine changes this calculus; re-measure before re-architecting.
 - `torch.set_num_threads(physical_cores)` + `OMP_NUM_THREADS` at boot; HIGH process priority default in packaged mode.
 - Device autodetect at startup: CUDA → DirectML (any Windows GPU) → CPU; applies to FinBERT inference and LoRA training (`use_cpu` only when nothing better exists); llama.cpp `--n-gpu-layers auto`.
 - `/api/health` reports the active device per subsystem (no silent CPU fallback when a GPU exists).

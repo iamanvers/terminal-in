@@ -22,11 +22,24 @@ import HoldingsPanel from '@/components/panels/HoldingsPanel'
 
 const C = THEME
 
-const INDICES = [
+// Fallback only — live values come from /api/market/contract-specs
+// (sourced from NSE lot-size circulars; see terminal_in/data_ingest/contract_specs.py)
+const INDICES_FALLBACK = [
   { symbol: 'NIFTY 50',          token: 256265, label: 'NIFTY 50',  lot: 75 },
   { symbol: 'NIFTY BANK',        token: 260105, label: 'BANKNIFTY', lot: 35 },
   { symbol: 'NIFTY FIN SERVICE', token: 257801, label: 'FINNIFTY',  lot: 65 },
 ]
+type ContractSpec = { token: number; label: string; lot_size: number }
+function useContractSpecs() {
+  const [specs, setSpecs] = useState<{ contracts: ContractSpec[]; fut_margin_band: [number, number]; source_note: string } | null>(null)
+  useEffect(() => {
+    fetch('/api/market/contract-specs').then(r => r.json()).then(setSpecs).catch(() => {})
+  }, [])
+  const indices = specs?.contracts?.length
+    ? specs.contracts.map(c => ({ symbol: c.label, token: c.token, label: c.label, lot: c.lot_size }))
+    : INDICES_FALLBACK
+  return { indices, marginBand: specs?.fut_margin_band ?? [0.11, 0.14] as [number, number], sourceNote: specs?.source_note ?? '' }
+}
 const VIX_TOKEN = 264969
 const INDEX_TOKENS = new Set([256265, 260105, 257801])
 
@@ -34,6 +47,7 @@ function fmtTs(ms: number) { return new Date(ms).toLocaleTimeString('en-IN', { h
 
 // ── Index complex strip ───────────────────────────────────────────────────────
 function IndexStrip({ regime }: { regime: RegimeState | null }) {
+  const { indices: INDICES } = useContractSpecs()
   const ticks = useTickMap()
   const [closes, setCloses] = useState<Record<string, { close: number }>>({})
   useEffect(() => { api.lastCloses().then(c => setCloses(c as never)).catch(() => {}) }, [])
@@ -139,6 +153,7 @@ function SignalLog({ signals }: { signals: SignalRec[] }) {
 
 // ── Contract reference — live notional and margin math per index ─────────────
 function ContractReference() {
+  const { indices: INDICES, marginBand, sourceNote } = useContractSpecs()
   const ticks = useTickMap()
   const [closes, setCloses] = useState<Record<string, { close: number }>>({})
   const [equity, setEquity] = useState(0)
@@ -147,7 +162,6 @@ function ContractReference() {
     fetch('/api/portfolio/holdings').then(r => r.json())
       .then(d => setEquity(d?.equity ?? 0)).catch(() => {})
   }, [])
-  const FUT_MARGIN = 0.115   // NSE index futures initial margin ≈ 11–12% of notional
 
   return (
     <div className="panel" style={{ borderRadius: 5 }}>
@@ -168,7 +182,7 @@ function ContractReference() {
             {INDICES.map(({ token, label, lot }) => {
               const spot = ticks[token]?.last_price ?? closes[String(token)]?.close ?? 0
               const notional = spot * lot
-              const margin = notional * FUT_MARGIN
+              const margin = notional * ((marginBand[0] + marginBand[1]) / 2)
               const maxLots = margin > 0 && equity > 0 ? Math.floor((equity * 0.25) / margin) : 0
               return (
                 <tr key={token}>
@@ -184,7 +198,7 @@ function ContractReference() {
           </tbody>
         </table>
         <div style={{ fontSize: 9.5, color: C.muted, padding: '6px 10px', borderTop: `1px solid ${C.border}` }}>
-          *at 25% of equity per position · margin ≈ {(FUT_MARGIN * 100).toFixed(0)}% of notional (SPAN approximation — exact SPAN lands with P2 execution)
+          *at 25% of equity per position · margin band {(marginBand[0] * 100).toFixed(0)}–{(marginBand[1] * 100).toFixed(0)}% of notional · {sourceNote || 'NSE SPAN + exposure estimate'}
         </div>
       </div>
     </div>

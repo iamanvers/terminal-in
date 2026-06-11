@@ -241,3 +241,10 @@ def instruments():
         })
     result.sort(key=lambda x: x['symbol'])
     return jsonify(result)
+
+@bp.route('/contract-specs')
+def contract_specs():
+    """NSE index derivative specs (sourced constants — see module docstring)."""
+    from terminal_in.data_ingest.contract_specs import specs
+    return jsonify(specs())
+
