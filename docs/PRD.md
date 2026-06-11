@@ -162,6 +162,22 @@ Multi-leg positions (spreads, straddles, iron condors) as first-class objects: c
 
 ---
 
+## 5b. Packaging decision (2026-06-11)
+
+**An .exe is the wrong shape for this app** — pushback recorded after evaluation:
+- PyInstaller bundling torch + transformers + pandas ⇒ a 3–5 GB artifact, slow cold-start (temp unpack), and notoriously fragile with torch's dynamic imports; every code change requires rebuilding the whole bundle (vs `git pull` today).
+- The exe wouldn't remove any real dependency: Ollama, `.env` keys, and `data/` are external regardless; the UI still needs Node or a static export.
+
+**Adopted path instead:**
+1. ✅ `background.ps1` — headless autonomous operation + logon Scheduled Task with auto-restart. From the user's perspective this *is* "an app that runs itself".
+2. **P2 — single-process serving**: `next build` static export served by Flask (verified feasible: `lib/api.ts` uses relative `/api`, so exported pages served from :5000 are same-origin; the dev-only rewrite proxy is bypassed). Kills the Node dev server → one process, one port.
+3. Desktop shortcut to `start.ps1` for interactive use. Revisit an installer (Inno Setup wrapping the venv, not PyInstaller) only if the app is ever distributed beyond this machine.
+
+## 5c. Model deploy + Claude-augmented training (P2, partially blocked)
+
+- **Weight adjustment after training** = the LoRA deploy pipeline: merge adapter → `convert_hf_to_gguf.py` (llama.cpp, not yet vendored) → `ollama create financial-analyst-vN` → planner hot-switch with rollback. Blocked on: a completed training run (smoke test in progress) + llama.cpp clone.
+- **Claude-as-teacher dataset expansion**: grow `strategy_pairs.py` with Claude-generated QA on documented winning strategies (momentum/quality factor literature, Varsity strategy modules, public quant write-ups) and periodic web-sourced market-structure updates. Quality bar: every generated pair must cite the mechanism (why the edge exists), not just the rule. Target +500 pairs per quarter, versioned in git.
+
 ## 6. Quality & operations
 
 - **Tests:** 113 passing (gate, broker, persistence, filters, planner, supervisor); every new module ships with unit tests; planner/LLM tests run fully mocked.
