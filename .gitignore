@@ -51,5 +51,6 @@ desktop.ini
 *.swp
 *.swo
 .vscode/
-.claude/vendor/
+.claude/
+vendor/
 data/training/deploy/
