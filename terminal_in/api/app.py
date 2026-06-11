@@ -147,9 +147,15 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
         if recent_errors:
             degraded.append('recent_errors')
 
+        # hardware inventory (gpu_unused=True flags an idle GPU until the
+        # DirectML/Vulkan path ships — visible here, not an amber badge)
+        from terminal_in import hw as _hw
+        hardware = _hw.detect()
+
         return jsonify({
             'status': 'degraded' if degraded else 'ok',
             'degraded': degraded,
+            'hardware': hardware,
             'regime_mode': _clf.mode,
             'sentiment': sent,
             'ollama_online': ollama_online,

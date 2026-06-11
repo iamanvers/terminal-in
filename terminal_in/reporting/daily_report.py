@@ -132,7 +132,7 @@ def _logo_drawing(size: float = 26.0):
                            (40, 36, 16, '#00B9FC')):
         d.add(Rect(x * s, y * s, 7 * s, h * s, rx=1.5 * s, ry=1.5 * s,
                    fillColor=HexColor(color), strokeColor=None))
-    for x1 in (25, 34):
+    for x1 in (36, 45):
         d.add(Line(x1 * s, 8 * s, (x1 + 8) * s, 24 * s,
                    strokeColor=HexColor('#ECEEF1'), strokeWidth=2.6 * s,
                    strokeLineCap=1))

@@ -144,13 +144,13 @@ function NavHeader() {
         <svg width="20" height="20" viewBox="0 0 64 64" aria-hidden="true">
           <rect width="64" height="64" rx="14" fill="#111317" />
           <rect x="12" y="30" width="7" height="16" rx="1.5" fill="#004AF8" />
-          <rect x="15" y="25" width="1.6" height="26" fill="#004AF8" />
+          <rect x="15" y="25" width="1.6" height="21" fill="#004AF8" />
           <rect x="26" y="20" width="7" height="20" rx="1.5" fill="#0094FB" />
-          <rect x="29" y="14" width="1.6" height="32" fill="#0094FB" />
+          <rect x="29" y="14" width="1.6" height="26" fill="#0094FB" />
           <rect x="40" y="12" width="7" height="16" rx="1.5" fill="#00B9FC" />
           <rect x="43" y="7" width="1.6" height="28" fill="#00B9FC" />
-          <path d="M25 56 L33 40" stroke="#ECEEF1" strokeWidth="3.4" strokeLinecap="round" />
-          <path d="M34 56 L42 40" stroke="#ECEEF1" strokeWidth="3.4" strokeLinecap="round" />
+          <path d="M36 56 L44 40" stroke="#ECEEF1" strokeWidth="3.4" strokeLinecap="round" />
+          <path d="M45 56 L53 40" stroke="#ECEEF1" strokeWidth="3.4" strokeLinecap="round" />
         </svg>
         <span style={{ fontFamily: 'var(--font-mono, monospace)', fontWeight: 700, color: '#ECEEF1', letterSpacing: '0.12em', fontSize: 13 }}>
           TERMINAL<span style={{ color: '#0094FB' }}>//</span>IN

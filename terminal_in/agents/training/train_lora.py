@@ -24,6 +24,13 @@ if sys.flags.utf8_mode == 0 and os.environ.get('PYTHONUTF8') != '1':
     os.environ['PYTHONUTF8'] = '1'
     os.execv(sys.executable, [sys.executable, '-X', 'utf8', *sys.argv])
 
+# Engage every logical core before torch initializes its thread pools
+try:
+    from terminal_in import hw
+    hw.apply(for_training=True)
+except Exception:
+    pass
+
 log = logging.getLogger(__name__)
 
 # Paths are env-overridable so the recursive TrainingOrchestrator can run

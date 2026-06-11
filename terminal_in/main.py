@@ -58,6 +58,9 @@ def main():
     log.info('TERMINAL//IN starting — mode=%s', cfg.mode)
     _apply_low_latency()
 
+    from terminal_in import hw
+    hw.apply()  # size torch/OpenMP pools to all logical cores; log unused GPUs
+
     # Catch crashes in ANY daemon thread — a dead component must be visible,
     # not silent (errors land in the ring buffer → /api/health → UI badge)
     from terminal_in import errors as _errors

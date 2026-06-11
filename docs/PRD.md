@@ -95,6 +95,13 @@ Pipeline per run: dataset rebuild (static corpora + own closed trades + hindsigh
 
 A persistent ledger now exists (`data/portfolio.md`, regenerated on every fill/close/EOD; backed by the `trades` table). Next build: a **HOLDINGS panel** on the EQUITIES page (cash positions with live marks, unrealized P&L, product type, day change) and a positions section on the F&O page once derivative positions exist. API: extend `/api/portfolio/positions` with marks + product; reuse the ledger's assembly logic.
 
+### P2 — Design maturation (packaged-product bar)
+
+The packaged app (5b) raises the design bar from "internal terminal" to "product someone installs". Scope:
+- **Fluidity pass**: route-level transitions, skeleton loaders on every panel (no layout jumps), 60fps hover/press interactions, reduced-motion compliance. Current liquid-tile foundation stays; evaluate spring-physics motion (CSS `linear()` easing) over the current cubic-bezier.
+- **Design options review**: structured comparison before the P2 build — (a) keep hand-rolled CSS system, (b) adopt headless primitives (Radix) under our tokens for menus/dialogs/tooltips, (c) full component library (rejected by default: locks the visual identity). Decision recorded here before any code.
+- **Palette consistency audit (PR-blocking)**: zero hex literals outside `lib/theme.ts` + `globals.css`; CI-style grep check added to the test suite; PDF/report colors derive from the same ramp constants.
+
 ### P2 — Backtest engine
 
 Replay 2y of real OHLCV through the **full agentic stack** (lenses → filters → deterministic-planner mode → gate) with walk-forward splits; Sharpe/Calmar/max-DD per strategy per regime; results feed DSA priors and the strategy gene pool. Lives in `terminal_in/backtest/`, surfaced on `/train`.
@@ -203,6 +210,12 @@ Supersedes the earlier single-machine packaging decision: the app must now be **
 
 - **Weight adjustment after training** = the LoRA deploy pipeline: merge adapter → `convert_hf_to_gguf.py` (llama.cpp, not yet vendored) → `ollama create financial-analyst-vN` → planner hot-switch with rollback. Blocked on: a completed training run (smoke test in progress) + llama.cpp clone.
 - **Claude-as-teacher dataset expansion**: grow `strategy_pairs.py` with Claude-generated QA on documented winning strategies (momentum/quality factor literature, Varsity strategy modules, public quant write-ups) and periodic web-sourced market-structure updates. Quality bar: every generated pair must cite the mechanism (why the edge exists), not just the rule. Target +500 pairs per quarter, versioned in git.
+
+### P4 / Release 2 — Next-generation base models
+
+The current stack (qwen2.5:3b judge, TinyLlama-1.1B trainee) was chosen for CPU-era constraints. Once the packaged app ships and hardware detection (5b.4) is live, re-evaluate against the then-best small open-source models — candidates as of writing: **Qwen3 4B/8B**, **Llama 4 small variants**, **Phi-4-mini**, **Gemma 3 4B**, **DeepSeek-R1 distills (7B/8B)** — all GGUF-served via the bundled llama.cpp, so a model swap is a file replacement + Modelfile bump, no code change.
+
+Gate for adoption (per model, on the eval set from §P2 training): ≥10% better planner-verdict accuracy at ≤1.5× latency on reference hardware, and a clean license for redistribution inside the installer. Not before P4 — the backtest engine and F&O execution outrank model churn.
 
 ## 6. Quality & operations
 
