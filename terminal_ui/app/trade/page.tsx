@@ -7,6 +7,7 @@ import {
   type Position, type Scorecard, type SignalRec, type Trade, type TradeStats,
 } from '@/lib/api'
 import { useSocketEvent, useTickMap } from '@/hooks/useSocket'
+import HoldingsPanel from '@/components/panels/HoldingsPanel'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = THEME
@@ -475,13 +476,16 @@ function BookView({ positions, trades, ticks, tokenMap, filter, selectedId, onSe
   const [closing, setClosing] = useState<Set<string>>(new Set())
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 6 }}>
-      <div style={{ flex: '0 0 calc(55% - 3px)', minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ flex: '0 0 auto', maxHeight: '34%', minHeight: 0, overflow: 'auto' }}>
+        <HoldingsPanel segment="EQ" />
+      </div>
+      <div style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden' }}>
         <PositionsTable positions={positions} ticks={ticks} tokenMap={tokenMap} filter={filter}
           onSelect={id => onSelect(id, 'position')} selectedId={selectedId}
           onClose={async id => { setClosing(p => new Set(p).add(id)); try { await api.closePosition(id) } catch { /**/ } finally { setClosing(p => { const s = new Set(p); s.delete(id); return s }) } }}
         />
       </div>
-      <div style={{ flex: '0 0 calc(45% - 3px)', minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ flex: '0 0 32%', minHeight: 0, overflow: 'hidden' }}>
         <TradeHistory trades={trades} tokenMap={tokenMap} filter={filter}
           onSelect={id => onSelect(id, 'trade')} selectedId={selectedId} />
       </div>

@@ -40,6 +40,16 @@ def positions():
     return jsonify(pos)
 
 
+@bp.route('/holdings')
+def holdings():
+    """Full portfolio statement: account block + marked holdings + today's
+    closed trades. Same assembly as data/portfolio.md (single source)."""
+    if _broker is None or _db is None:
+        return jsonify({'error': 'unavailable'}), 503
+    from terminal_in.reporting.portfolio_ledger import build_statement
+    return jsonify(build_statement(_db, _broker))
+
+
 @bp.route('/snapshots')
 def snapshots():
     limit = int(request.args.get('limit', 90))

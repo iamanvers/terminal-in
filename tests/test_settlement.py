@@ -46,3 +46,34 @@ def test_eod_squares_off_only_mis(mock_bus):
                   if c.args[0] == 'settlement.eod_close']
     assert eod_events[0]['positions_closed'] == 1
     assert eod_events[0]['positions_carried'] == 2
+
+
+def test_build_statement_marks_and_account():
+    """HOLDINGS assembly (PRD P2): account block + per-position unrealized."""
+    from terminal_in.reporting.portfolio_ledger import build_statement
+    broker = MagicMock()
+    broker.open_positions = [
+        {'trade_id': 'T1', 'instrument_id': 738561, 'side': 'BUY', 'product': 'CNC',
+         'quantity': 10, 'entry_price': 100.0, 'stop_loss': 95.0, 'target': 110.0},
+        {'trade_id': 'T2', 'instrument_id': 408065, 'side': 'SELL', 'product': 'MIS',
+         'quantity': 5, 'entry_price': 200.0, 'stop_loss': 210.0, 'target': 180.0},
+    ]
+    broker.equity = 1_000_500.0
+    broker.available_capital = 990_000.0
+    broker.capital_in_use = 2_000.0
+    broker.peak_equity = 1_001_000.0
+    db = MagicMock()
+    db.get_closed_trades.return_value = []
+
+    s = build_statement(db, broker)
+    assert s['equity'] == 1_000_500.0
+    assert len(s['holdings']) == 2
+    by_id = {h['token']: h for h in s['holdings']}
+    # no live tick in the bus cache -> mark falls back to entry, upnl 0
+    long = by_id[738561]
+    assert long['product'] == 'CNC' and long['mark'] >= 0
+    sign = 1 if long['side'] == 'BUY' else -1
+    expected = sign * (long['mark'] - long['entry_price']) * long['quantity']
+    assert abs(long['unrealized'] - expected) < 1e-6
+    short = by_id[408065]
+    assert short['product'] == 'MIS' and short['side'] == 'SELL'

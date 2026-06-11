@@ -23,6 +23,71 @@ LEDGER_PATH = Path('./data/portfolio.md')
 _DEBOUNCE_S = 5.0
 
 
+def _mark(token: int, fallback: float) -> float:
+    tick = bus.get_cached(f'ticks.{token}') or {}
+    price = float(tick.get('last_price') or 0)
+    return price if price > 0 else fallback
+
+
+def _sym(token) -> str:
+    try:
+        from terminal_in.data_ingest.instruments import registry
+        return registry.symbol(int(token)) or str(token)
+    except Exception:
+        return str(token)
+
+
+def build_statement(db, broker) -> dict:
+    """The single portfolio assembly — feeds the md ledger, the
+    /api/portfolio/holdings endpoint, and the HOLDINGS panels."""
+    now = datetime.now(IST)
+    holdings = []
+    unrealized = 0.0
+    for p in broker.open_positions:
+        token = p['instrument_id']
+        entry = float(p['entry_price'])
+        mark = _mark(token, entry)
+        sign = 1 if p['side'] == 'BUY' else -1
+        upnl = sign * (mark - entry) * p['quantity']
+        unrealized += upnl
+        notional = entry * p['quantity']
+        holdings.append({
+            'token':       token,
+            'symbol':      _sym(token),
+            'side':        p['side'],
+            'product':     p.get('product', 'CNC'),
+            'quantity':    p['quantity'],
+            'entry_price': entry,
+            'mark':        mark,
+            'unrealized':  upnl,
+            'unrealized_pct': (upnl / notional * 100) if notional else 0.0,
+            'stop_loss':   float(p.get('stop_loss') or 0),
+            'target':      float(p.get('target') or 0),
+            'entry_time':  p.get('entry_time'),
+            'strategy_id': p.get('strategy_id'),
+        })
+
+    today_start = int(datetime(now.year, now.month, now.day, tzinfo=IST).timestamp() * 1000)
+    closed_today = []
+    try:
+        closed_today = [t for t in db.get_closed_trades(limit=100)
+                        if (t.get('exit_time') or 0) >= today_start]
+    except Exception:
+        pass
+
+    return {
+        'generated_at':   int(now.timestamp() * 1000),
+        'equity':         broker.equity,
+        'cash':           broker.available_capital,
+        'deployed':       broker.capital_in_use,
+        'unrealized':     unrealized,
+        'realized_today': sum(float(t.get('net_pnl') or 0) for t in closed_today),
+        'peak_equity':    broker.peak_equity,
+        'holdings':       holdings,
+        'closed_today':   closed_today,
+    }
+
+
 class PortfolioLedger:
     def __init__(self, db, broker):
         self._db = db
@@ -52,40 +117,22 @@ class PortfolioLedger:
             log.exception('PortfolioLedger: write failed')
 
     def _mark(self, token: int, fallback: float) -> float:
-        tick = bus.get_cached(f'ticks.{token}') or {}
-        price = float(tick.get('last_price') or 0)
-        return price if price > 0 else fallback
+        return _mark(token, fallback)
 
     def write(self) -> Path:
-        b = self._broker
+        s = build_statement(self._db, self._broker)
         now = datetime.now(IST)
-        positions = b.open_positions
-        equity = b.equity
-        in_use = b.capital_in_use
-        cash = b.available_capital
+        positions = s['holdings']
+        equity, cash, in_use = s['equity'], s['cash'], s['deployed']
+        unrealized, realized_today = s['unrealized'], s['realized_today']
+        closed_today = s['closed_today']
 
-        unrealized = 0.0
-        pos_lines = []
-        for p in positions:
-            mark = self._mark(p['instrument_id'], p['entry_price'])
-            sign = 1 if p['side'] == 'BUY' else -1
-            upnl = sign * (mark - p['entry_price']) * p['quantity']
-            unrealized += upnl
-            sym = self._symbol(p['instrument_id'])
-            pos_lines.append(
-                f"| {sym} | {p['side']} | {p.get('product', 'CNC')} | {p['quantity']} "
-                f"| {p['entry_price']:,.2f} | {mark:,.2f} | {upnl:+,.0f} "
-                f"| {p.get('stop_loss', 0):,.2f} | {p.get('target', 0):,.2f} |"
-            )
-
-        today_start = int(datetime(now.year, now.month, now.day, tzinfo=IST).timestamp() * 1000)
-        closed_today = []
-        try:
-            closed_today = [t for t in self._db.get_closed_trades(limit=100)
-                            if (t.get('exit_time') or 0) >= today_start]
-        except Exception:
-            pass
-        realized_today = sum(float(t.get('net_pnl') or 0) for t in closed_today)
+        pos_lines = [
+            f"| {h['symbol']} | {h['side']} | {h['product']} | {h['quantity']} "
+            f"| {h['entry_price']:,.2f} | {h['mark']:,.2f} | {h['unrealized']:+,.0f} "
+            f"| {h['stop_loss']:,.2f} | {h['target']:,.2f} |"
+            for h in positions
+        ]
 
         lines = [
             '# Portfolio Statement — TERMINAL//IN',
@@ -101,7 +148,7 @@ class PortfolioLedger:
             f'| Capital deployed | Rs {in_use:,.2f} |',
             f'| Unrealized P&L (marked) | Rs {unrealized:+,.2f} |',
             f'| Realized P&L today | Rs {realized_today:+,.2f} ({len(closed_today)} trades) |',
-            f'| Peak equity | Rs {b.peak_equity:,.2f} |',
+            f"| Peak equity | Rs {s['peak_equity']:,.2f} |",
             '',
             f'## Open Holdings ({len(positions)})',
             '',
