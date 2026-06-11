@@ -1643,7 +1643,7 @@ export default function AgentsPage() {
     { key: 'judge',      label: '⚖ DECISION LOG' },
     { key: 'matrix',     label: 'AGENTS' },
     { key: 'pipeline',   label: 'PIPELINE' },
-    { key: 'scoreboard', label: 'SCOREBOARD' },
+    // SCOREBOARD removed — it duplicated EQUITIES → PERFORMANCE wholesale
     { key: 'broadcast',  label: 'BUS' },
     { key: 'query',      label: '◈ AI ANALYST' },
   ]
