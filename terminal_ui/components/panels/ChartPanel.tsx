@@ -3,13 +3,14 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import { useTickMap } from '@/hooks/useSocket'
 
+// Main chart carries the INDEX COMPLEX only — individual stocks open via
+// the watchlist's instrument popup (click any row in MARKET DATA).
 const SYMBOLS = [
-  { label: 'NIFTY 50',  key: 'NIFTY 50',         token: 256265  },
-  { label: 'BANKNIFTY', key: 'NIFTY BANK',        token: 260105  },
-  { label: 'FINNIFTY',  key: 'NIFTY FIN SERVICE', token: 257801  },
-  { label: 'RELIANCE',  key: 'RELIANCE',           token: 738561  },
-  { label: 'HDFCBANK',  key: 'HDFCBANK',           token: 341249  },
-  { label: 'TCS',       key: 'TCS',                token: 2953217 },
+  { label: 'NIFTY 50',  key: 'NIFTY 50',          token: 256265  },
+  { label: 'BANKNIFTY', key: 'NIFTY BANK',         token: 260105  },
+  { label: 'FINNIFTY',  key: 'NIFTY FIN SERVICE',  token: 257801  },
+  { label: 'INDIA VIX', key: 'INDIA VIX',          token: 264969  },
+  { label: 'NIFTYBEES', key: 'NIFTYBEES',          token: 2800641 },
 ]
 const TIMEFRAMES = ['1m', '5m', '1d']
 
@@ -114,20 +115,20 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
     import('lightweight-charts').then(({ createChart, CrosshairMode }) => {
       if (cancelled || !containerRef.current) return
       const chart = createChart(containerRef.current, {
-        layout: { background: { color: '#14161A' }, textColor: '#666666' },
-        grid:   { vertLines: { color: '#20242B' }, horzLines: { color: '#20242B' } },
+        layout: { background: { color: '#1C1F25' }, textColor: '#666666' },
+        grid:   { vertLines: { color: '#23272E' }, horzLines: { color: '#23272E' } },
         crosshair: { mode: CrosshairMode.Normal },
-        rightPriceScale: { borderColor: '#2B303A', scaleMargins: { top: 0.08, bottom: 0.22 } },
-        timeScale: { borderColor: '#2B303A', timeVisible: true },
+        rightPriceScale: { borderColor: '#333841', scaleMargins: { top: 0.08, bottom: 0.22 } },
+        timeScale: { borderColor: '#333841', timeVisible: true },
         width:  containerRef.current.clientWidth,
         height: containerRef.current.clientHeight,
       })
       const series = chart.addCandlestickSeries({
-        upColor: '#2FBF71', downColor: '#E5484D',
-        borderUpColor: '#2FBF71', borderDownColor: '#E5484D',
-        wickUpColor: '#2FBF71', wickDownColor: '#E5484D',
+        upColor: '#2DBD80', downColor: '#F2495C',
+        borderUpColor: '#2DBD80', borderDownColor: '#F2495C',
+        wickUpColor: '#2DBD80', wickDownColor: '#F2495C',
       })
-      const ema9  = chart.addLineSeries({ color: '#4E80B4', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+      const ema9  = chart.addLineSeries({ color: '#FFB02E', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
       const ema21 = chart.addLineSeries({ color: '#4488FF', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
 
       let vol: unknown = null
@@ -197,7 +198,7 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         volRef.current.setData(bars.map((b: any) => ({
           time: b.time, value: b.volume,
-          color: b.close >= b.open ? '#2FBF7118' : '#E5484D18',
+          color: b.close >= b.open ? '#2DBD8018' : '#F2495C18',
         })) as any)
       }
 
@@ -266,11 +267,11 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
 
   // ── Status badge ─────────────────────────────────────────────────────────────
   const badge = (() => {
-    if (loadState === 'loading') return { text: 'UPDATING', color: '#9BA3AD', bg: '#14161A' }
+    if (loadState === 'loading') return { text: 'UPDATING', color: '#AEB3BB', bg: '#1C1F25' }
     if (loadState === 'error')   return { text: 'NO DATA',  color: '#f87171', bg: '#1a0000' }
     if (loadState === 'cached')  return { text: 'CACHED',   color: '#fb923c', bg: '#1f1000' }
     if (marketOpen)              return { text: 'LIVE',     color: '#4ade80', bg: '#001a00' }
-    return { text: 'CLOSED', color: '#5F6772', bg: '#14161A' }
+    return { text: 'CLOSED', color: '#71767F', bg: '#1C1F25' }
   })()
 
   const age = lastUpdated
@@ -285,9 +286,9 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
       <div className="panel-header justify-between">
         <span>
           <span className="accent">▸</span> CHART ·{' '}
-          <span style={{ color: '#E6E9ED' }}>{symbolLabel}</span>
-          <span style={{ fontSize: 9.5, color: '#5F6772', marginLeft: 8 }}>
-            EMA <span style={{ color: '#4E80B4' }}>9</span> / <span style={{ color: '#4488FF' }}>21</span>
+          <span style={{ color: '#ECEEF1' }}>{symbolLabel}</span>
+          <span style={{ fontSize: 9.5, color: '#71767F', marginLeft: 8 }}>
+            EMA <span style={{ color: '#FFB02E' }}>9</span> / <span style={{ color: '#4488FF' }}>21</span>
           </span>
         </span>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -303,7 +304,7 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
           <select
             value={symbolIdx}
             onChange={e => setSymbolIdx(Number(e.target.value))}
-            style={{ background: '#14161A', color: '#ccc', border: '1px solid #2B303A', borderRadius: 3, padding: '0 4px', fontSize: 10.5, outline: 'none' }}
+            style={{ background: '#1C1F25', color: '#ccc', border: '1px solid #333841', borderRadius: 3, padding: '0 4px', fontSize: 10.5, outline: 'none' }}
           >
             {SYMBOLS.map((s, i) => <option key={s.key} value={i}>{s.label}</option>)}
           </select>
@@ -312,8 +313,8 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
               <button key={t} onClick={() => setTf(t)}
                 style={{
                   padding: '1px 8px', borderRadius: 3, fontSize: 10.5, cursor: 'pointer', border: 'none',
-                  background: tf === t ? '#4E80B4' : 'transparent',
-                  color:      tf === t ? '#000' : '#9BA3AD',
+                  background: tf === t ? '#FFB02E' : 'transparent',
+                  color:      tf === t ? '#000' : '#AEB3BB',
                   fontWeight: tf === t ? 700 : 400,
                 }}>
                 {t}
@@ -326,12 +327,12 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
         <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
         {loadState === 'error' && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-            <span style={{ color: '#3C424B', fontSize: 11.5 }}>NO DATA — waiting for OHLCV…</span>
+            <span style={{ color: '#4A4F57', fontSize: 11.5 }}>NO DATA — waiting for OHLCV…</span>
           </div>
         )}
         {loadState === 'loading' && lastUpdated === null && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-            <span style={{ color: '#3C424B', fontSize: 11.5 }}>loading…</span>
+            <span style={{ color: '#4A4F57', fontSize: 11.5 }}>loading…</span>
           </div>
         )}
       </div>

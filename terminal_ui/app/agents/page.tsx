@@ -24,8 +24,8 @@ const CSS = `
 .row-in        { animation: sweep-in .2s ease-out }
 ::-webkit-scrollbar            { width:4px; height:4px }
 ::-webkit-scrollbar-track      { background:#0A0B0D }
-::-webkit-scrollbar-thumb      { background:#3C424B; border-radius:2px }
-::-webkit-scrollbar-thumb:hover{ background:#444B55 }
+::-webkit-scrollbar-thumb      { background:#4A4F57; border-radius:2px }
+::-webkit-scrollbar-thumb:hover{ background:#4A4F57 }
 `
 function StyleTag() { return <style dangerouslySetInnerHTML={{ __html: CSS }} /> }
 
@@ -94,7 +94,7 @@ function Dot({ status, size = 8 }: { status: string; size?: number }) {
 function Chip({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <span style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.07em', textTransform: 'uppercase' }}>{label}</span>
+      <span style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.07em', textTransform: 'uppercase' }}>{label}</span>
       <span style={{ fontSize: 11.5, fontWeight: 600, color: color ?? C.text, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
     </div>
   )
@@ -104,7 +104,7 @@ function Btn({ label, onClick, busy = false, danger = false, disabled = false, f
   { label: string; onClick: () => void; busy?: boolean; danger?: boolean; disabled?: boolean; full?: boolean; variant?: 'default' | 'ghost' | 'primary' }) {
   const bg = danger ? '#1A0808' : variant === 'primary' ? '#0A1A0A' : 'transparent'
   const clr = danger ? C.err : variant === 'primary' ? C.run : C.warn
-  const bdr = danger ? '#E5484D33' : variant === 'primary' ? '#2FBF7133' : '#3C424B'
+  const bdr = danger ? '#F2495C33' : variant === 'primary' ? '#2DBD8033' : '#4A4F57'
   return (
     <button disabled={busy || disabled} onClick={onClick} style={{
       width: full ? '100%' : undefined,
@@ -118,7 +118,7 @@ function Btn({ label, onClick, busy = false, danger = false, disabled = false, f
 function AllocBar({ pct, color = C.amber }: { pct: number; color?: string }) {
   const w = Math.min(100, Math.max(0, pct * 100))
   return (
-    <div style={{ height: 3, background: '#14161A', borderRadius: 2, overflow: 'hidden' }}>
+    <div style={{ height: 3, background: '#1C1F25', borderRadius: 2, overflow: 'hidden' }}>
       <div style={{ height: '100%', width: `${w.toFixed(1)}%`, background: color, borderRadius: 2, transition: 'width .4s ease' }} />
     </div>
   )
@@ -139,7 +139,7 @@ function CommandStrip({ health, regime, portfolio, globalPaused, decisions }:
   const regC = regime?.regime?.includes('bull') ? C.run : regime?.regime?.includes('bear') ? C.err : C.warn
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', background: C.panel, border: `1px solid ${globalPaused ? '#E5484D33' : C.border}`, borderRadius: 5, height: 52, flexShrink: 0, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', alignItems: 'center', background: C.panel, border: `1px solid ${globalPaused ? '#F2495C33' : C.border}`, borderRadius: 5, height: 52, flexShrink: 0, overflow: 'hidden' }}>
       {/* System health */}
       <div style={{ padding: '0 16px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, minWidth: 76, height: '100%', justifyContent: 'center' }}>
         <span style={{ fontSize: 18, fontWeight: 800, color: hColor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{hPct}<span style={{ fontSize: 10.5 }}>%</span></span>
@@ -147,24 +147,24 @@ function CommandStrip({ health, regime, portfolio, globalPaused, decisions }:
           {globalPaused ? 'KILL ACTIVE' : (health?.errored ?? 0) > 0 ? 'DEGRADED' : hPct >= 100 ? 'NOMINAL' : 'PARTIAL'}
         </span>
       </div>
-      <Cell label="MARKET" value={marketOpen ? 'OPEN' : 'CLOSED'} color={marketOpen ? C.run : '#5F6772'} />
+      <Cell label="MARKET" value={marketOpen ? 'OPEN' : 'CLOSED'} color={marketOpen ? C.run : '#71767F'} />
       <Cell label="REGIME" value={(regime?.regime ?? 'unknown').toUpperCase().replace(/_/g, ' ')} color={regC} />
       <Cell label="VIX" value={regime ? regime.india_vix.toFixed(2) : '—'} color={regime && regime.india_vix > 22 ? C.err : regime && regime.india_vix > 18 ? C.warn : C.sub} />
       <Cell label="EQUITY" value={portfolio ? `₹${(portfolio.equity / 1000).toFixed(1)}k` : '—'} />
       <Cell label="DAY P&L" value={portfolio ? `${portfolio.daily_pnl >= 0 ? '+' : ''}₹${portfolio.daily_pnl.toFixed(0)}` : '—'}
         color={portfolio ? portfolio.daily_pnl >= 0 ? C.run : C.err : undefined} />
       <Cell label="DRAWDOWN" value={portfolio ? `${(portfolio.drawdown * 100).toFixed(2)}%` : '—'}
-        color={portfolio && portfolio.drawdown > 0.05 ? C.err : portfolio && portfolio.drawdown > 0.02 ? C.warn : '#5F6772'} />
+        color={portfolio && portfolio.drawdown > 0.05 ? C.err : portfolio && portfolio.drawdown > 0.02 ? C.warn : '#71767F'} />
       {/* Decision pipeline */}
       <div style={{ padding: '0 14px', borderLeft: `1px solid ${C.border}`, height: '100%', display: 'flex', alignItems: 'center', gap: 12 }}>
         <PCell label="SIGNALS" n={decisions.length} />
-        <span style={{ color: '#2B303A', fontSize: 10 }}>→</span>
+        <span style={{ color: '#333841', fontSize: 10 }}>→</span>
         <PCell label="APPROVED" n={approved} color={C.run} />
-        <span style={{ color: '#2B303A', fontSize: 10 }}>→</span>
+        <span style={{ color: '#333841', fontSize: 10 }}>→</span>
         <PCell label="FILLED" n={filled} color={C.teal} />
         {approvalRate !== null && (
-          <div style={{ paddingLeft: 10, borderLeft: '1px solid #20242B' }}>
-            <div style={{ fontSize: 9, color: '#3C424B', letterSpacing: '.07em' }}>GATE PASS</div>
+          <div style={{ paddingLeft: 10, borderLeft: '1px solid #23272E' }}>
+            <div style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.07em' }}>GATE PASS</div>
             <div style={{ fontSize: 13, fontWeight: 700, color: approvalRate > 0.5 ? C.run : C.warn, fontVariantNumeric: 'tabular-nums' }}>
               {(approvalRate * 100).toFixed(0)}<span style={{ fontSize: 9.5 }}>%</span>
             </div>
@@ -174,7 +174,7 @@ function CommandStrip({ health, regime, portfolio, globalPaused, decisions }:
       <Cell label="AGENTS" value={health ? `${health.healthy}/${health.total}` : '—'} color={hColor} />
       {globalPaused && (
         <div style={{ marginLeft: 'auto', padding: '0 16px', flexShrink: 0 }}>
-          <span style={{ fontSize: 10, color: C.err, fontWeight: 800, background: '#1A0808', border: '1px solid #E5484D44', borderRadius: 3, padding: '4px 10px', letterSpacing: '.08em' }}>⬛ KILL SWITCH ACTIVE</span>
+          <span style={{ fontSize: 10, color: C.err, fontWeight: 800, background: '#1A0808', border: '1px solid #F2495C44', borderRadius: 3, padding: '4px 10px', letterSpacing: '.08em' }}>⬛ KILL SWITCH ACTIVE</span>
         </div>
       )}
     </div>
@@ -184,7 +184,7 @@ function CommandStrip({ health, regime, portfolio, globalPaused, decisions }:
 function Cell({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div style={{ padding: '0 12px', borderRight: `1px solid ${C.border}`, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, flexShrink: 0 }}>
-      <span style={{ fontSize: 9, color: '#3C424B', letterSpacing: '.07em' }}>{label}</span>
+      <span style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.07em' }}>{label}</span>
       <span style={{ fontSize: 11.5, fontWeight: 600, color: color ?? C.text, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
     </div>
   )
@@ -194,7 +194,7 @@ function PCell({ label, n, color }: { label: string; n: number; color?: string }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
       <span style={{ fontSize: 13, fontWeight: 700, color: color ?? C.sub, fontVariantNumeric: 'tabular-nums' }}>{n}</span>
-      <span style={{ fontSize: 9, color: '#3C424B', letterSpacing: '.07em' }}>{label}</span>
+      <span style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.07em' }}>{label}</span>
     </div>
   )
 }
@@ -250,27 +250,27 @@ function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh,
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: 196, flexShrink: 0 }}>
       {/* Agent groups */}
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 5, overflow: 'hidden' }}>
-        <div style={{ padding: '7px 12px', borderBottom: `1px solid ${C.border}`, fontSize: 9.5, color: '#3C424B', letterSpacing: '.08em', display: 'flex', justifyContent: 'space-between' }}>
+        <div style={{ padding: '7px 12px', borderBottom: `1px solid ${C.border}`, fontSize: 9.5, color: '#4A4F57', letterSpacing: '.08em', display: 'flex', justifyContent: 'space-between' }}>
           AGENT GROUPS
-          <span style={{ color: runCount > 0 ? C.run : '#3C424B' }}>{runCount} RUN</span>
+          <span style={{ color: runCount > 0 ? C.run : '#4A4F57' }}>{runCount} RUN</span>
         </div>
         {FILTER_LABELS.map(({ key, label }) => (
           <button key={key} onClick={() => onFilter(key)} style={{
             width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '6px 12px', background: filter === key ? '#4E80B40A' : 'transparent',
+            padding: '6px 12px', background: filter === key ? '#FFB02E0A' : 'transparent',
             border: 'none', borderLeft: `2px solid ${filter === key ? C.warn : 'transparent'}`,
             cursor: 'pointer', fontSize: 10, fontWeight: filter === key ? 700 : 500,
-            color: filter === key ? C.warn : '#5F6772', letterSpacing: '.06em', textAlign: 'left',
+            color: filter === key ? C.warn : '#71767F', letterSpacing: '.06em', textAlign: 'left',
           }}>
             {label}
-            <span style={{ fontSize: 9.5, color: '#2B303A' }}>{counts[key] ?? 0}</span>
+            <span style={{ fontSize: 9.5, color: '#333841' }}>{counts[key] ?? 0}</span>
           </button>
         ))}
         <div style={{ padding: '7px 12px', borderTop: `1px solid ${C.border}`, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, background: '#080808' }}>
-          {[{ n: runCount, c: C.run, l: 'RUN' }, { n: pauseCount, c: C.warn, l: 'PAUSE' }, { n: errCount, c: errCount > 0 ? C.err : '#2B303A', l: 'ERROR' }].map(x => (
+          {[{ n: runCount, c: C.run, l: 'RUN' }, { n: pauseCount, c: C.warn, l: 'PAUSE' }, { n: errCount, c: errCount > 0 ? C.err : '#333841', l: 'ERROR' }].map(x => (
             <div key={x.l} style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 12.5, fontWeight: 700, color: x.c, fontVariantNumeric: 'tabular-nums' }}>{x.n}</div>
-              <div style={{ fontSize: 9, color: '#3C424B', letterSpacing: '.06em' }}>{x.l}</div>
+              <div style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.06em' }}>{x.l}</div>
             </div>
           ))}
         </div>
@@ -278,7 +278,7 @@ function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh,
 
       {/* On-demand actions */}
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 5, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-        <div style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.08em', marginBottom: 2 }}>TRIGGER AGENTS</div>
+        <div style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.08em', marginBottom: 2 }}>TRIGGER AGENTS</div>
         {[
           { key: 'engine',       label: '⟳ FORCE ENGINE EVAL',      fn: () => api.agentForceEval('ENGINE') },
           { key: 'orchestrator', label: '🔮 RUN ORCHESTRATOR SCAN',  fn: () => api.orchestratorScan() },
@@ -289,10 +289,10 @@ function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh,
             <button key={key} disabled={isBusy} onClick={() => trigger(key, fn)} style={{
               width: '100%', fontSize: 10, fontWeight: 700, letterSpacing: '.05em',
               padding: '6px 8px', textAlign: 'left',
-              border: `1px solid ${done ? '#2FBF7144' : '#20242B'}`,
+              border: `1px solid ${done ? '#2DBD8044' : '#23272E'}`,
               borderRadius: 3, cursor: isBusy ? 'default' : 'pointer',
               background: done ? '#001A00' : '#080808',
-              color: isBusy ? '#5F6772' : done ? C.run : C.warn,
+              color: isBusy ? '#71767F' : done ? C.run : C.warn,
               opacity: isBusy ? 0.5 : 1, transition: 'all .15s',
             }}>
               {isBusy ? '…' : done ? '✓ ' + label.split(' ').slice(1).join(' ') : label}
@@ -300,9 +300,9 @@ function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh,
           )
         })}
         {/* Per-instrument analysis */}
-        <div style={{ fontSize: 9, color: '#2B303A', letterSpacing: '.07em', marginTop: 3 }}>ANALYSE INSTRUMENT</div>
+        <div style={{ fontSize: 9, color: '#333841', letterSpacing: '.07em', marginTop: 3 }}>ANALYSE INSTRUMENT</div>
         <div style={{ display: 'flex', gap: 5 }}>
-          <select id="analyse-select" style={{ flex: 1, fontSize: 10, background: '#080808', border: `1px solid ${C.border}`, borderRadius: 3, color: '#5F6772', padding: '4px 6px' }}>
+          <select id="analyse-select" style={{ flex: 1, fontSize: 10, background: '#080808', border: `1px solid ${C.border}`, borderRadius: 3, color: '#71767F', padding: '4px 6px' }}>
             {instruments.map(i => <option key={i.token} value={i.symbol}>{i.symbol}</option>)}
           </select>
           <button
@@ -311,7 +311,7 @@ function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh,
               const sel = (document.getElementById('analyse-select') as HTMLSelectElement)?.value
               if (sel) trigger('analyse', () => api.analyse(sel))
             }}
-            style={{ fontSize: 10, fontWeight: 700, padding: '4px 8px', background: '#0A0B0D', border: '1px solid #20242B', borderRadius: 3, color: C.amber, cursor: 'pointer' }}
+            style={{ fontSize: 10, fontWeight: 700, padding: '4px 8px', background: '#0A0B0D', border: '1px solid #23272E', borderRadius: 3, color: C.amber, cursor: 'pointer' }}
           >
             RUN
           </button>
@@ -330,26 +330,26 @@ function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh,
           border: `1px solid #1A3A1A`, borderRadius: 3, cursor: 'pointer',
           background: '#0A1A0A', color: C.run,
         }}>◈ OPEN AI ANALYST</button>
-        <div style={{ fontSize: 9, color: '#2B303A', lineHeight: 1.4 }}>
+        <div style={{ fontSize: 9, color: '#333841', lineHeight: 1.4 }}>
           Natural language queries powered by Ollama open-source LLMs + yfinance data
         </div>
       </div>
 
       {/* Risk command */}
-      <div style={{ background: C.panel, border: `1px solid ${globalPaused ? '#E5484D33' : C.border}`, borderRadius: 5, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.08em', marginBottom: 2 }}>RISK COMMAND</div>
+      <div style={{ background: C.panel, border: `1px solid ${globalPaused ? '#F2495C33' : C.border}`, borderRadius: 5, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.08em', marginBottom: 2 }}>RISK COMMAND</div>
         <Btn label={globalPaused ? '✓ ALL PAUSED' : '⏸ PAUSE ALL'} onClick={() => act(() => api.riskGlobalPause())} busy={busy} disabled={globalPaused} full variant="primary" />
         <Btn label="▶ RESUME ALL" onClick={() => act(() => api.riskGlobalResume())} busy={busy} disabled={!globalPaused} full />
         <Btn label="⬛ KILL ALL — EMERGENCY" onClick={() => { if (confirm('Kill All: pause all agents and close all positions?')) act(() => api.riskKillAll()) }} busy={busy} full danger />
 
         {(riskState?.blocked_tokens ?? []).length > 0 && (
           <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 7, marginTop: 2 }}>
-            <div style={{ fontSize: 9, color: '#3C424B', letterSpacing: '.07em', marginBottom: 5 }}>BLOCKED SYMBOLS</div>
+            <div style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.07em', marginBottom: 5 }}>BLOCKED SYMBOLS</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
               {riskState!.blocked_tokens.map(tok => {
                 const sym = instruments.find(i => i.token === tok)?.symbol ?? String(tok)
                 return (
-                  <span key={tok} style={{ fontSize: 9.5, background: '#1A0808', border: '1px solid #E5484D22', borderRadius: 3, padding: '2px 5px', color: C.err, display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <span key={tok} style={{ fontSize: 9.5, background: '#1A0808', border: '1px solid #F2495C22', borderRadius: 3, padding: '2px 5px', color: C.err, display: 'flex', alignItems: 'center', gap: 3 }}>
                     {sym}
                     <button onClick={() => act(() => api.riskUnblockSymbol(tok))} style={{ background: 'none', border: 'none', color: C.err, cursor: 'pointer', padding: 0, fontSize: 10, lineHeight: 1 }}>✕</button>
                   </span>
@@ -358,7 +358,7 @@ function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh,
             </div>
           </div>
         )}
-        <select value={blockToken} onChange={e => setBlockToken(e.target.value)} style={{ width: '100%', fontSize: 10, background: '#080808', border: `1px solid ${C.border}`, borderRadius: 3, color: '#5F6772', padding: '4px 6px' }}>
+        <select value={blockToken} onChange={e => setBlockToken(e.target.value)} style={{ width: '100%', fontSize: 10, background: '#080808', border: `1px solid ${C.border}`, borderRadius: 3, color: '#71767F', padding: '4px 6px' }}>
           <option value="">— block symbol —</option>
           {instruments.map(i => <option key={i.token} value={String(i.token)}>{i.symbol}</option>)}
         </select>
@@ -394,9 +394,9 @@ function PipelineFunnel({ agents, decisions }: { agents: AgentState[]; decisions
             <div style={{ position: 'absolute', bottom: 0, left: 0, height: `${(s.n / max) * 100}%`, width: '100%', background: `${s.color}18`, transition: 'height .5s ease' }} />
             <div style={{ position: 'relative', display: 'flex', alignItems: 'baseline', gap: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 800, color: s.color, fontVariantNumeric: 'tabular-nums' }}>{fmtN(s.n)}</span>
-              {cr && <span style={{ fontSize: 9.5, color: '#5F6772' }}>{cr}</span>}
+              {cr && <span style={{ fontSize: 9.5, color: '#71767F' }}>{cr}</span>}
             </div>
-            <span style={{ position: 'relative', fontSize: 9, color: '#3C424B', letterSpacing: '.07em' }}>{s.label}</span>
+            <span style={{ position: 'relative', fontSize: 9, color: '#4A4F57', letterSpacing: '.07em' }}>{s.label}</span>
           </div>
         )
       })}
@@ -420,23 +420,23 @@ function OrchestratorPanel({ state, onScan }: { state: OrchestratorState | null;
   const lastScan = state?.last_scan_ts ? new Date(state.last_scan_ts * 1000).toLocaleTimeString('en-IN', { hour12: false }) : null
   const actionable = results.filter(r => r.side !== 'NEUTRAL' && r.side !== 'SKIP')
 
-  const sideC = (side: string) => side === 'BUY' ? C.run : side === 'SELL' ? C.err : side === 'SKIP' ? '#3C424B' : C.sub
+  const sideC = (side: string) => side === 'BUY' ? C.run : side === 'SELL' ? C.err : side === 'SKIP' ? '#4A4F57' : C.sub
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 5, overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderBottom: `1px solid ${C.border}`, background: '#080808', gap: 10 }}>
-        <span style={{ fontSize: 10, color: '#444B55', letterSpacing: '.09em', fontWeight: 700, flex: 1 }}>
+        <span style={{ fontSize: 10, color: '#4A4F57', letterSpacing: '.09em', fontWeight: 700, flex: 1 }}>
           🔮 ORCHESTRATOR · MULTI-LENS SCAN
         </span>
-        {lastScan && <span style={{ fontSize: 9.5, color: '#3C424B', fontVariantNumeric: 'tabular-nums' }}>last scan {lastScan}</span>}
+        {lastScan && <span style={{ fontSize: 9.5, color: '#4A4F57', fontVariantNumeric: 'tabular-nums' }}>last scan {lastScan}</span>}
         {state && <span style={{ fontSize: 9.5, color: C.amber }}>{state.scan_count} scans</span>}
         <span style={{ fontSize: 9.5, color: C.run }}>{actionable.length} actionable</span>
         <Btn label={scanning ? 'SCANNING…' : '⟳ SCAN NOW'} onClick={triggerScan} busy={scanning} variant="primary" />
       </div>
 
       {results.length === 0 ? (
-        <div style={{ padding: '32px 16px', textAlign: 'center', color: '#3C424B', fontSize: 10.5 }}>
+        <div style={{ padding: '32px 16px', textAlign: 'center', color: '#4A4F57', fontSize: 10.5 }}>
           {state === null
             ? 'Orchestrator not started — backend server must be running'
             : 'No scan results yet — click SCAN NOW or wait for auto-scan'}
@@ -446,7 +446,7 @@ function OrchestratorPanel({ state, onScan }: { state: OrchestratorState | null;
           {/* Column headers */}
           <div style={{ display: 'grid', gridTemplateColumns: '80px 56px 70px 60px 56px 56px 56px 56px 1fr', gap: 0, padding: '5px 12px', borderBottom: `1px solid #111`, background: '#0A0B0D', position: 'sticky', top: 0 }}>
             {['SYMBOL','SIDE','VERDICT','CONF','EV','RSI','RET 20D','REGIME','SUMMARY'].map(h => (
-              <span key={h} style={{ fontSize: 9, color: '#3C424B', letterSpacing: '.06em' }}>{h}</span>
+              <span key={h} style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.06em' }}>{h}</span>
             ))}
           </div>
           {results.map(r => (
@@ -455,12 +455,12 @@ function OrchestratorPanel({ state, onScan }: { state: OrchestratorState | null;
                 onClick={() => setExpandedSym(prev => prev === r.symbol ? null : r.symbol)}
                 style={{
                   display: 'grid', gridTemplateColumns: '80px 56px 70px 60px 56px 56px 56px 56px 1fr', gap: 0,
-                  padding: '6px 12px', borderBottom: `1px solid #0F1114`,
-                  background: expandedSym === r.symbol ? '#4E80B405' : r.side === 'BUY' ? '#2FBF7105' : r.side === 'SELL' ? '#E5484D05' : 'transparent',
+                  padding: '6px 12px', borderBottom: `1px solid #121419`,
+                  background: expandedSym === r.symbol ? '#FFB02E05' : r.side === 'BUY' ? '#2DBD8005' : r.side === 'SELL' ? '#F2495C05' : 'transparent',
                   cursor: 'pointer', alignItems: 'center',
                 }}
               >
-                <span style={{ fontSize: 10, fontWeight: 700, color: '#E6E9ED' }}>{r.symbol}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#ECEEF1' }}>{r.symbol}</span>
                 <span style={{ fontSize: 10, fontWeight: 800, color: sideC(r.side) }}>{r.side}</span>
                 <span style={{ fontSize: 9.5, color: sideC(r.side), fontWeight: 600 }}>{r.verdict}</span>
                 <span style={{ fontSize: 10, color: r.confidence >= 0.6 ? C.run : r.confidence >= 0.45 ? C.warn : C.sub, fontVariantNumeric: 'tabular-nums' }}>{(r.confidence * 100).toFixed(0)}%</span>
@@ -468,13 +468,13 @@ function OrchestratorPanel({ state, onScan }: { state: OrchestratorState | null;
                 <span style={{ fontSize: 10, color: r.rsi < 35 ? C.run : r.rsi > 65 ? C.err : C.sub, fontVariantNumeric: 'tabular-nums' }}>{r.rsi.toFixed(1)}</span>
                 <span style={{ fontSize: 10, color: r.ret_20d > 0 ? C.run : C.err, fontVariantNumeric: 'tabular-nums' }}>{r.ret_20d > 0 ? '+' : ''}{(r.ret_20d * 100).toFixed(1)}%</span>
                 <span style={{ fontSize: 9.5, color: C.sub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.regime}</span>
-                <span style={{ fontSize: 9.5, color: '#5F6772', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 8 }}>{r.summary}</span>
+                <span style={{ fontSize: 9.5, color: '#71767F', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 8 }}>{r.summary}</span>
               </div>
               {expandedSym === r.symbol && (
                 <div className="row-in" style={{ padding: '10px 16px', background: '#0A0B0D', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
                   {/* Price levels */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 160 }}>
-                    <div style={{ fontSize: 9, color: '#3C424B', letterSpacing: '.08em', marginBottom: 2 }}>PRICE LEVELS</div>
+                    <div style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.08em', marginBottom: 2 }}>PRICE LEVELS</div>
                     <div style={{ display: 'flex', gap: 12 }}>
                       <Chip label="CMP" value={`₹${r.price.toFixed(2)}`} color={C.text} />
                       <Chip label="SL" value={`₹${r.suggested_sl.toFixed(2)}`} color={C.err} />
@@ -485,14 +485,14 @@ function OrchestratorPanel({ state, onScan }: { state: OrchestratorState | null;
                   {/* Strategy lenses */}
                   {r.lenses && r.lenses.length > 0 && (
                     <div style={{ flex: 1, minWidth: 200 }}>
-                      <div style={{ fontSize: 9, color: '#3C424B', letterSpacing: '.08em', marginBottom: 6 }}>STRATEGY LENSES</div>
+                      <div style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.08em', marginBottom: 6 }}>STRATEGY LENSES</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {r.lenses.map((l, i) => (
                           <div key={i} style={{ display: 'grid', gridTemplateColumns: '32px 80px 44px 1fr', gap: 6, alignItems: 'center' }}>
                             <span style={{ fontSize: 9.5, color: C.warn, fontWeight: 700 }}>{l.strategy}</span>
                             <span style={{ fontSize: 9.5, color: sideC(l.side), fontWeight: 600 }}>{l.side}</span>
                             <span style={{ fontSize: 9.5, color: l.confidence >= 0.55 ? C.run : C.sub, fontVariantNumeric: 'tabular-nums' }}>{(l.confidence * 100).toFixed(0)}%</span>
-                            <span style={{ fontSize: 9.5, color: '#5F6772', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.detail}</span>
+                            <span style={{ fontSize: 9.5, color: '#71767F', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.detail}</span>
                           </div>
                         ))}
                       </div>
@@ -522,20 +522,20 @@ function SystemAgentCard({ agent, scorecard, onRefresh, selected, onClick }:
   return (
     <div onClick={onClick} style={{
       background: agent.status === 'error' ? '#0E0808' : isPaused ? '#0E0A06' : '#0E0E0E',
-      border: `1px solid ${agent.status === 'error' ? '#E5484D22' : isPaused ? '#4E80B422' : selected ? '#4E80B418' : C.border}`,
+      border: `1px solid ${agent.status === 'error' ? '#F2495C22' : isPaused ? '#FFB02E22' : selected ? '#FFB02E18' : C.border}`,
       borderRadius: 5, padding: '11px 13px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 9,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Dot status={agent.status} size={8} />
-        <span style={{ fontSize: 15, color: '#2B303A' }}>{AGENT_ICON[agent.agent_id] ?? '◯'}</span>
+        <span style={{ fontSize: 15, color: '#333841' }}>{AGENT_ICON[agent.agent_id] ?? '◯'}</span>
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 800, color: '#E6E9ED', letterSpacing: '.03em' }}>{agent.agent_id}</span>
-            <span style={{ fontSize: 9, color: C.warn, background: '#4E80B411', border: '1px solid #4E80B422', borderRadius: 2, padding: '0 5px', letterSpacing: '.05em' }}>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: '#ECEEF1', letterSpacing: '.03em' }}>{agent.agent_id}</span>
+            <span style={{ fontSize: 9, color: C.warn, background: '#FFB02E11', border: '1px solid #FFB02E22', borderRadius: 2, padding: '0 5px', letterSpacing: '.05em' }}>
               {agent.agent_type.toUpperCase()}
             </span>
           </div>
-          <div style={{ fontSize: 9.5, color: '#444B55', marginTop: 1 }}>{AGENT_DESC[agent.agent_id] ?? agent.description}</div>
+          <div style={{ fontSize: 9.5, color: '#4A4F57', marginTop: 1 }}>{AGENT_DESC[agent.agent_id] ?? agent.description}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
           <span style={{ fontSize: 9.5, color: STATUS_C[agent.status], fontWeight: 700, letterSpacing: '.06em' }}>{agent.status.toUpperCase()}</span>
@@ -557,7 +557,7 @@ function SystemAgentCard({ agent, scorecard, onRefresh, selected, onClick }:
         </div>
       )}
       {agent.status === 'error' && agent.last_error && (
-        <div style={{ fontSize: 9.5, color: C.err, background: '#1A0808', border: '1px solid #E5484D22', borderRadius: 3, padding: '5px 8px', wordBreak: 'break-all' }}>⚠ {agent.last_error}</div>
+        <div style={{ fontSize: 9.5, color: C.err, background: '#1A0808', border: '1px solid #F2495C22', borderRadius: 3, padding: '5px 8px', wordBreak: 'break-all' }}>⚠ {agent.last_error}</div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={e => e.stopPropagation()}>
         <Btn label={isPaused ? '▶ RESUME' : '⏸ PAUSE'} busy={busy}
@@ -566,7 +566,7 @@ function SystemAgentCard({ agent, scorecard, onRefresh, selected, onClick }:
           <Btn label="⟳ FORCE EVAL" busy={busy} onClick={() => act(() => api.agentForceEval(agent.agent_id))} variant="primary" />
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: 9.5, color: '#3C424B' }}>conf≥</span>
+          <span style={{ fontSize: 9.5, color: '#4A4F57' }}>conf≥</span>
           <input type="number" min="0" max="1" step="0.01" value={thresh} onChange={e => setThresh(e.target.value)}
             style={{ width: 44, fontSize: 10, background: '#080808', border: `1px solid ${C.border}`, borderRadius: 3, color: '#777', padding: '2px 4px' }} />
           <Btn label="SET" busy={busy} onClick={() => { const v = parseFloat(thresh); if (!isNaN(v)) act(() => api.agentSetThreshold(agent.agent_id, v)) }} />
@@ -585,16 +585,16 @@ function StrategyCard({ agent, scorecard, learner, alloc, onRefresh, selected, o
   return (
     <div onClick={onClick} style={{
       background: agent.status === 'error' ? '#0E0808' : isPaused ? '#0E0A06' : C.card,
-      border: `1px solid ${agent.status === 'error' ? '#E5484D22' : isPaused ? '#4E80B422' : selected ? '#4E80B422' : C.border}`,
+      border: `1px solid ${agent.status === 'error' ? '#F2495C22' : isPaused ? '#FFB02E22' : selected ? '#FFB02E22' : C.border}`,
       borderRadius: 4, padding: '10px 11px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 7,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <Dot status={agent.status} size={6} />
-        <span style={{ fontSize: 10.5, color: '#2B303A' }}>{AGENT_ICON[agent.agent_id] ?? '◯'}</span>
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: '#E6E9ED', flex: 1 }}>{agent.agent_id}</span>
+        <span style={{ fontSize: 10.5, color: '#333841' }}>{AGENT_ICON[agent.agent_id] ?? '◯'}</span>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: '#ECEEF1', flex: 1 }}>{agent.agent_id}</span>
         <span style={{ fontSize: 9, color: ageC(agent.heartbeat_age_s) }}>{fmtAge(agent.heartbeat_age_s)}</span>
       </div>
-      <div style={{ fontSize: 9.5, color: '#444B55', marginTop: -3 }}>{AGENT_DESC[agent.agent_id] ?? agent.description}</div>
+      <div style={{ fontSize: 9.5, color: '#4A4F57', marginTop: -3 }}>{AGENT_DESC[agent.agent_id] ?? agent.description}</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
         <Chip label="EVALS"  value={fmtN(agent.eval_count)} />
         <Chip label="SIGS"   value={fmtN(agent.signal_count)} />
@@ -609,8 +609,8 @@ function StrategyCard({ agent, scorecard, learner, alloc, onRefresh, selected, o
       {/* Real DSA allocation */}
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-          <span style={{ fontSize: 9, color: '#3C424B', letterSpacing: '.07em' }}>DSA ALLOC</span>
-          <span style={{ fontSize: 9, color: alloc > 0 ? C.amber : '#3C424B' }}>{alloc > 0 ? `${(alloc * 100).toFixed(1)}%` : 'no data'}</span>
+          <span style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.07em' }}>DSA ALLOC</span>
+          <span style={{ fontSize: 9, color: alloc > 0 ? C.amber : '#4A4F57' }}>{alloc > 0 ? `${(alloc * 100).toFixed(1)}%` : 'no data'}</span>
         </div>
         <AllocBar pct={alloc} />
       </div>
@@ -626,7 +626,7 @@ function StrategyCard({ agent, scorecard, learner, alloc, onRefresh, selected, o
       <div style={{ display: 'flex', gap: 5 }} onClick={e => e.stopPropagation()}>
         <Btn label={isPaused ? '▶' : '⏸'} busy={busy}
           onClick={() => act(isPaused ? () => api.agentResume(agent.agent_id) : () => api.agentPause(agent.agent_id))} />
-        <span style={{ fontSize: 9.5, color: '#3C424B', marginLeft: 'auto', alignSelf: 'center' }}>{fmtN(agent.signal_count)} sigs</span>
+        <span style={{ fontSize: 9.5, color: '#4A4F57', marginLeft: 'auto', alignSelf: 'center' }}>{fmtN(agent.signal_count)} sigs</span>
       </div>
     </div>
   )
@@ -656,14 +656,14 @@ function ScoreboardView({ scorecards, learnerParams, agents, allocations }:
         <Chip label="STRATEGIES"    value={String(sorted.length)} />
       </div>
       {/* Header */}
-      <div style={{ display: 'grid', gridTemplateColumns: SCOLS, padding: '5px 12px', background: '#080808', borderBottom: `1px solid #20242B`, flexShrink: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: SCOLS, padding: '5px 12px', background: '#080808', borderBottom: `1px solid #23272E`, flexShrink: 0 }}>
         {['STRATEGY','DESCRIPTION','TRADES','BAY WR','WIN RT','EXPECT','P&L','AVG WIN','AVG LOSS','ALLOC'].map(h => (
-          <span key={h} style={{ fontSize: 9, color: '#3C424B', letterSpacing: '.07em' }}>{h}</span>
+          <span key={h} style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.07em' }}>{h}</span>
         ))}
       </div>
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {sorted.length === 0
-          ? <div style={{ textAlign: 'center', color: '#2B303A', fontSize: 10.5, padding: 40 }}>No strategy data yet — accumulates during live session</div>
+          ? <div style={{ textAlign: 'center', color: '#333841', fontSize: 10.5, padding: 40 }}>No strategy data yet — accumulates during live session</div>
           : sorted.map(sc => {
             const agent = agents.find(a => a.agent_id === sc.strategy_id)
             const alloc = allocations[sc.strategy_id] ?? 0
@@ -673,7 +673,7 @@ function ScoreboardView({ scorecards, learnerParams, agents, allocations }:
                   <Dot status={agent?.status ?? 'idle'} size={5} />
                   <span style={{ fontSize: 10, fontWeight: 700, color: '#D8D8D8' }}>{sc.strategy_id}</span>
                 </div>
-                <span style={{ fontSize: 9.5, color: '#444B55' }}>{AGENT_DESC[sc.strategy_id] ?? ''}</span>
+                <span style={{ fontSize: 9.5, color: '#4A4F57' }}>{AGENT_DESC[sc.strategy_id] ?? ''}</span>
                 <span style={{ fontSize: 10.5, color: C.text, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{sc.total_trades}</span>
                 <span style={{ fontSize: 10.5, color: sc.bayesian_wr > 0.5 ? C.run : C.warn, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtPct(sc.bayesian_wr)}</span>
                 <span style={{ fontSize: 10.5, color: sc.win_rate > 0.5 ? C.run : C.warn, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtPct(sc.win_rate)}</span>
@@ -682,7 +682,7 @@ function ScoreboardView({ scorecards, learnerParams, agents, allocations }:
                 <span style={{ fontSize: 10.5, color: C.run, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{`₹${sc.avg_win.toFixed(0)}`}</span>
                 <span style={{ fontSize: 10.5, color: C.err, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{`₹${Math.abs(sc.avg_loss).toFixed(0)}`}</span>
                 <div style={{ paddingLeft: 4 }}>
-                  <div style={{ fontSize: 9.5, color: alloc > 0 ? C.amber : '#3C424B', marginBottom: 2 }}>{alloc > 0 ? `${(alloc * 100).toFixed(1)}%` : '—'}</div>
+                  <div style={{ fontSize: 9.5, color: alloc > 0 ? C.amber : '#4A4F57', marginBottom: 2 }}>{alloc > 0 ? `${(alloc * 100).toFixed(1)}%` : '—'}</div>
                   <AllocBar pct={alloc} />
                 </div>
               </div>
@@ -693,13 +693,13 @@ function ScoreboardView({ scorecards, learnerParams, agents, allocations }:
       {/* Learner params */}
       {learnerParams.length > 0 && (
         <div style={{ borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
-          <div style={{ padding: '7px 12px', fontSize: 9.5, color: '#3C424B', letterSpacing: '.08em', background: '#080808', borderBottom: `1px solid ${C.border}` }}>ADAPTIVE LEARNER PARAMS</div>
+          <div style={{ padding: '7px 12px', fontSize: 9.5, color: '#4A4F57', letterSpacing: '.08em', background: '#080808', borderBottom: `1px solid ${C.border}` }}>ADAPTIVE LEARNER PARAMS</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(340px,1fr))', gap: 1, background: C.border, maxHeight: 180, overflowY: 'auto' }}>
             {learnerParams.map(lp => (
               <div key={lp.strategy_id} style={{ background: '#080808', padding: '8px 12px', display: 'grid', gridTemplateColumns: '72px 1fr', gap: 8 }}>
                 <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#E6E9ED' }}>{lp.strategy_id}</div>
-                  <div style={{ fontSize: 9, color: '#3C424B' }}>n={lp.n_trades}</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#ECEEF1' }}>{lp.strategy_id}</div>
+                  <div style={{ fontSize: 9, color: '#4A4F57' }}>n={lp.n_trades}</div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 8 }}>
                   <Chip label="CONF≥"  value={lp.min_confidence.toFixed(2)} color={C.warn} />
@@ -727,26 +727,26 @@ function DecisionRow({ d, onClick, selected }: { d: DecisionRecord; onClick: () 
   return (
     <div className="row-in" onClick={onClick} style={{
       display: 'grid', gridTemplateColumns: DCOLS, alignItems: 'center', gap: 8,
-      padding: '6px 12px', background: selected ? '#4E80B408' : 'transparent',
+      padding: '6px 12px', background: selected ? '#FFB02E08' : 'transparent',
       borderLeft: `2px solid ${selected ? C.warn : 'transparent'}`,
       borderBottom: `1px solid ${C.border}`, cursor: 'pointer',
     }}>
-      <span style={{ fontSize: 9.5, color: '#444B55', fontVariantNumeric: 'tabular-nums' }}>{fmtTs(d.decided_at)}</span>
+      <span style={{ fontSize: 9.5, color: '#4A4F57', fontVariantNumeric: 'tabular-nums' }}>{fmtTs(d.decided_at)}</span>
       <span style={{ fontSize: 10.5, color: approved ? C.run : C.err, fontWeight: 800 }}>{approved ? '✓' : '✗'}</span>
       <span style={{ fontSize: 10, color: C.warn, fontWeight: 600 }}>{d.strategy_id ?? '—'}</span>
-      <span style={{ fontSize: 10, color: '#9BA3AD' }}>{String(d.instrument_token)}</span>
-      <span style={{ fontSize: 9.5, color: '#5F6772', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: 10, color: '#AEB3BB' }}>{String(d.instrument_token)}</span>
+      <span style={{ fontSize: 9.5, color: '#71767F', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {approved
           ? `${d.side ?? '?'} conf:${(d.confidence ?? 0).toFixed(2)} [${d.regime ?? '?'}] ${d.trigger_rule ?? ''}`
           : d.reason ?? 'rejected'}
       </span>
-      <span style={{ fontSize: 9.5, color: d.fill_price ? C.teal : '#3C424B', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+      <span style={{ fontSize: 9.5, color: d.fill_price ? C.teal : '#4A4F57', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
         {d.fill_price ? `₹${d.fill_price.toFixed(1)}` : '—'}
       </span>
-      <span style={{ fontSize: 9.5, color: d.trade_pnl != null ? (d.trade_pnl >= 0 ? C.run : C.err) : '#3C424B', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+      <span style={{ fontSize: 9.5, color: d.trade_pnl != null ? (d.trade_pnl >= 0 ? C.run : C.err) : '#4A4F57', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
         {d.trade_pnl != null ? `${d.trade_pnl >= 0 ? '+' : ''}₹${d.trade_pnl.toFixed(0)}` : '—'}
       </span>
-      <span style={{ fontSize: 9, color: d.trade_id ? C.teal : approved ? C.run : '#3C424B', letterSpacing: '.04em' }}>
+      <span style={{ fontSize: 9, color: d.trade_id ? C.teal : approved ? C.run : '#4A4F57', letterSpacing: '.04em' }}>
         {d.trade_id ? 'FILLED' : approved ? 'PENDING' : 'REJECTED'}
       </span>
     </div>
@@ -767,13 +767,13 @@ function PipelineTab({ agents, decisions, selectedId, onSelect }:
         <PipelineFunnel agents={agents} decisions={decisions} />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderBottom: `1px solid ${C.border}`, background: '#080808', flexShrink: 0 }}>
-        <span style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.07em' }}>STRATEGY</span>
+        <span style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.07em' }}>STRATEGY</span>
         {['ALL', ...strategies].map(s => (
           <button key={s} onClick={() => setStratFilter(s)} style={{
             fontSize: 9.5, padding: '2px 7px', borderRadius: 3,
-            border: `1px solid ${stratFilter === s ? C.warn : '#20242B'}`,
-            background: stratFilter === s ? '#4E80B411' : 'transparent',
-            color: stratFilter === s ? C.warn : '#5F6772', cursor: 'pointer', fontWeight: stratFilter === s ? 700 : 400,
+            border: `1px solid ${stratFilter === s ? C.warn : '#23272E'}`,
+            background: stratFilter === s ? '#FFB02E11' : 'transparent',
+            color: stratFilter === s ? C.warn : '#71767F', cursor: 'pointer', fontWeight: stratFilter === s ? 700 : 400,
           }}>{s}</button>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 14 }}>
@@ -782,14 +782,14 @@ function PipelineTab({ agents, decisions, selectedId, onSelect }:
           {filtered.length > 0 && <span style={{ fontSize: 9.5, color: C.teal }}>{(approved.length / filtered.length * 100).toFixed(0)}% pass</span>}
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: DCOLS, gap: 8, padding: '5px 12px', background: '#080808', borderBottom: `1px solid #20242B`, flexShrink: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: DCOLS, gap: 8, padding: '5px 12px', background: '#080808', borderBottom: `1px solid #23272E`, flexShrink: 0 }}>
         {['TIME','','STRATEGY','SYMBOL','DETAILS','FILL','P&L','STATUS'].map(h => (
-          <span key={h} style={{ fontSize: 9, color: '#3C424B', letterSpacing: '.07em' }}>{h}</span>
+          <span key={h} style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.07em' }}>{h}</span>
         ))}
       </div>
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {filtered.length === 0
-          ? <div style={{ textAlign: 'center', color: '#3C424B', fontSize: 10.5, padding: 40 }}>No decisions yet — strategy engine must generate signals first</div>
+          ? <div style={{ textAlign: 'center', color: '#4A4F57', fontSize: 10.5, padding: 40 }}>No decisions yet — strategy engine must generate signals first</div>
           : filtered.map(d => (
             <DecisionRow key={d.decision_id} d={d}
               onClick={() => onSelect(d.signal_id)}
@@ -806,7 +806,7 @@ function PipelineTab({ agents, decisions, selectedId, onSelect }:
 const TOPIC_COLOR: Record<string, string> = {
   'trade.opened': C.run, 'trade.closed': C.sub, 'order.approved': '#4CAF50',
   'order.rejected': C.err, 'strategy.signal': C.amber, 'kill_switch': C.err,
-  'pnl': '#3C424B', 'regime': '#3C424B', 'ticks': '#20242B', 'scorecard': '#444B55',
+  'pnl': '#4A4F57', 'regime': '#4A4F57', 'ticks': '#23272E', 'scorecard': '#4A4F57',
 }
 
 function BroadcastTab({ events }: { events: EventRecord[] }) {
@@ -825,34 +825,34 @@ function BroadcastTab({ events }: { events: EventRecord[] }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderBottom: `1px solid ${C.border}`, background: '#080808', flexShrink: 0 }}>
         <button onClick={() => setPaused(p => !p)} style={{
           fontSize: 9.5, padding: '2px 10px', borderRadius: 3,
-          border: `1px solid ${paused ? C.warn : '#20242B'}`,
-          background: paused ? '#4E80B411' : 'transparent',
-          color: paused ? C.warn : '#5F6772', cursor: 'pointer', fontWeight: 700,
+          border: `1px solid ${paused ? C.warn : '#23272E'}`,
+          background: paused ? '#FFB02E11' : 'transparent',
+          color: paused ? C.warn : '#71767F', cursor: 'pointer', fontWeight: 700,
         }}>{paused ? '▶ RESUME' : '⏸ PAUSE'}</button>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="search…"
-          style={{ flex: 1, maxWidth: 180, fontSize: 10, background: '#0A0B0D', border: `1px solid ${C.border}`, borderRadius: 3, color: '#9BA3AD', padding: '3px 8px', outline: 'none' }} />
+          style={{ flex: 1, maxWidth: 180, fontSize: 10, background: '#0A0B0D', border: `1px solid ${C.border}`, borderRadius: 3, color: '#AEB3BB', padding: '3px 8px', outline: 'none' }} />
         {['ALL', ...topics].slice(0, 9).map(t => (
           <button key={t} onClick={() => setTopicFilter(t)} style={{
             fontSize: 9, padding: '2px 6px', borderRadius: 3,
-            border: `1px solid ${topicFilter === t ? C.amber : '#20242B'}`,
-            background: topicFilter === t ? '#4E80B40A' : 'transparent',
-            color: topicFilter === t ? C.amber : '#3C424B', cursor: 'pointer', letterSpacing: '.04em',
+            border: `1px solid ${topicFilter === t ? C.amber : '#23272E'}`,
+            background: topicFilter === t ? '#FFB02E0A' : 'transparent',
+            color: topicFilter === t ? C.amber : '#4A4F57', cursor: 'pointer', letterSpacing: '.04em',
           }}>{t.toUpperCase()}</button>
         ))}
-        <span style={{ marginLeft: 'auto', fontSize: 9.5, color: '#3C424B' }}>{filtered.length}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 9.5, color: '#4A4F57' }}>{filtered.length}</span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '56px 176px 1fr 52px', gap: 8, padding: '5px 12px', background: '#080808', borderBottom: `1px solid #20242B`, flexShrink: 0 }}>
-        {['TIME','TOPIC','SUMMARY','SEV'].map(h => <span key={h} style={{ fontSize: 9, color: '#3C424B', letterSpacing: '.07em' }}>{h}</span>)}
+      <div style={{ display: 'grid', gridTemplateColumns: '56px 176px 1fr 52px', gap: 8, padding: '5px 12px', background: '#080808', borderBottom: `1px solid #23272E`, flexShrink: 0 }}>
+        {['TIME','TOPIC','SUMMARY','SEV'].map(h => <span key={h} style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.07em' }}>{h}</span>)}
       </div>
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {filtered.length === 0
-          ? <div style={{ textAlign: 'center', color: '#3C424B', fontSize: 10.5, padding: 40 }}>No events recorded yet</div>
+          ? <div style={{ textAlign: 'center', color: '#4A4F57', fontSize: 10.5, padding: 40 }}>No events recorded yet</div>
           : filtered.map((e, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '56px 176px 1fr 52px', gap: 8, padding: '5px 12px', borderBottom: `1px solid #0F1114`, alignItems: 'baseline' }}>
-              <span style={{ fontSize: 9.5, color: '#3C424B', fontVariantNumeric: 'tabular-nums' }}>{fmtTs(e.ts)}</span>
-              <span style={{ fontSize: 9.5, color: TOPIC_COLOR[e.topic] ?? TOPIC_COLOR[e.topic.split('.')[0]] ?? '#5F6772', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.topic}</span>
-              <span style={{ fontSize: 9.5, color: '#5F6772', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.summary}</span>
-              <span style={{ fontSize: 9, color: e.severity === 'critical' ? C.err : e.severity === 'warn' ? C.warn : e.severity === 'success' ? C.run : '#3C424B', letterSpacing: '.05em' }}>{e.severity?.toUpperCase()}</span>
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '56px 176px 1fr 52px', gap: 8, padding: '5px 12px', borderBottom: `1px solid #121419`, alignItems: 'baseline' }}>
+              <span style={{ fontSize: 9.5, color: '#4A4F57', fontVariantNumeric: 'tabular-nums' }}>{fmtTs(e.ts)}</span>
+              <span style={{ fontSize: 9.5, color: TOPIC_COLOR[e.topic] ?? TOPIC_COLOR[e.topic.split('.')[0]] ?? '#71767F', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.topic}</span>
+              <span style={{ fontSize: 9.5, color: '#71767F', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.summary}</span>
+              <span style={{ fontSize: 9, color: e.severity === 'critical' ? C.err : e.severity === 'warn' ? C.warn : e.severity === 'success' ? C.run : '#4A4F57', letterSpacing: '.05em' }}>{e.severity?.toUpperCase()}</span>
             </div>
           ))}
       </div>
@@ -866,7 +866,7 @@ function BroadcastTab({ events }: { events: EventRecord[] }) {
 function KV({ k, v, color }: { k: string; v: React.ReactNode; color?: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '1px 0' }}>
-      <span style={{ color: '#3C424B', flexShrink: 0, fontSize: 9.5 }}>{k}</span>
+      <span style={{ color: '#4A4F57', flexShrink: 0, fontSize: 9.5 }}>{k}</span>
       <span style={{ color: color ?? C.text, textAlign: 'right', wordBreak: 'break-all', fontSize: 10 }}>{v}</span>
     </div>
   )
@@ -875,7 +875,7 @@ function KV({ k, v, color }: { k: string; v: React.ReactNode; color?: string }) 
 function InspectorSection({ label, color, children }: { label: string; color?: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 9.5, color: color ?? '#3C424B', letterSpacing: '.08em', fontWeight: 700, marginBottom: 5, borderBottom: `1px solid ${C.border}`, paddingBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 9.5, color: color ?? '#4A4F57', letterSpacing: '.08em', fontWeight: 700, marginBottom: 5, borderBottom: `1px solid ${C.border}`, paddingBottom: 3 }}>{label}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{children}</div>
     </div>
   )
@@ -889,7 +889,7 @@ function SignalLineageView({ lineage }: { lineage: SignalLineage }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0, fontSize: 10 }}>
-      <div style={{ fontWeight: 800, color: '#E6E9ED', fontSize: 10.5, letterSpacing: '.03em', marginBottom: 12 }}>SIGNAL LINEAGE</div>
+      <div style={{ fontWeight: 800, color: '#ECEEF1', fontSize: 10.5, letterSpacing: '.03em', marginBottom: 12 }}>SIGNAL LINEAGE</div>
       <InspectorSection label="MARKET CONTEXT">
         <KV k="Symbol" v={String(lineage.instrument_token)} />
         <KV k="Side" v={lineage.side ?? '—'} color={lineage.side === 'BUY' ? C.run : C.err} />
@@ -914,7 +914,7 @@ function SignalLineageView({ lineage }: { lineage: SignalLineage }) {
         {checkEntries.map(([k, v]) => (
           <div key={k} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
             <span style={{ fontSize: 10, color: (v as boolean) ? C.run : C.err, minWidth: 10, fontWeight: 700 }}>{(v as boolean) ? '✓' : '✗'}</span>
-            <span style={{ fontSize: 9.5, color: (v as boolean) ? '#444B55' : '#6E7682' }}>{k}</span>
+            <span style={{ fontSize: 9.5, color: (v as boolean) ? '#4A4F57' : '#7E838C' }}>{k}</span>
           </div>
         ))}
         {lineage.risk_reason && <div style={{ fontSize: 9.5, color: C.err, marginTop: 4, padding: '4px 6px', background: '#1A0808', borderRadius: 3 }}>{lineage.risk_reason}</div>}
@@ -946,8 +946,8 @@ function AgentInspector({ agent, onRefresh }: { agent: AgentState; onRefresh: ()
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Dot status={agent.status} size={8} />
         <div>
-          <div style={{ fontSize: 11.5, fontWeight: 800, color: '#E6E9ED' }}>{agent.agent_id}</div>
-          <div style={{ fontSize: 9.5, color: '#444B55' }}>{AGENT_DESC[agent.agent_id] ?? agent.description}</div>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: '#ECEEF1' }}>{agent.agent_id}</div>
+          <div style={{ fontSize: 9.5, color: '#4A4F57' }}>{AGENT_DESC[agent.agent_id] ?? agent.description}</div>
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, background: '#080808', borderRadius: 4, padding: '8px' }}>
@@ -968,9 +968,9 @@ function AgentInspector({ agent, onRefresh }: { agent: AgentState; onRefresh: ()
           <Btn label="⟳ FORCE EVALUATE NOW" busy={busy} full variant="primary" onClick={() => act(() => api.agentForceEval(agent.agent_id))} />
         )}
         <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginTop: 2 }}>
-          <span style={{ fontSize: 9.5, color: '#3C424B', flexShrink: 0 }}>conf ≥</span>
+          <span style={{ fontSize: 9.5, color: '#4A4F57', flexShrink: 0 }}>conf ≥</span>
           <input type="number" min="0" max="1" step="0.01" value={thresh} onChange={e => setThresh(e.target.value)}
-            style={{ flex: 1, fontSize: 10, background: '#080808', border: `1px solid ${C.border}`, borderRadius: 3, color: '#9BA3AD', padding: '3px 5px' }} />
+            style={{ flex: 1, fontSize: 10, background: '#080808', border: `1px solid ${C.border}`, borderRadius: 3, color: '#AEB3BB', padding: '3px 5px' }} />
           <Btn label="SET" busy={busy} onClick={() => { const v = parseFloat(thresh); if (!isNaN(v)) act(() => api.agentSetThreshold(agent.agent_id, v)) }} />
         </div>
       </div>
@@ -982,15 +982,15 @@ function AuditLog({ entries }: { entries: AuditEntry[] }) {
   const AUD_C: Record<string, string> = { GLOBAL_PAUSE: C.err, GLOBAL_RESUME: C.run, BLOCK_SYMBOL: C.warn, UNBLOCK_SYMBOL: '#4CAF50', KILL_ALL: C.err }
   return (
     <div>
-      <div style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.08em', marginBottom: 6, fontWeight: 700 }}>KILL SWITCH AUDIT</div>
+      <div style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.08em', marginBottom: 6, fontWeight: 700 }}>KILL SWITCH AUDIT</div>
       {entries.length === 0
-        ? <span style={{ fontSize: 9.5, color: '#2B303A' }}>No audit events</span>
+        ? <span style={{ fontSize: 9.5, color: '#333841' }}>No audit events</span>
         : entries.map((e, i) => (
-          <div key={i} style={{ fontSize: 9.5, display: 'grid', gridTemplateColumns: '52px 1fr', gap: 5, borderBottom: `1px solid #0F1114`, padding: '3px 0' }}>
-            <span style={{ color: '#3C424B', fontVariantNumeric: 'tabular-nums' }}>{fmtTs(e.ts)}</span>
+          <div key={i} style={{ fontSize: 9.5, display: 'grid', gridTemplateColumns: '52px 1fr', gap: 5, borderBottom: `1px solid #121419`, padding: '3px 0' }}>
+            <span style={{ color: '#4A4F57', fontVariantNumeric: 'tabular-nums' }}>{fmtTs(e.ts)}</span>
             <div>
-              <span style={{ color: AUD_C[e.action] ?? '#5F6772', fontWeight: 700, marginRight: 5 }}>{e.action}</span>
-              <span style={{ color: '#3C424B' }}>{e.detail}</span>
+              <span style={{ color: AUD_C[e.action] ?? '#71767F', fontWeight: 700, marginRight: 5 }}>{e.action}</span>
+              <span style={{ color: '#4A4F57' }}>{e.detail}</span>
             </div>
           </div>
         ))}
@@ -1037,21 +1037,21 @@ function ToolCallAccordion({ calls }: { calls: AgentQueryResponse['tool_calls'] 
   const [open, setOpen] = useState(false)
   if (!calls || calls.length === 0) return null
   return (
-    <div style={{ marginTop: 8, border: `1px solid #20242B`, borderRadius: 3, overflow: 'hidden' }}>
+    <div style={{ marginTop: 8, border: `1px solid #23272E`, borderRadius: 3, overflow: 'hidden' }}>
       <button onClick={() => setOpen(o => !o)} style={{
         width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px',
         background: '#080808', border: 'none', cursor: 'pointer', textAlign: 'left',
       }}>
         <span style={{ fontSize: 9.5, color: C.teal }}>⚙ {calls.length} tool call{calls.length > 1 ? 's' : ''}</span>
-        <span style={{ fontSize: 9.5, color: '#3C424B', marginLeft: 4 }}>{calls.map(c => c.tool).join(', ')}</span>
-        <span style={{ fontSize: 10, color: '#3C424B', marginLeft: 'auto' }}>{open ? '▲' : '▼'}</span>
+        <span style={{ fontSize: 9.5, color: '#4A4F57', marginLeft: 4 }}>{calls.map(c => c.tool).join(', ')}</span>
+        <span style={{ fontSize: 10, color: '#4A4F57', marginLeft: 'auto' }}>{open ? '▲' : '▼'}</span>
       </button>
       {open && (
         <div style={{ background: '#050505', borderTop: '1px solid #111' }}>
           {calls.map((tc, i) => (
-            <div key={i} style={{ borderBottom: '1px solid #0F1114', padding: '7px 10px' }}>
+            <div key={i} style={{ borderBottom: '1px solid #121419', padding: '7px 10px' }}>
               <div style={{ fontSize: 9.5, color: C.amber, fontWeight: 700, marginBottom: 3 }}>{tc.tool}({JSON.stringify(tc.args)})</div>
-              <pre style={{ fontSize: 9, color: '#444B55', overflow: 'auto', maxHeight: 120, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              <pre style={{ fontSize: 9, color: '#4A4F57', overflow: 'auto', maxHeight: 120, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                 {JSON.stringify(tc.result, null, 2)}
               </pre>
             </div>
@@ -1119,17 +1119,17 @@ function FinancialAgentPanel() {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ padding: '8px 14px', borderBottom: `1px solid ${C.border}`, background: '#080808', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 10, color: '#444B55', fontWeight: 700, letterSpacing: '.08em', flex: 1 }}>
+        <span style={{ fontSize: 10, color: '#4A4F57', fontWeight: 700, letterSpacing: '.08em', flex: 1 }}>
           ◈ FINANCIAL AGENT — NSE/BSE AI ANALYST
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: ollamaOnline === null ? C.warn : ollamaOnline ? C.run : C.err, display: 'inline-block' }} />
-          <span style={{ fontSize: 9.5, color: ollamaOnline === null ? C.warn : ollamaOnline ? C.run : '#6E7682' }}>
+          <span style={{ fontSize: 9.5, color: ollamaOnline === null ? C.warn : ollamaOnline ? C.run : '#7E838C' }}>
             {ollamaOnline === null ? 'CHECKING…' : ollamaOnline ? 'OLLAMA ONLINE' : 'OLLAMA OFFLINE — RULE-BASED MODE'}
           </span>
         </div>
         {!ollamaOnline && ollamaOnline !== null && (
-          <span style={{ fontSize: 9, color: '#3C424B', background: '#14161A', border: '1px solid #20242B', borderRadius: 3, padding: '2px 7px' }}>
+          <span style={{ fontSize: 9, color: '#4A4F57', background: '#1C1F25', border: '1px solid #23272E', borderRadius: 3, padding: '2px 7px' }}>
             run: ollama serve
           </span>
         )}
@@ -1145,8 +1145,8 @@ function FinancialAgentPanel() {
             {QUICK_QUERIES.map(q => (
               <button key={q.label} onClick={() => send(q.q)} disabled={loading} style={{
                 fontSize: 9.5, padding: '3px 9px', borderRadius: 10,
-                border: `1px solid #2B303A`, background: '#0A0B0D',
-                color: loading ? '#3C424B' : C.amber, cursor: loading ? 'default' : 'pointer',
+                border: `1px solid #333841`, background: '#0A0B0D',
+                color: loading ? '#4A4F57' : C.amber, cursor: loading ? 'default' : 'pointer',
                 letterSpacing: '.04em', transition: 'all .1s',
               }}>{q.label}</button>
             ))}
@@ -1156,9 +1156,9 @@ function FinancialAgentPanel() {
           <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             {messages.length === 0 && (
               <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                <div style={{ fontSize: 28, color: '#20242B', marginBottom: 12 }}>◈</div>
-                <div style={{ fontSize: 10.5, color: '#3C424B', letterSpacing: '.08em', marginBottom: 6 }}>NSE/BSE FINANCIAL ANALYST</div>
-                <div style={{ fontSize: 9.5, color: '#20242B' }}>Ask about stocks, scans, market overview, technical or fundamental analysis</div>
+                <div style={{ fontSize: 28, color: '#23272E', marginBottom: 12 }}>◈</div>
+                <div style={{ fontSize: 10.5, color: '#4A4F57', letterSpacing: '.08em', marginBottom: 6 }}>NSE/BSE FINANCIAL ANALYST</div>
+                <div style={{ fontSize: 9.5, color: '#23272E' }}>Ask about stocks, scans, market overview, technical or fundamental analysis</div>
               </div>
             )}
             {messages.map((m, i) => (
@@ -1166,7 +1166,7 @@ function FinancialAgentPanel() {
                 {m.role === 'user' && (
                   <div style={{ maxWidth: '80%', background: '#0E1A0E', border: '1px solid #1A2A1A', borderRadius: '8px 8px 2px 8px', padding: '8px 12px' }}>
                     <div style={{ fontSize: 10, color: '#8A8A8A', marginBottom: 3 }}>YOU</div>
-                    <div style={{ fontSize: 10.5, color: '#E6E9ED', lineHeight: 1.6 }}>{m.content}</div>
+                    <div style={{ fontSize: 10.5, color: '#ECEEF1', lineHeight: 1.6 }}>{m.content}</div>
                   </div>
                 )}
                 {(m.role === 'assistant' || m.role === 'error') && (
@@ -1175,12 +1175,12 @@ function FinancialAgentPanel() {
                       <span style={{ fontSize: 9, color: m.role === 'error' ? C.err : C.teal, fontWeight: 700, letterSpacing: '.07em' }}>
                         {m.role === 'error' ? '✗ ERROR' : '◈ AGENT'}
                       </span>
-                      {m.model && <span style={{ fontSize: 9, color: '#3C424B' }}>{m.model}</span>}
-                      {m.online === false && <span style={{ fontSize: 9, color: '#444B55' }}>rule-based</span>}
+                      {m.model && <span style={{ fontSize: 9, color: '#4A4F57' }}>{m.model}</span>}
+                      {m.online === false && <span style={{ fontSize: 9, color: '#4A4F57' }}>rule-based</span>}
                     </div>
                     <div style={{
                       background: m.role === 'error' ? '#1A0808' : '#0A0D0A',
-                      border: `1px solid ${m.role === 'error' ? '#E5484D22' : '#1A2A1A'}`,
+                      border: `1px solid ${m.role === 'error' ? '#F2495C22' : '#1A2A1A'}`,
                       borderRadius: '2px 8px 8px 8px', padding: '10px 14px',
                       fontSize: 10.5, color: m.role === 'error' ? C.err : '#C8C8C8',
                       lineHeight: 1.65,
@@ -1202,7 +1202,7 @@ function FinancialAgentPanel() {
                     }} />
                   ))}
                 </div>
-                <span style={{ fontSize: 9.5, color: '#3C424B' }}>agent thinking…</span>
+                <span style={{ fontSize: 9.5, color: '#4A4F57' }}>agent thinking…</span>
               </div>
             )}
             <div ref={bottomRef} />
@@ -1228,7 +1228,7 @@ function FinancialAgentPanel() {
               style={{
                 fontSize: 10, fontWeight: 700, padding: '8px 16px', borderRadius: 4,
                 border: `1px solid ${C.run}33`, background: '#0A1A0A',
-                color: loading || !input.trim() ? '#3C424B' : C.run,
+                color: loading || !input.trim() ? '#4A4F57' : C.run,
                 cursor: loading || !input.trim() ? 'default' : 'pointer',
               }}
             >
@@ -1237,8 +1237,8 @@ function FinancialAgentPanel() {
             {messages.length > 0 && (
               <button onClick={() => setMessages([])} style={{
                 fontSize: 10, padding: '8px 10px', borderRadius: 4,
-                border: '1px solid #20242B', background: 'transparent',
-                color: '#3C424B', cursor: 'pointer',
+                border: '1px solid #23272E', background: 'transparent',
+                color: '#4A4F57', cursor: 'pointer',
               }}>CLR</button>
             )}
           </div>
@@ -1247,31 +1247,31 @@ function FinancialAgentPanel() {
         {/* Symbol search panel */}
         <div style={{ width: 220, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#080808' }}>
           <div style={{ padding: '8px 10px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-            <div style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.08em', marginBottom: 6 }}>NSE SYMBOL LOOKUP</div>
+            <div style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.08em', marginBottom: 6 }}>NSE SYMBOL LOOKUP</div>
             <input
               value={symQuery}
               onChange={e => searchSymbols(e.target.value)}
               placeholder="Search ticker or name…"
               style={{
                 width: '100%', fontSize: 10, background: '#0A0B0D', border: `1px solid ${C.border}`,
-                borderRadius: 3, color: '#9BA3AD', padding: '5px 8px', outline: 'none', boxSizing: 'border-box',
+                borderRadius: 3, color: '#AEB3BB', padding: '5px 8px', outline: 'none', boxSizing: 'border-box',
               }}
             />
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {symSearching && <div style={{ padding: '8px 10px', fontSize: 9.5, color: '#3C424B' }}>searching…</div>}
+            {symSearching && <div style={{ padding: '8px 10px', fontSize: 9.5, color: '#4A4F57' }}>searching…</div>}
             {!symSearching && symResults.length === 0 && symQuery && (
-              <div style={{ padding: '8px 10px', fontSize: 9.5, color: '#2B303A' }}>no matches</div>
+              <div style={{ padding: '8px 10px', fontSize: 9.5, color: '#333841' }}>no matches</div>
             )}
             {!symSearching && symResults.length === 0 && !symQuery && (
               <div style={{ padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ fontSize: 9, color: '#2B303A', letterSpacing: '.07em', marginBottom: 4 }}>QUICK ASK</div>
+                <div style={{ fontSize: 9, color: '#333841', letterSpacing: '.07em', marginBottom: 4 }}>QUICK ASK</div>
                 {['RELIANCE', 'HDFCBANK', 'TCS', 'INFY', 'SBIN'].map(sym => (
                   <button key={sym} onClick={() => send(`Full technical analysis of ${sym}`)}
                     disabled={loading} style={{
                       fontSize: 10, padding: '4px 8px', textAlign: 'left',
-                      background: '#0A0B0D', border: '1px solid #191C21', borderRadius: 3,
-                      color: loading ? '#3C424B' : C.warn, cursor: loading ? 'default' : 'pointer',
+                      background: '#0A0B0D', border: '1px solid #181B21', borderRadius: 3,
+                      color: loading ? '#4A4F57' : C.warn, cursor: loading ? 'default' : 'pointer',
                     }}>
                     {sym}
                   </button>
@@ -1279,7 +1279,7 @@ function FinancialAgentPanel() {
               </div>
             )}
             {symResults.map(s => (
-              <div key={s.symbol} style={{ borderBottom: `1px solid #0F1114` }}>
+              <div key={s.symbol} style={{ borderBottom: `1px solid #121419` }}>
                 <button
                   onClick={() => send(`Full technical and fundamental analysis of ${s.symbol}`)}
                   disabled={loading}
@@ -1289,8 +1289,8 @@ function FinancialAgentPanel() {
                   }}
                 >
                   <span style={{ fontSize: 10, fontWeight: 700, color: C.warn }}>{s.symbol}</span>
-                  <span style={{ fontSize: 9, color: '#444B55', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{s.name}</span>
-                  <span style={{ fontSize: 9, color: '#3C424B' }}>{s.series}</span>
+                  <span style={{ fontSize: 9, color: '#4A4F57', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{s.name}</span>
+                  <span style={{ fontSize: 9, color: '#4A4F57' }}>{s.series}</span>
                 </button>
               </div>
             ))}
@@ -1329,14 +1329,14 @@ function PlannerPanel({ state }: { state: PlannerState | null }) {
   const items = verdict.verdicts ?? []
   return (
     <div>
-      <div style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.09em', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.09em', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
         ⚖ TRADE PLANNER — LLM JUDGE
         <PlannerModeBadge mode={state?.mode ?? 'idle'} model={state?.model} latencyMs={state?.last_latency_ms} />
-        {verdict.ts ? <span style={{ fontSize: 9.5, color: '#3C424B' }}>scan #{verdict.scan_id} · {fmtTs(verdict.ts)}</span> : null}
-        <div style={{ flex: 1, height: 1, background: '#14161A' }} />
+        {verdict.ts ? <span style={{ fontSize: 9.5, color: '#4A4F57' }}>scan #{verdict.scan_id} · {fmtTs(verdict.ts)}</span> : null}
+        <div style={{ flex: 1, height: 1, background: '#1C1F25' }} />
       </div>
       {items.length === 0 ? (
-        <div style={{ fontSize: 10, color: '#3C424B', padding: '8px 4px' }}>
+        <div style={{ fontSize: 10, color: '#4A4F57', padding: '8px 4px' }}>
           No verdicts yet — the planner rules on each orchestrator batch (one LLM call per scan).
         </div>
       ) : (
@@ -1357,7 +1357,7 @@ function PlannerPanel({ state }: { state: PlannerState | null }) {
               {v.action === 'approve' && v.size_factor !== 1.0 && (
                 <span style={{ fontSize: 10, color: C.amber, minWidth: 44 }}>size ×{v.size_factor.toFixed(2)}</span>
               )}
-              <span style={{ fontSize: 10, color: '#6E7682', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              <span style={{ fontSize: 10, color: '#7E838C', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 title={v.reason}>{v.reason}</span>
             </div>
           ))}
@@ -1377,18 +1377,18 @@ function SupervisorPanel({ state }: { state: SupervisorState | null }) {
   const allQuiet = suppressed.length === 0 && throttle === 0
   return (
     <div>
-      <div style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.09em', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.09em', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
         ⟲ SUPERVISOR — CONTROL LOOP
         {throttle > 0 && (
           <span style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 8px', borderRadius: 3, border: `1px solid ${C.amber}44`, color: C.amber, background: `${C.amber}0A` }}>
             THROTTLED L{throttle}
           </span>
         )}
-        <div style={{ flex: 1, height: 1, background: '#14161A' }} />
+        <div style={{ flex: 1, height: 1, background: '#1C1F25' }} />
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         {allQuiet ? (
-          <span style={{ fontSize: 10, color: '#3C424B' }}>
+          <span style={{ fontSize: 10, color: '#4A4F57' }}>
             All lenses active · consecutive losses: {consec} · breaker at 3 (per lens) / throttle at 5 / hard stop at 8
           </span>
         ) : (
@@ -1401,7 +1401,7 @@ function SupervisorPanel({ state }: { state: SupervisorState | null }) {
                 {lens} suppressed · {Math.max(1, Math.round(secs / 60))}m left
               </span>
             ))}
-            <span style={{ fontSize: 10, color: '#5F6772' }}>consecutive losses: {consec}</span>
+            <span style={{ fontSize: 10, color: '#71767F' }}>consecutive losses: {consec}</span>
           </>
         )}
       </div>
@@ -1422,25 +1422,25 @@ function DecisionLogTab({ decisions }: { decisions: AgentDecision[] }) {
   const rows = missedOnly
     ? decisions.filter(d => d.planner_action !== 'fired' && d.planner_action !== 'approve' && d.hindsight_outcome === 'would_win')
     : decisions
-  const th: React.CSSProperties = { fontSize: 9.5, color: '#3C424B', letterSpacing: '.08em', fontWeight: 700, textAlign: 'left', padding: '6px 8px', position: 'sticky', top: 0, background: C.panel }
+  const th: React.CSSProperties = { fontSize: 9.5, color: '#4A4F57', letterSpacing: '.08em', fontWeight: 700, textAlign: 'left', padding: '6px 8px', position: 'sticky', top: 0, background: C.panel }
   const td: React.CSSProperties = { fontSize: 10, padding: '5px 8px', borderTop: `1px solid #111`, whiteSpace: 'nowrap' }
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-        <span style={{ fontSize: 10, color: '#5F6772' }}>
+        <span style={{ fontSize: 10, color: '#71767F' }}>
           Every candidate the agents ruled on — and what the market did next. Rejections that would have won are the cost of caution; track them.
         </span>
         <div style={{ flex: 1 }} />
         <button onClick={() => setMissedOnly(m => !m)} style={{
           fontSize: 9.5, fontWeight: 700, padding: '3px 10px', borderRadius: 3, cursor: 'pointer',
           border: `1px solid ${missedOnly ? C.amber : C.border2}`,
-          background: missedOnly ? '#4E80B40A' : 'transparent',
-          color: missedOnly ? C.amber : '#5F6772',
+          background: missedOnly ? '#FFB02E0A' : 'transparent',
+          color: missedOnly ? C.amber : '#71767F',
         }}>MISSED WINNERS</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {rows.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', fontSize: 10, color: '#3C424B' }}>
+          <div style={{ padding: 40, textAlign: 'center', fontSize: 10, color: '#4A4F57' }}>
             {missedOnly ? 'No missed winners in the recent log.' : 'No decisions recorded yet — they appear after the first planner-ruled scan.'}
           </div>
         ) : (
@@ -1454,23 +1454,23 @@ function DecisionLogTab({ decisions }: { decisions: AgentDecision[] }) {
               {rows.map(d => {
                 const actionC = d.planner_action === 'approve' || d.planner_action === 'fired' ? C.green
                   : d.planner_action === 'reject' ? C.red : C.muted
-                const hc = d.hindsight_outcome ? HINDSIGHT_C[d.hindsight_outcome] ?? C.muted : '#3C424B'
+                const hc = d.hindsight_outcome ? HINDSIGHT_C[d.hindsight_outcome] ?? C.muted : '#4A4F57'
                 return (
                   <tr key={d.decision_id}>
-                    <td style={{ ...td, color: '#5F6772' }}>{fmtTs(d.decided_at)}</td>
+                    <td style={{ ...td, color: '#71767F' }}>{fmtTs(d.decided_at)}</td>
                     <td style={{ ...td, color: C.text, fontWeight: 700 }}>{d.symbol}</td>
                     <td style={{ ...td, color: d.side === 'BUY' ? C.green : C.red }}>{d.side}</td>
                     <td style={{ ...td, color: C.sub }}>{d.ev?.toFixed(2) ?? '—'}</td>
                     <td style={{ ...td, color: C.sub }}>{d.confidence != null ? `${(d.confidence * 100).toFixed(0)}%` : '—'}</td>
                     <td style={{ ...td, color: C.sub }}>{d.persistence ?? '—'}</td>
                     <td style={{ ...td, color: actionC, fontWeight: 700 }}>{d.planner_action.toUpperCase()}</td>
-                    <td style={{ ...td, color: d.planner_mode === 'llm' ? C.teal : d.planner_mode === 'degraded' ? C.amber : '#5F6772' }}>{d.planner_mode}</td>
+                    <td style={{ ...td, color: d.planner_mode === 'llm' ? C.teal : d.planner_mode === 'degraded' ? C.amber : '#71767F' }}>{d.planner_mode}</td>
                     <td style={{ ...td, color: hc, fontWeight: 600 }}>
                       {d.hindsight_outcome
                         ? `${d.hindsight_ret_pct != null ? `${(d.hindsight_ret_pct * 100).toFixed(1)}% ` : ''}${d.hindsight_outcome}`
                         : 'pending'}
                     </td>
-                    <td style={{ ...td, color: '#6E7682', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis' }} title={d.planner_reason ?? ''}>
+                    <td style={{ ...td, color: '#7E838C', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis' }} title={d.planner_reason ?? ''}>
                       {d.planner_reason}
                     </td>
                   </tr>
@@ -1662,19 +1662,19 @@ export default function AgentsPage() {
               padding: '8px 20px', fontSize: 10, fontWeight: tab === key ? 800 : 500, letterSpacing: '.09em',
               background: 'transparent', border: 'none',
               borderBottom: `2px solid ${tab === key ? C.warn : 'transparent'}`,
-              color: tab === key ? C.warn : '#444B55', cursor: 'pointer',
+              color: tab === key ? C.warn : '#4A4F57', cursor: 'pointer',
             }}>{label}</button>
           ))}
           <div style={{ flex: 1 }} />
           {tab === 'matrix' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderLeft: `1px solid ${C.border}` }}>
-              <span style={{ fontSize: 9.5, color: '#3C424B' }}>FILTER:</span>
+              <span style={{ fontSize: 9.5, color: '#4A4F57' }}>FILTER:</span>
               {FILTER_LABELS.map(({ key, label }) => (
                 <button key={key} onClick={() => setFilter(key)} style={{
                   fontSize: 9.5, padding: '2px 7px', borderRadius: 3,
                   border: `1px solid ${filter === key ? C.warn : 'transparent'}`,
-                  background: filter === key ? '#4E80B40A' : 'transparent',
-                  color: filter === key ? C.warn : '#5F6772', cursor: 'pointer',
+                  background: filter === key ? '#FFB02E0A' : 'transparent',
+                  color: filter === key ? C.warn : '#71767F', cursor: 'pointer',
                 }}>{label}</button>
               ))}
             </div>
@@ -1689,7 +1689,7 @@ export default function AgentsPage() {
             </span>
           )}
           <button onClick={() => { load(); loadDecisions(); if (tab === 'broadcast') loadEvents() }}
-            style={{ padding: '8px 14px', fontSize: 10, color: '#444B55', background: 'none', border: 'none', cursor: 'pointer', borderLeft: `1px solid ${C.border}` }}>
+            style={{ padding: '8px 14px', fontSize: 10, color: '#4A4F57', background: 'none', border: 'none', cursor: 'pointer', borderLeft: `1px solid ${C.border}` }}>
             ↺ REFRESH
           </button>
         </div>
@@ -1730,10 +1730,10 @@ export default function AgentsPage() {
                   {/* System agents */}
                   {systemAgents.length > 0 && (
                     <div>
-                      <div style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.09em', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.09em', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
                         SYSTEM + EXECUTION
-                        <span style={{ fontSize: 9.5, color: '#2B303A', border: '1px solid #20242B', borderRadius: 10, padding: '0 6px' }}>{systemAgents.length}</span>
-                        <div style={{ flex: 1, height: 1, background: '#14161A' }} />
+                        <span style={{ fontSize: 9.5, color: '#333841', border: '1px solid #23272E', borderRadius: 10, padding: '0 6px' }}>{systemAgents.length}</span>
+                        <div style={{ flex: 1, height: 1, background: '#1C1F25' }} />
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 8 }}>
                         {systemAgents.map(a => (
@@ -1749,8 +1749,8 @@ export default function AgentsPage() {
                   {/* Orchestrator cards */}
                   {orchAgents.length > 0 && (
                     <div>
-                      <div style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.09em', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        ORCHESTRATOR <div style={{ flex: 1, height: 1, background: '#14161A' }} />
+                      <div style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.09em', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        ORCHESTRATOR <div style={{ flex: 1, height: 1, background: '#1C1F25' }} />
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 8 }}>
                         {orchAgents.map(a => (
@@ -1766,10 +1766,10 @@ export default function AgentsPage() {
                   {/* Strategy agents */}
                   {stratAgents.length > 0 && (
                     <div>
-                      <div style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.09em', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.09em', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
                         STRATEGIES
-                        <span style={{ fontSize: 9.5, color: '#2B303A', border: '1px solid #20242B', borderRadius: 10, padding: '0 6px' }}>{stratAgents.length}</span>
-                        <div style={{ flex: 1, height: 1, background: '#14161A' }} />
+                        <span style={{ fontSize: 9.5, color: '#333841', border: '1px solid #23272E', borderRadius: 10, padding: '0 6px' }}>{stratAgents.length}</span>
+                        <div style={{ flex: 1, height: 1, background: '#1C1F25' }} />
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(196px,1fr))', gap: 7 }}>
                         {stratAgents.map(a => (
@@ -1789,21 +1789,21 @@ export default function AgentsPage() {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8, padding: 80 }}>
                       {loading ? (
                         <>
-                          <div style={{ width: 28, height: 28, border: '2px solid #2B303A', borderTopColor: C.warn, borderRadius: '50%', animation: 'spin .8s linear infinite' }} />
+                          <div style={{ width: 28, height: 28, border: '2px solid #333841', borderTopColor: C.warn, borderRadius: '50%', animation: 'spin .8s linear infinite' }} />
                           <style dangerouslySetInnerHTML={{ __html: '@keyframes spin{to{transform:rotate(360deg)}}' }} />
-                          <span style={{ fontSize: 10, color: '#3C424B', letterSpacing: '.08em' }}>CONNECTING TO BACKEND…</span>
+                          <span style={{ fontSize: 10, color: '#4A4F57', letterSpacing: '.08em' }}>CONNECTING TO BACKEND…</span>
                         </>
                       ) : backendDown ? (
                         <>
                           <span style={{ fontSize: 24, opacity: .3 }}>⚡</span>
                           <span style={{ fontSize: 10.5, color: C.err, letterSpacing: '.08em' }}>BACKEND NOT RUNNING</span>
-                          <span style={{ fontSize: 9.5, color: '#3C424B' }}>Run: <code style={{ color: C.amber }}>.venv/Scripts/python.exe -m terminal_in.main</code></span>
+                          <span style={{ fontSize: 9.5, color: '#4A4F57' }}>Run: <code style={{ color: C.amber }}>.venv/Scripts/python.exe -m terminal_in.main</code></span>
                         </>
                       ) : (
                         <>
                           <span style={{ fontSize: 24, opacity: .2 }}>◯</span>
-                          <span style={{ fontSize: 10.5, color: '#3C424B', letterSpacing: '.08em' }}>NO AGENTS ACTIVE</span>
-                          <span style={{ fontSize: 9.5, color: '#20242B' }}>Backend is running but no agents are registered yet</span>
+                          <span style={{ fontSize: 10.5, color: '#4A4F57', letterSpacing: '.08em' }}>NO AGENTS ACTIVE</span>
+                          <span style={{ fontSize: 9.5, color: '#23272E' }}>Backend is running but no agents are registered yet</span>
                         </>
                       )}
                     </div>
@@ -1839,25 +1839,25 @@ export default function AgentsPage() {
             {selected ? (
               <>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-                  <span style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.09em', fontWeight: 700 }}>
+                  <span style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.09em', fontWeight: 700 }}>
                     {selected.kind === 'agent' ? 'AGENT DETAIL' : 'SIGNAL LINEAGE'}
                   </span>
-                  <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', color: '#5F6772', cursor: 'pointer', fontSize: 12.5 }}>✕</button>
+                  <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', color: '#71767F', cursor: 'pointer', fontSize: 12.5 }}>✕</button>
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
                   {selected.kind === 'agent' && selectedAgent && <AgentInspector agent={selectedAgent} onRefresh={load} />}
                   {selected.kind === 'signal' && (
                     lineageLoading
-                      ? <div style={{ color: '#3C424B', fontSize: 10, textAlign: 'center', padding: 24 }}>Loading lineage…</div>
+                      ? <div style={{ color: '#4A4F57', fontSize: 10, textAlign: 'center', padding: 24 }}>Loading lineage…</div>
                       : lineage
                         ? <SignalLineageView lineage={lineage} />
-                        : <div style={{ color: '#3C424B', fontSize: 10, textAlign: 'center', padding: 24 }}>Lineage not found</div>
+                        : <div style={{ color: '#4A4F57', fontSize: 10, textAlign: 'center', padding: 24 }}>Lineage not found</div>
                   )}
                 </div>
               </>
             ) : (
               <div style={{ padding: '8px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-                <span style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.09em', fontWeight: 700 }}>SELECT AGENT OR SIGNAL</span>
+                <span style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.09em', fontWeight: 700 }}>SELECT AGENT OR SIGNAL</span>
               </div>
             )}
             {/* Kill switch audit — always visible */}

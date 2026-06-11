@@ -76,30 +76,30 @@ function relTime(ms: number) {
   return `${Math.floor(s / 86400)}d`
 }
 
-const SENT_COLOR = { positive: '#2FBF71', negative: '#E5484D', neutral: '#5F6772' } as const
+const SENT_COLOR = { positive: '#2DBD80', negative: '#F2495C', neutral: '#71767F' } as const
 
 function NewsCard({ n }: { n: NewsItem }) {
-  const sentColor = SENT_COLOR[n.sentiment] ?? '#5F6772'
-  const impactColor = n.impact === 'high' ? '#E5484D'
-    : n.impact === 'medium' ? '#4E80B4' : '#5F6772'
+  const sentColor = SENT_COLOR[n.sentiment] ?? '#71767F'
+  const impactColor = n.impact === 'high' ? '#F2495C'
+    : n.impact === 'medium' ? '#FFB02E' : '#71767F'
 
   const headline = n.url ? (
     <a href={n.url} target="_blank" rel="noopener noreferrer"
-      style={{ color: '#DDE2E8', textDecoration: 'none' }}
-      onMouseEnter={e => (e.currentTarget.style.color = '#4E80B4')}
-      onMouseLeave={e => (e.currentTarget.style.color = '#DDE2E8')}>
+      style={{ color: '#DFE2E7', textDecoration: 'none' }}
+      onMouseEnter={e => (e.currentTarget.style.color = '#FFB02E')}
+      onMouseLeave={e => (e.currentTarget.style.color = '#DFE2E7')}>
       {n.headline}
     </a>
   ) : n.headline
 
   return (
-    <div style={{ padding: '9px 12px', borderBottom: '1px solid #191C21', display: 'flex', gap: 10 }}>
+    <div style={{ padding: '9px 12px', borderBottom: '1px solid #181B21', display: 'flex', gap: 10 }}>
       <div style={{ width: 2, flexShrink: 0, background: `${sentColor}66`, borderRadius: 1 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <p className="t-headline" style={{ margin: '0 0 4px' }}>{headline}</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 10, color: '#4F5660', fontVariantNumeric: 'tabular-nums' }}>{relTime(n.published_at)}</span>
-          {n.source && <span style={{ fontSize: 10, color: '#444B55' }}>{n.source}</span>}
+          <span style={{ fontSize: 10, color: '#565B63', fontVariantNumeric: 'tabular-nums' }}>{relTime(n.published_at)}</span>
+          {n.source && <span style={{ fontSize: 10, color: '#4A4F57' }}>{n.source}</span>}
           <span style={{ fontSize: 9.5, fontWeight: 700, color: sentColor, letterSpacing: '0.05em' }}>
             {n.sentiment === 'positive' ? '▲' : n.sentiment === 'negative' ? '▼' : '–'} {n.sentiment.toUpperCase()}
           </span>
@@ -109,7 +109,7 @@ function NewsCard({ n }: { n: NewsItem }) {
           {n.instruments?.length > 0 && (
             <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
               {n.instruments.slice(0, 3).map((inst, i) => (
-                <span key={i} style={{ fontSize: 9.5, color: '#6E7682', background: '#20242B', border: '1px solid #222', borderRadius: 2, padding: '1px 4px' }}>
+                <span key={i} style={{ fontSize: 9.5, color: '#7E838C', background: '#23272E', border: '1px solid #222', borderRadius: 2, padding: '1px 4px' }}>
                   {inst}
                 </span>
               ))}
@@ -203,8 +203,8 @@ export default function SignalFeedPanel() {
           signals.length === 0
             ? (
               <div style={{ padding: '16px 12px' }}>
-                <p style={{ color: '#5F6772', fontSize: 11.5, textAlign: 'center', marginBottom: 8 }}>No live signals yet — strategies evaluate every 60s</p>
-                <p style={{ color: '#5F6772', fontSize: 10.5, textAlign: 'center' }}>Market open 09:15 · Paper mode · {Object.keys(ticks).length} tokens streaming</p>
+                <p style={{ color: '#71767F', fontSize: 11.5, textAlign: 'center', marginBottom: 8 }}>No live signals yet — strategies evaluate every 60s</p>
+                <p style={{ color: '#71767F', fontSize: 10.5, textAlign: 'center' }}>Market open 09:15 · Paper mode · {Object.keys(ticks).length} tokens streaming</p>
               </div>
             )
             : signals.map((s, i) => {
@@ -212,8 +212,8 @@ export default function SignalFeedPanel() {
               const full   = STRAT_FULL[s.strategy_id] ?? s.strategy_id
               const liveP  = ticks[s.instrument_id]?.last_price
               const pct    = Math.round(s.confidence * 100)
-              const confColor = s.confidence >= 0.7 ? '#2FBF71' : s.confidence >= 0.5 ? '#4E80B4' : '#E5484D'
-              const sideColor = s.side === 'BUY' ? '#2FBF71' : '#E5484D'
+              const confColor = s.confidence >= 0.7 ? '#2DBD80' : s.confidence >= 0.5 ? '#FFB02E' : '#F2495C'
+              const sideColor = s.side === 'BUY' ? '#2DBD80' : '#F2495C'
               const rr = (s.target && s.stop_loss && liveP && Math.abs(liveP - s.stop_loss) > 0)
                 ? ((s.target - liveP) / (liveP - s.stop_loss)).toFixed(1)
                 : null
@@ -221,32 +221,32 @@ export default function SignalFeedPanel() {
                 <div
                   key={i}
                   style={{
-                    padding: '10px 12px', borderBottom: '1px solid #20242B',
+                    padding: '10px 12px', borderBottom: '1px solid #23272E',
                     borderLeft: `3px solid ${sideColor}`,
                   }}
                 >
                   {/* Header: symbol + side + strategy + time */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#E6E9ED' }}>{sym}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#ECEEF1' }}>{sym}</span>
                     <Badge variant="side" value={s.side} />
-                    <span style={{ fontSize: 10, color: '#4E80B4', marginLeft: 2 }}>{s.strategy_id}</span>
-                    <span style={{ fontSize: 10, color: '#5F6772' }}>· {full}</span>
-                    <span style={{ fontSize: 10, color: '#3C424B', marginLeft: 'auto' }}>{s.ts ? fmtTime(s.ts) : ''}</span>
+                    <span style={{ fontSize: 10, color: '#FFB02E', marginLeft: 2 }}>{s.strategy_id}</span>
+                    <span style={{ fontSize: 10, color: '#71767F' }}>· {full}</span>
+                    <span style={{ fontSize: 10, color: '#4A4F57', marginLeft: 'auto' }}>{s.ts ? fmtTime(s.ts) : ''}</span>
                   </div>
 
                   {/* WHY explanation */}
-                  <p style={{ margin: '0 0 6px', fontSize: 10.5, color: '#9BA3AD', lineHeight: 1.5 }}>
+                  <p style={{ margin: '0 0 6px', fontSize: 10.5, color: '#AEB3BB', lineHeight: 1.5 }}>
                     {buildWhy(s)}
                   </p>
 
                   {/* Price levels + confidence */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 10 }}>
-                    {liveP && <span style={{ color: '#6E7682' }}>@ {liveP.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>}
-                    {s.target    && <span style={{ color: '#2FBF71' }}>T {s.target.toFixed(0)}</span>}
-                    {s.stop_loss && <span style={{ color: '#E5484D' }}>SL {s.stop_loss.toFixed(0)}</span>}
-                    {rr && <span style={{ color: '#6E7682' }}>R:R {rr}</span>}
+                    {liveP && <span style={{ color: '#7E838C' }}>@ {liveP.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>}
+                    {s.target    && <span style={{ color: '#2DBD80' }}>T {s.target.toFixed(0)}</span>}
+                    {s.stop_loss && <span style={{ color: '#F2495C' }}>SL {s.stop_loss.toFixed(0)}</span>}
+                    {rr && <span style={{ color: '#7E838C' }}>R:R {rr}</span>}
                     <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <div style={{ width: 40, height: 3, background: '#20242B', borderRadius: 2 }}>
+                      <div style={{ width: 40, height: 3, background: '#23272E', borderRadius: 2 }}>
                         <div style={{ width: `${pct}%`, height: '100%', background: confColor, borderRadius: 2 }} />
                       </div>
                       <span style={{ color: confColor }}>{pct}%</span>
@@ -267,14 +267,14 @@ export default function SignalFeedPanel() {
         {/* ── News ─────────────────────────────────────────── */}
         {tab === 'news' && (
           <>
-            <div style={{ display: 'flex', gap: 4, padding: '6px 12px', borderBottom: '1px solid #191C21', position: 'sticky', top: 0, background: 'var(--surface-1, #0F1114)', zIndex: 1 }}>
+            <div style={{ display: 'flex', gap: 4, padding: '6px 12px', borderBottom: '1px solid #181B21', position: 'sticky', top: 0, background: 'var(--surface-1, #121419)', zIndex: 1 }}>
               {([['all', 'ALL'], ['positive', '▲ POS'], ['negative', '▼ NEG'], ['high', 'HIGH IMPACT']] as [NewsFilter, string][]).map(([key, label]) => (
                 <button key={key} onClick={() => setNewsFilter(key)} style={{
                   fontSize: 9.5, fontWeight: 700, letterSpacing: '0.05em', padding: '2px 8px',
                   borderRadius: 3, cursor: 'pointer',
-                  border: `1px solid ${newsFilter === key ? '#4E80B455' : '#2B303A'}`,
-                  background: newsFilter === key ? '#4E80B40E' : 'transparent',
-                  color: newsFilter === key ? '#4E80B4' : '#4F5660',
+                  border: `1px solid ${newsFilter === key ? '#FFB02E55' : '#333841'}`,
+                  background: newsFilter === key ? '#FFB02E0E' : 'transparent',
+                  color: newsFilter === key ? '#FFB02E' : '#565B63',
                 }}>{label}</button>
               ))}
             </div>

@@ -32,9 +32,9 @@ const SUGGESTIONS = [
 ]
 
 const FINBERT_COLOR: Record<string, string> = {
-  positive: '#2FBF71',
-  negative: '#E5484D',
-  neutral:  '#5F6772',
+  positive: '#2DBD80',
+  negative: '#F2495C',
+  neutral:  '#71767F',
 }
 
 export default function ChatPanel() {
@@ -125,48 +125,48 @@ export default function ChatPanel() {
         <span><span className="accent">▸</span> MARKET INTELLIGENCE</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {regime && (
-            <span style={{ fontSize: 10, color: '#5F6772' }}>
+            <span style={{ fontSize: 10, color: '#71767F' }}>
               {regime.regime?.toUpperCase()} · VIX {regime.india_vix?.toFixed(1)}
             </span>
           )}
-          <span style={{ fontSize: 10, color: '#3C424B', letterSpacing: '0.04em' }}>FinBERT</span>
+          <span style={{ fontSize: 10, color: '#4A4F57', letterSpacing: '0.04em' }}>FinBERT</span>
         </div>
       </div>
 
       {/* Message history */}
-      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#2B303A transparent', minHeight: 0 }}>
+      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#333841 transparent', minHeight: 0 }}>
         {messages.map((m, i) => (
           <div
             key={i}
             style={{
               padding: '8px 12px',
               borderBottom: '1px solid #111',
-              background: m.role === 'user' ? '#0F1114' : 'transparent',
+              background: m.role === 'user' ? '#121419' : 'transparent',
             }}
           >
             {m.role === 'user' ? (
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <span style={{ fontSize: 10.5, color: '#E6E9ED', background: '#20242B', border: '1px solid #3C424B', borderRadius: 3, padding: '4px 8px', maxWidth: '85%' }}>
+                <span style={{ fontSize: 10.5, color: '#ECEEF1', background: '#23272E', border: '1px solid #4A4F57', borderRadius: 3, padding: '4px 8px', maxWidth: '85%' }}>
                   {m.text}
                 </span>
               </div>
             ) : (
               <div>
                 <pre style={{
-                  margin: 0, fontSize: 10.5, color: '#C3CAD3', lineHeight: 1.55,
+                  margin: 0, fontSize: 10.5, color: '#CFD3D9', lineHeight: 1.55,
                   fontFamily: 'inherit', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                  borderLeft: m.type === 'command_applied' ? '2px solid #4E80B4'
-                            : m.type === 'error' ? '2px solid #E5484D'
-                            : m.type === 'welcome' ? '2px solid #4E80B4'
-                            : '2px solid #2B303A',
+                  borderLeft: m.type === 'command_applied' ? '2px solid #FFB02E'
+                            : m.type === 'error' ? '2px solid #F2495C'
+                            : m.type === 'welcome' ? '2px solid #FFB02E'
+                            : '2px solid #333841',
                   paddingLeft: 8,
                 }}>
                   {m.text}
                 </pre>
                 {m.finbert && m.role === 'assistant' && m.type !== 'welcome' && (
                   <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ fontSize: 9.5, color: '#3C424B' }}>FinBERT:</span>
-                    <span style={{ fontSize: 9.5, color: FINBERT_COLOR[m.finbert.sentiment] ?? '#5F6772' }}>
+                    <span style={{ fontSize: 9.5, color: '#4A4F57' }}>FinBERT:</span>
+                    <span style={{ fontSize: 9.5, color: FINBERT_COLOR[m.finbert.sentiment] ?? '#71767F' }}>
                       {m.finbert.sentiment} {(m.finbert.score * 100).toFixed(0)}%
                     </span>
                   </div>
@@ -177,19 +177,19 @@ export default function ChatPanel() {
         ))}
         {loading && (
           <div style={{ padding: '8px 12px' }}>
-            <span style={{ fontSize: 10.5, color: '#5F6772' }}>Analysing…</span>
+            <span style={{ fontSize: 10.5, color: '#71767F' }}>Analysing…</span>
           </div>
         )}
         <div ref={bottomRef} />
       </div>
 
       {/* Suggestion chips */}
-      <div style={{ flexShrink: 0, padding: '6px 8px', borderTop: '1px solid #20242B', display: 'flex', gap: 4, flexWrap: 'wrap', background: '#0A0B0D' }}>
+      <div style={{ flexShrink: 0, padding: '6px 8px', borderTop: '1px solid #23272E', display: 'flex', gap: 4, flexWrap: 'wrap', background: '#0A0B0D' }}>
         {SUGGESTIONS.map((s, i) => (
           <button
             key={i}
             onClick={() => send(s)}
-            style={{ fontSize: 9.5, padding: '2px 6px', background: '#20242B', border: '1px solid #3C424B', borderRadius: 2, color: '#5F6772', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            style={{ fontSize: 9.5, padding: '2px 6px', background: '#23272E', border: '1px solid #4A4F57', borderRadius: 2, color: '#71767F', cursor: 'pointer', whiteSpace: 'nowrap' }}
           >
             {s}
           </button>
@@ -197,7 +197,7 @@ export default function ChatPanel() {
       </div>
 
       {/* Input */}
-      <div style={{ flexShrink: 0, display: 'flex', gap: 6, padding: '6px 8px', borderTop: '1px solid #2B303A', background: '#0F1114' }}>
+      <div style={{ flexShrink: 0, display: 'flex', gap: 6, padding: '6px 8px', borderTop: '1px solid #333841', background: '#121419' }}>
         <input
           ref={inputRef}
           value={input}
@@ -205,8 +205,8 @@ export default function ChatPanel() {
           onKeyDown={handleKey}
           placeholder="Ask about market, signals, or issue override commands…"
           style={{
-            flex: 1, background: '#20242B', border: '1px solid #3C424B', borderRadius: 3,
-            color: '#E6E9ED', fontSize: 10.5, padding: '5px 8px', outline: 'none',
+            flex: 1, background: '#23272E', border: '1px solid #4A4F57', borderRadius: 3,
+            color: '#ECEEF1', fontSize: 10.5, padding: '5px 8px', outline: 'none',
             fontFamily: 'inherit',
           }}
         />
@@ -215,8 +215,8 @@ export default function ChatPanel() {
           disabled={loading || !input.trim()}
           style={{
             padding: '4px 10px', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
-            background: input.trim() && !loading ? '#4E80B4' : '#20242B',
-            color: input.trim() && !loading ? '#000' : '#3C424B',
+            background: input.trim() && !loading ? '#FFB02E' : '#23272E',
+            color: input.trim() && !loading ? '#000' : '#4A4F57',
             border: 'none', borderRadius: 3, cursor: input.trim() && !loading ? 'pointer' : 'default',
           }}
         >

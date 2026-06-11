@@ -51,7 +51,7 @@ function IndexStrip({ regime }: { regime: RegimeState | null }) {
         const chg = ticks[token]?.change ?? 0
         return (
           <div key={token} style={{ flex: 1, padding: '0 14px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
-            <span style={{ fontSize: 9.5, color: C.dim, letterSpacing: '.08em' }}>{label} <span style={{ color: '#3C424B' }}>· LOT {lot}</span></span>
+            <span style={{ fontSize: 9.5, color: C.dim, letterSpacing: '.08em' }}>{label} <span style={{ color: '#4A4F57' }}>· LOT {lot}</span></span>
             <span style={{ fontSize: 15, fontWeight: 600, color: C.text, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
               {price > 0 ? price.toLocaleString('en-IN', { maximumFractionDigits: 1 }) : '—'}
             </span>
@@ -82,7 +82,7 @@ function IndexSignals({ results }: { results: OrchestratorResult[] }) {
   const indexResults = results.filter(r => INDEX_TOKENS.has(r.token))
   return (
     <div className="panel" style={{ borderRadius: 5 }}>
-      <div className="panel-header">INDEX STRATEGY SIGNALS <span style={{ color: '#3C424B' }}>S1 ORB · S2 52W · S8 VIX FADE</span></div>
+      <div className="panel-header">INDEX STRATEGY SIGNALS <span style={{ color: '#4A4F57' }}>S1 ORB · S2 52W · S8 VIX FADE</span></div>
       <div className="panel-body" style={{ padding: 10 }}>
         {indexResults.length === 0 ? (
           <div style={{ fontSize: 10.5, color: C.muted, padding: 20, textAlign: 'center' }}>
@@ -111,7 +111,7 @@ function IndexSignals({ results }: { results: OrchestratorResult[] }) {
 function SignalLog({ signals }: { signals: SignalRec[] }) {
   return (
     <div className="panel" style={{ borderRadius: 5 }}>
-      <div className="panel-header">SIGNAL LOG <span style={{ color: '#3C424B' }}>INDEX COMPLEX</span></div>
+      <div className="panel-header">SIGNAL LOG <span style={{ color: '#4A4F57' }}>INDEX COMPLEX</span></div>
       <div className="panel-body">
         {signals.length === 0 ? (
           <div style={{ fontSize: 10.5, color: C.muted, padding: 20, textAlign: 'center' }}>No recent index signals.</div>

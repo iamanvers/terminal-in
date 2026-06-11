@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -10,30 +10,31 @@
   /* Surfaces (darkest → lightest) */
   --bg:        #0A0B0D;
   --surface-0: #0C0D10;
-  --surface-1: #0F1114;   /* panels */
-  --surface-2: #14161A;   /* cards inside panels */
-  --surface-3: #191C21;   /* hover / raised */
+  --surface-1: #121419;   /* panels */
+  --surface-2: #1C1F25;   /* cards inside panels */
+  --surface-3: #181B21;   /* hover / raised */
 
   /* Borders */
-  --border:        #20242B;
-  --border-strong: #2B303A;
+  --border:        #23272E;
+  --border-strong: #333841;
 
   /* Accent + semantic */
-  --accent:      #4E80B4;
-  --accent-dim:  #4E80B422;
-  --accent-soft: #4E80B40E;
-  --pos:         #2FBF71;
-  --pos-dim:     #2FBF711A;
-  --neg:         #E5484D;
-  --neg-dim:     #E5484D1A;
+  --accent:      #FFB02E;
+  --accent-dim:  #FFB02E22;
+  --accent-soft: #FFB02E0E;
+  --pos:         #2DBD80;
+  --pos-dim:     #2DBD801A;
+  --neg:         #F2495C;
+  --neg-dim:     #F2495C1A;
   --warn:        #EAB308;
-  --info:        #4CA8E8;
+  --info:        #3B8CFF;
+  --steel:       #3A64B0;   /* deep metallic blue — secondary accent */
 
   /* Text hierarchy */
-  --text:       #E6E9ED;
-  --text-2:     #9BA3AD;
-  --text-3:     #5F6772;
-  --text-faint: #3C424B;
+  --text:       #ECEEF1;
+  --text-2:     #AEB3BB;
+  --text-3:     #71767F;
+  --text-faint: #4A4F57;
 
   /* Type scale (terminal-dense but readable) */
   --fs-label: 10px;     /* uppercase labels, table headers */
@@ -41,11 +42,11 @@
   --fs-num:   12.5px;    /* primary numbers */
   --fs-title: 13px;    /* panel titles */
 
-  --radius:    5px;
-  --radius-sm: 3px;
+  --radius:    8px;
+  --radius-sm: 4px;
 
-  --font-mono:    'JetBrains Mono', Consolas, monospace;
-  --font-ui:      'Inter', 'JetBrains Mono', sans-serif;
+  --font-mono:    'Geist Mono', 'JetBrains Mono', Consolas, monospace;
+  --font-ui:      'Geist', 'Inter', system-ui, sans-serif;
   /* Display face: Georgia — editorial serif for titles, headlines, and
      prose. Data/numbers stay mono (Georgia's old-style numerals don't
      align in tables). */
@@ -119,9 +120,9 @@ html, body {
   color: var(--text-2);
   background: var(--surface-2);
 }
-.chip--pos    { color: var(--pos);    border-color: #2FBF7144; background: var(--pos-dim); }
-.chip--neg    { color: var(--neg);    border-color: #E5484D44; background: var(--neg-dim); }
-.chip--accent { color: var(--accent); border-color: #4E80B444; background: var(--accent-soft); }
+.chip--pos    { color: var(--pos);    border-color: #2DBD8044; background: var(--pos-dim); }
+.chip--neg    { color: var(--neg);    border-color: #F2495C44; background: var(--neg-dim); }
+.chip--accent { color: var(--accent); border-color: #FFB02E44; background: var(--accent-soft); }
 
 .btn {
   font-family: var(--font-mono);
@@ -138,7 +139,7 @@ html, body {
 }
 .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn:disabled { opacity: .4; cursor: not-allowed; }
-.btn--primary { border-color: #4E80B455; color: var(--accent); background: var(--accent-soft); }
+.btn--primary { border-color: #FFB02E55; color: var(--accent); background: var(--accent-soft); }
 .btn--danger  { border-color: #EF444455; color: var(--neg);   background: var(--neg-dim); }
 
 /* ── Scrollbar ─────────────────────────────────────────────────────────── */

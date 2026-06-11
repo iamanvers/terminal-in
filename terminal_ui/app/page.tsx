@@ -48,19 +48,19 @@ function BootScreen({ error }: { error: boolean }) {
       <div style={{ marginBottom: 32, textAlign: 'center' }}>
         <div style={{
           fontSize: 28, fontWeight: 900, letterSpacing: '.18em',
-          color: error ? '#E5484D' : '#E6E9ED',
+          color: error ? '#F2495C' : '#ECEEF1',
           fontFamily: 'monospace',
         }}>
-          TERMINAL<span style={{ color: error ? '#E5484D' : '#4E80B4' }}>//</span>IN
+          TERMINAL<span style={{ color: error ? '#F2495C' : '#FFB02E' }}>//</span>IN
         </div>
-        <div style={{ fontSize: 10, color: '#3C424B', letterSpacing: '.2em', marginTop: 5 }}>
+        <div style={{ fontSize: 10, color: '#4A4F57', letterSpacing: '.2em', marginTop: 5 }}>
           NSE · BSE · ALGORITHMIC TRADING
         </div>
       </div>
 
       {/* Status block */}
       <div style={{
-        border: `1px solid ${error ? '#E5484D33' : '#20242B'}`,
+        border: `1px solid ${error ? '#F2495C33' : '#23272E'}`,
         borderRadius: 6, padding: '20px 32px', minWidth: 360,
         background: error ? '#0E0808' : '#0A0B0D',
         display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center',
@@ -68,33 +68,33 @@ function BootScreen({ error }: { error: boolean }) {
         {error ? (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ color: '#E5484D', fontSize: 16 }}>⚡</span>
-              <span style={{ fontSize: 11.5, color: '#E5484D', fontWeight: 700, letterSpacing: '.08em' }}>
+              <span style={{ color: '#F2495C', fontSize: 16 }}>⚡</span>
+              <span style={{ fontSize: 11.5, color: '#F2495C', fontWeight: 700, letterSpacing: '.08em' }}>
                 BACKEND NOT RUNNING
               </span>
             </div>
-            <div style={{ fontSize: 10, color: '#5F6772', textAlign: 'center', lineHeight: 1.7 }}>
+            <div style={{ fontSize: 10, color: '#71767F', textAlign: 'center', lineHeight: 1.7 }}>
               The Python backend is not reachable at{' '}
-              <code style={{ color: '#9BA3AD', background: '#14161A', padding: '1px 5px', borderRadius: 3 }}>
+              <code style={{ color: '#AEB3BB', background: '#1C1F25', padding: '1px 5px', borderRadius: 3 }}>
                 localhost:5000
               </code>
             </div>
             <div style={{
-              background: '#14161A', border: '1px solid #20242B', borderRadius: 4,
-              padding: '10px 14px', fontFamily: 'monospace', fontSize: 10, color: '#4E80B4',
+              background: '#1C1F25', border: '1px solid #23272E', borderRadius: 4,
+              padding: '10px 14px', fontFamily: 'monospace', fontSize: 10, color: '#FFB02E',
               lineHeight: 1.8, width: '100%',
             }}>
-              <div style={{ color: '#3C424B', marginBottom: 4 }}># Start the backend</div>
+              <div style={{ color: '#4A4F57', marginBottom: 4 }}># Start the backend</div>
               <div>.venv\Scripts\python.exe -m terminal_in.main</div>
-              <div style={{ color: '#3C424B', marginTop: 6, marginBottom: 4 }}># Or use the launcher</div>
+              <div style={{ color: '#4A4F57', marginTop: 6, marginBottom: 4 }}># Or use the launcher</div>
               <div>.\start.ps1</div>
             </div>
             <button
               onClick={() => window.location.reload()}
               style={{
                 fontSize: 10, fontWeight: 700, letterSpacing: '.08em', padding: '7px 20px',
-                border: '1px solid #E5484D44', borderRadius: 4,
-                background: '#1A0808', color: '#E5484D', cursor: 'pointer',
+                border: '1px solid #F2495C44', borderRadius: 4,
+                background: '#1A0808', color: '#F2495C', cursor: 'pointer',
               }}
             >
               ↺ RETRY CONNECTION
@@ -106,8 +106,8 @@ function BootScreen({ error }: { error: boolean }) {
             <div style={{ position: 'relative', width: 36, height: 36 }}>
               <div style={{
                 position: 'absolute', inset: 0, borderRadius: '50%',
-                border: '2px solid #191C21',
-                borderTopColor: '#4E80B4',
+                border: '2px solid #181B21',
+                borderTopColor: '#FFB02E',
                 animation: 'spin 0.9s linear infinite',
               }} />
               <style dangerouslySetInnerHTML={{ __html: '@keyframes spin { to { transform: rotate(360deg) } }' }} />
@@ -116,10 +116,10 @@ function BootScreen({ error }: { error: boolean }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}>
               {STEPS.slice(0, step + 1).map((s, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 10, color: i < step ? '#2A4A2A' : '#4E80B4', minWidth: 12 }}>
+                  <span style={{ fontSize: 10, color: i < step ? '#2A4A2A' : '#FFB02E', minWidth: 12 }}>
                     {i < step ? '✓' : '›'}
                   </span>
-                  <span style={{ fontSize: 10, color: i < step ? '#2A4A2A' : '#9BA3AD', fontVariantNumeric: 'tabular-nums' }}>
+                  <span style={{ fontSize: 10, color: i < step ? '#2A4A2A' : '#AEB3BB', fontVariantNumeric: 'tabular-nums' }}>
                     {i === step ? s.replace('…', dotStr || '…') : s.replace('…', '')}
                   </span>
                 </div>
@@ -202,7 +202,7 @@ export default function TerminalPage() {
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {/* ── Risk strip ───────────────────────────────────────── */}
-      <div style={{ height: 52, flexShrink: 0, borderBottom: '1px solid #2B303A' }}>
+      <div style={{ height: 52, flexShrink: 0, borderBottom: '1px solid #333841' }}>
         <RiskDashboardPanel />
       </div>
 

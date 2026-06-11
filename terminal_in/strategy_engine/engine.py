@@ -209,8 +209,12 @@ class StrategyEngine:
             from terminal_in.market_hours import is_market_open
             import time as _time_mod
             market_open = is_market_open()
-            COOLDOWN_S = 1800   # same (strategy, token) at most once per 30 min
 
+            # Re-signal policy: a daily-bar setup (S2–S9) is computed from the
+            # SAME daily candle all session — re-emitting it is duplication,
+            # not information. One signal per (strategy, token) per session.
+            # S1 works on 1m bars (genuinely new data) → 30-min cooldown.
+            SESSION_S = 6 * 3600 + 15 * 60   # covers a full trading day
             for strategy, alloc, signal in results:
                 if signal is None:
                     continue
@@ -222,7 +226,8 @@ class StrategyEngine:
                     continue
                 key = (strategy.id, token)
                 now_s = _time_mod.time()
-                if now_s - self._last_published.get(key, 0) < COOLDOWN_S:
+                cooldown = 1800 if strategy.id == 'S1' else SESSION_S
+                if now_s - self._last_published.get(key, 0) < cooldown:
                     continue
                 self._last_published[key] = now_s
                 registry.record_signal(strategy.id)

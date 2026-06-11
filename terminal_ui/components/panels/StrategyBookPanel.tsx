@@ -43,10 +43,10 @@ type SignalEntry = {
 
 function ConfBar({ value }: { value: number }) {
   const pct = Math.round(value * 100)
-  const color = value >= 0.7 ? '#2FBF71' : value >= 0.5 ? '#4E80B4' : '#E5484D'
+  const color = value >= 0.7 ? '#2DBD80' : value >= 0.5 ? '#FFB02E' : '#F2495C'
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <div style={{ flex: 1, height: 3, background: '#20242B', borderRadius: 2 }}>
+      <div style={{ flex: 1, height: 3, background: '#23272E', borderRadius: 2 }}>
         <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2 }} />
       </div>
       <span style={{ fontSize: 10, color, minWidth: 28, textAlign: 'right' }}>{pct}%</span>
@@ -75,15 +75,15 @@ export default function StrategyBookPanel() {
     <div className="panel h-full">
       <div className="panel-header justify-between">
         <span><span className="accent">▸</span> BEST SIGNALS</span>
-        <span style={{ fontSize: 10, color: '#5F6772' }}>{signals.length} total · top 5 shown</span>
+        <span style={{ fontSize: 10, color: '#71767F' }}>{signals.length} total · top 5 shown</span>
       </div>
       <div className="panel-body">
         {top.length === 0 ? (
           <div style={{ padding: '16px 12px' }}>
-            <p style={{ color: '#5F6772', fontSize: 11.5, textAlign: 'center', marginBottom: 8 }}>
+            <p style={{ color: '#71767F', fontSize: 11.5, textAlign: 'center', marginBottom: 8 }}>
               Waiting for strategy signals…
             </p>
-            <p style={{ color: '#3C424B', fontSize: 10.5, textAlign: 'center' }}>
+            <p style={{ color: '#4A4F57', fontSize: 10.5, textAlign: 'center' }}>
               Strategies evaluate every 60s after market open
             </p>
           </div>
@@ -101,15 +101,15 @@ export default function StrategyBookPanel() {
                   key={i}
                   style={{
                     padding: '10px 12px',
-                    borderBottom: '1px solid #20242B',
-                    borderLeft: `3px solid ${s.side === 'BUY' ? '#2FBF71' : '#E5484D'}`,
+                    borderBottom: '1px solid #23272E',
+                    borderLeft: `3px solid ${s.side === 'BUY' ? '#2DBD80' : '#F2495C'}`,
                   }}
                 >
                   {/* Row 1: symbol + side + strategy */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#E6E9ED' }}>{sym}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#ECEEF1' }}>{sym}</span>
                     <Badge variant="side" value={s.side} />
-                    <span style={{ fontSize: 10, color: '#5F6772', marginLeft: 'auto' }}>
+                    <span style={{ fontSize: 10, color: '#71767F', marginLeft: 'auto' }}>
                       {s.strategy_id} · {desc}
                     </span>
                   </div>
@@ -118,16 +118,16 @@ export default function StrategyBookPanel() {
                   {/* Row 3: price levels */}
                   <div style={{ display: 'flex', gap: 12, marginTop: 5, fontSize: 10 }}>
                     {liveP && (
-                      <span style={{ color: '#9BA3AD' }}>@ {liveP.toFixed(2)}</span>
+                      <span style={{ color: '#AEB3BB' }}>@ {liveP.toFixed(2)}</span>
                     )}
                     {s.target && (
-                      <span style={{ color: '#2FBF71' }}>T {s.target.toFixed(0)}</span>
+                      <span style={{ color: '#2DBD80' }}>T {s.target.toFixed(0)}</span>
                     )}
                     {s.stop_loss && (
-                      <span style={{ color: '#E5484D' }}>SL {s.stop_loss.toFixed(0)}</span>
+                      <span style={{ color: '#F2495C' }}>SL {s.stop_loss.toFixed(0)}</span>
                     )}
                     {rr && (
-                      <span style={{ color: '#9BA3AD', marginLeft: 'auto' }}>R:R {rr}</span>
+                      <span style={{ color: '#AEB3BB', marginLeft: 'auto' }}>R:R {rr}</span>
                     )}
                   </div>
                   {/* Row 4: regime badge */}

@@ -16,7 +16,7 @@ function Sparkline({ rows, up }: { rows: Row[]; up: boolean }) {
     const w = canvas.width, h = canvas.height
     const min = Math.min(...closes), max = Math.max(...closes)
     const range = max - min || 1
-    const color = up ? '#2FBF71' : '#E5484D'
+    const color = up ? '#2DBD80' : '#F2495C'
     ctx.clearRect(0, 0, w, h)
     const grad = ctx.createLinearGradient(0, 0, 0, h)
     grad.addColorStop(0, color + '30')
@@ -62,7 +62,7 @@ export default function GlobalModal({ quote, onClose }: { quote: GlobalQuote; on
   }, [onClose])
 
   const up = quote.change >= 0
-  const chgColor = up ? '#2FBF71' : '#E5484D'
+  const chgColor = up ? '#2DBD80' : '#F2495C'
   const fmt = (v: number) =>
     quote.category === 'fx' ? v.toFixed(4) : v.toLocaleString('en-IN', { maximumFractionDigits: 2 })
 
@@ -77,47 +77,47 @@ export default function GlobalModal({ quote, onClose }: { quote: GlobalQuote; on
       onClick={onClose}
     >
       <div
-        style={{ background: '#0F1114', border: '1px solid #3C424B', borderRadius: 6, width: 520, maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+        style={{ background: '#121419', border: '1px solid #4A4F57', borderRadius: 6, width: 520, maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div style={{ padding: '14px 18px', borderBottom: '1px solid #20242B', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid #23272E', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#E6E9ED', letterSpacing: '0.06em' }}>{quote.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#ECEEF1', letterSpacing: '0.06em' }}>{quote.label}</span>
               <span style={{ fontSize: 22, fontWeight: 700, color: '#F0F0F0', fontVariantNumeric: 'tabular-nums' }}>{fmt(quote.price)}</span>
               <span style={{ fontSize: 13, fontWeight: 600, color: chgColor }}>
                 {up ? '+' : ''}{quote.change.toFixed(2)}%
               </span>
             </div>
-            <span style={{ fontSize: 10, color: '#3C424B', letterSpacing: '0.06em' }}>{CATEGORY_LABEL[quote.category] ?? quote.category.toUpperCase()} · {quote.symbol} · DELAYED</span>
+            <span style={{ fontSize: 10, color: '#4A4F57', letterSpacing: '0.06em' }}>{CATEGORY_LABEL[quote.category] ?? quote.category.toUpperCase()} · {quote.symbol} · DELAYED</span>
           </div>
-          <button onClick={onClose} style={{ color: '#5F6772', background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>✕</button>
+          <button onClick={onClose} style={{ color: '#71767F', background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>✕</button>
         </div>
 
         {/* Stats row */}
         {(high90 !== null) && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', borderBottom: '1px solid #20242B' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', borderBottom: '1px solid #23272E' }}>
             {[
               { label: '90d High', value: fmt(high90!) },
               { label: '90d Low',  value: fmt(low90!)  },
-              { label: '90d Return', value: ret90 !== null ? `${ret90 > 0 ? '+' : ''}${ret90.toFixed(2)}%` : '—', color: ret90 !== null ? (ret90 >= 0 ? '#2FBF71' : '#E5484D') : undefined },
+              { label: '90d Return', value: ret90 !== null ? `${ret90 > 0 ? '+' : ''}${ret90.toFixed(2)}%` : '—', color: ret90 !== null ? (ret90 >= 0 ? '#2DBD80' : '#F2495C') : undefined },
             ].map(({ label, value, color }) => (
-              <div key={label} style={{ padding: '8px 14px', borderRight: '1px solid #20242B' }}>
-                <div style={{ fontSize: 9.5, color: '#5F6772', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{label}</div>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: color ?? '#C3CAD3', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+              <div key={label} style={{ padding: '8px 14px', borderRight: '1px solid #23272E' }}>
+                <div style={{ fontSize: 9.5, color: '#71767F', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{label}</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: color ?? '#CFD3D9', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
               </div>
             ))}
           </div>
         )}
 
         {/* Sparkline */}
-        <div style={{ padding: '12px 18px', borderBottom: '1px solid #20242B' }}>
-          <div style={{ fontSize: 10, color: '#3C424B', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>90-Day Price</div>
+        <div style={{ padding: '12px 18px', borderBottom: '1px solid #23272E' }}>
+          <div style={{ fontSize: 10, color: '#4A4F57', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>90-Day Price</div>
           {loading
-            ? <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 10.5, color: '#3C424B' }}>loading…</span></div>
+            ? <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 10.5, color: '#4A4F57' }}>loading…</span></div>
             : history.length < 2
-              ? <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 10.5, color: '#3C424B' }}>no history</span></div>
+              ? <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 10.5, color: '#4A4F57' }}>no history</span></div>
               : <Sparkline rows={history} up={up} />
           }
         </div>
@@ -125,8 +125,8 @@ export default function GlobalModal({ quote, onClose }: { quote: GlobalQuote; on
         {/* Date range footer */}
         {history.length > 0 && (
           <div style={{ padding: '6px 18px', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 9.5, color: '#3C424B' }}>{String(history[0].date)}</span>
-            <span style={{ fontSize: 9.5, color: '#3C424B' }}>{String(history[history.length - 1].date)}</span>
+            <span style={{ fontSize: 9.5, color: '#4A4F57' }}>{String(history[0].date)}</span>
+            <span style={{ fontSize: 9.5, color: '#4A4F57' }}>{String(history[history.length - 1].date)}</span>
           </div>
         )}
       </div>

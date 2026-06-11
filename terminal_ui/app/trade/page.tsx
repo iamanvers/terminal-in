@@ -12,13 +12,13 @@ import { useSocketEvent, useTickMap } from '@/hooks/useSocket'
 const C = THEME
 
 const CSS = `
-@keyframes flash-up   { 0%{background:#2FBF7130}100%{background:transparent} }
-@keyframes flash-down { 0%{background:#E5484D30}100%{background:transparent} }
+@keyframes flash-up   { 0%{background:#2DBD8030}100%{background:transparent} }
+@keyframes flash-down { 0%{background:#F2495C30}100%{background:transparent} }
 .flash-up   { animation: flash-up   0.7s ease-out }
 .flash-down { animation: flash-down 0.7s ease-out }
 ::-webkit-scrollbar { width:3px;height:3px }
 ::-webkit-scrollbar-track { background:#080808 }
-::-webkit-scrollbar-thumb { background:#2B303A;border-radius:2px }
+::-webkit-scrollbar-thumb { background:#333841;border-radius:2px }
 `
 const StyleTag = () => <style dangerouslySetInnerHTML={{ __html: CSS }} />
 
@@ -77,7 +77,7 @@ function Side({ v }: { v: string }) {
       fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 2,
       background: buy ? '#001a08' : '#1a0004',
       color: buy ? C.green : C.red,
-      border: `1px solid ${buy ? '#2FBF7133' : '#E5484D33'}`,
+      border: `1px solid ${buy ? '#2DBD8033' : '#F2495C33'}`,
       letterSpacing: '.05em',
     }}>{v}</span>
   )
@@ -90,7 +90,7 @@ function ReasBadge({ r }: { r: string | null | undefined }) {
     time_exit: ['#00112a', C.blue], manual: ['#1a0d00', C.amber],
     eod_settlement: ['#140022', C.purple],
   }
-  const [bg, fg] = MAP[r] ?? ['#14161A', C.muted]
+  const [bg, fg] = MAP[r] ?? ['#1C1F25', C.muted]
   return <span style={{ fontSize: 10, background: bg, color: fg, padding: '1px 5px', borderRadius: 2, whiteSpace: 'nowrap' }}>
     {r.replace(/_/g, ' ')}
   </span>
@@ -145,7 +145,7 @@ function AccountBar({
       {/* Module + mode badge */}
       <div style={{ padding: '0 16px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 2, minWidth: 86 }}>
         <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text, letterSpacing: '.1em' }}>EQUITIES</span>
-        <span style={{ fontSize: 9.5, fontWeight: 700, color: C.amber, letterSpacing: '.1em', background: '#0F1826', border: `1px solid ${C.amber}33`, borderRadius: 3, padding: '1px 6px' }}>PAPER · CASH</span>
+        <span style={{ fontSize: 9.5, fontWeight: 700, color: C.amber, letterSpacing: '.1em', background: '#1F1709', border: `1px solid ${C.amber}33`, borderRadius: 3, padding: '1px 6px' }}>PAPER · CASH</span>
       </div>
       {chips.map(c => (
         <div key={c.label} style={{ flex: 1, padding: '0 12px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
@@ -190,7 +190,7 @@ function LeftRail({
         {STRATS.map(s => (
           <button key={s} onClick={() => onFilter(s)} style={{
             width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: '6px 10px', background: filter === s ? '#4E80B40A' : 'transparent',
+            padding: '6px 10px', background: filter === s ? '#FFB02E0A' : 'transparent',
             borderLeft: `2px solid ${filter === s ? C.amber : 'transparent'}`,
             border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: filter === s ? 700 : 400,
             color: filter === s ? C.amber : C.sub, letterSpacing: '.04em',
@@ -213,7 +213,7 @@ function LeftRail({
                 <span style={{ fontSize: 10, color: C.text, fontWeight: 600 }}>{sid}</span>
                 <span style={{ fontSize: 9.5, color: rec.win_rate >= 0.5 ? C.green : C.red }}>{(rec.win_rate*100).toFixed(0)}% WR</span>
               </div>
-              <div style={{ height: 4, background: '#14161A', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ height: 4, background: '#1C1F25', borderRadius: 2, overflow: 'hidden' }}>
                 <div style={{
                   width: `${Math.abs(rec.pnl) / maxPnl * 100}%`,
                   height: '100%', borderRadius: 2,
@@ -357,8 +357,8 @@ function PositionsTable({
               style={{
                 display: 'grid', gridTemplateColumns: PCOLS, gap: 0, padding: '6px 10px',
                 borderBottom: `1px solid ${C.border}`, cursor: 'pointer', alignItems: 'center',
-                background: sel ? '#4E80B408' : (unr != null && unr > 0) ? '#2FBF710A' : (unr != null && unr < 0) ? '#E5484D0A' : 'transparent',
-                borderLeft: `2px solid ${sel ? C.amber : (unr != null && unr > 0) ? '#2FBF7133' : (unr != null && unr < 0) ? '#E5484D33' : 'transparent'}`,
+                background: sel ? '#FFB02E08' : (unr != null && unr > 0) ? '#2DBD800A' : (unr != null && unr < 0) ? '#F2495C0A' : 'transparent',
+                borderLeft: `2px solid ${sel ? C.amber : (unr != null && unr > 0) ? '#2DBD8033' : (unr != null && unr < 0) ? '#F2495C33' : 'transparent'}`,
                 opacity: isClosing ? 0.4 : 1,
               }}>
               <span style={{ fontSize: 11.5, fontWeight: 700, color: C.text }}>{useSym(pos.instrument_id, tokenMap)}</span>
@@ -440,8 +440,8 @@ function TradeHistory({
                 style={{
                   display: 'grid', gridTemplateColumns: HCOLS, gap: 0, padding: '5px 10px',
                   borderBottom: `1px solid ${C.border}`, cursor: 'pointer', alignItems: 'center',
-                  background: sel ? '#4E80B408' : 'transparent',
-                  borderLeft: `2px solid ${sel ? C.amber : (t.net_pnl ?? 0) > 0 ? '#2FBF7122' : '#E5484D22'}`,
+                  background: sel ? '#FFB02E08' : 'transparent',
+                  borderLeft: `2px solid ${sel ? C.amber : (t.net_pnl ?? 0) > 0 ? '#2DBD8022' : '#F2495C22'}`,
                 }}>
                 <span style={{ fontSize: 9.5, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{extMs ? tsFmt(extMs) : '—'}</span>
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text }}>{useSym(t.instrument_token, tokenMap)}</span>
@@ -607,7 +607,7 @@ function PerformanceView({ stats, scorecards, snapshots }: {
                     </div>
                     <Pnl v={rec.pnl} size={11} />
                   </div>
-                  <div style={{ height: 5, background: '#14161A', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ height: 5, background: '#1C1F25', borderRadius: 2, overflow: 'hidden' }}>
                     <div style={{ width: `${pnlAbs / maxAbs * 100}%`, height: '100%', background: rec.pnl >= 0 ? C.green : C.red, borderRadius: 2 }} />
                   </div>
                 </div>
@@ -688,7 +688,7 @@ function SignalsView({ tokenMap }: { tokenMap: TokenMap }) {
         <div style={{ display: 'flex', gap: 0 }}>
           {(['opps','signals'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} style={{
-              fontSize: 10, padding: '3px 10px', background: tab === t ? '#20242B' : 'transparent',
+              fontSize: 10, padding: '3px 10px', background: tab === t ? '#23272E' : 'transparent',
               border: 'none', color: tab === t ? C.text : C.muted, cursor: 'pointer', fontWeight: tab === t ? 700 : 400,
               borderBottom: `2px solid ${tab === t ? C.amber : 'transparent'}`,
             }}>
@@ -769,7 +769,7 @@ function SigRow({ s, tokenMap }: { s: SignalRec; tokenMap: TokenMap }) {
     <div style={{
       display: 'grid', gridTemplateColumns: '52px 14px 100px 56px 56px 1fr',
       gap: 8, padding: '5px 10px', borderBottom: `1px solid ${C.border}`,
-      alignItems: 'center', background: ok ? '#2FBF710A' : 'transparent',
+      alignItems: 'center', background: ok ? '#2DBD800A' : 'transparent',
     }}>
       <span style={{ fontSize: 9.5, color: C.dim, fontVariantNumeric: 'tabular-nums' }}>{tsFmt(s.decided_at)}</span>
       <span style={{ fontSize: 10.5, color: ok ? C.green : C.red, fontWeight: 700 }}>{ok ? '✓' : '✗'}</span>
@@ -957,11 +957,11 @@ function InlineOrderTicket({
         <label style={{ fontSize: 9.5, color: C.dim, display: 'block', marginBottom: 2 }}>SYMBOL</label>
         <input value={search} onChange={e => { setSearch(e.target.value); setSym('') }} placeholder="search…" style={{ ...inp, color: sym2 ? C.green : C.text }} />
         {showD && (
-          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#14161A', border: `1px solid ${C.border2}`, borderRadius: 3, maxHeight: 120, overflow: 'auto' }}>
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#1C1F25', border: `1px solid ${C.border2}`, borderRadius: 3, maxHeight: 120, overflow: 'auto' }}>
             {filt.slice(0, 8).map(i => (
               <div key={i.token} onClick={() => { setSym(i.symbol); setSearch(i.symbol) }}
                 style={{ padding: '4px 8px', fontSize: 10.5, cursor: 'pointer', color: C.sub }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#20242B')}
+                onMouseEnter={e => (e.currentTarget.style.background = '#23272E')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                 {i.symbol}
               </div>
@@ -973,7 +973,7 @@ function InlineOrderTicket({
         {(['BUY','SELL'] as const).map(s => (
           <button key={s} onClick={() => setSide(s)} style={{
             flex: 1, padding: '5px 0', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', borderRadius: 3, border: 'none', letterSpacing: '.07em',
-            background: side === s ? (s === 'BUY' ? '#001A08' : '#1A0004') : '#14161A',
+            background: side === s ? (s === 'BUY' ? '#001A08' : '#1A0004') : '#1C1F25',
             color: side === s ? (s === 'BUY' ? C.green : C.red) : C.muted,
           }}>{s}</button>
         ))}
@@ -1003,7 +1003,7 @@ function InlineOrderTicket({
         <button onClick={submit} disabled={loading || !sym2 || !qty} style={{
           padding: '7px 0', fontSize: 10.5, fontWeight: 700, borderRadius: 3, letterSpacing: '.07em',
           cursor: loading || !sym2 || !qty ? 'not-allowed' : 'pointer', border: 'none',
-          background: loading || !sym2 || !qty ? '#14161A' : (side === 'BUY' ? '#001A08' : '#1A0004'),
+          background: loading || !sym2 || !qty ? '#1C1F25' : (side === 'BUY' ? '#001A08' : '#1A0004'),
           color: loading || !sym2 || !qty ? C.dim : (side === 'BUY' ? C.green : C.red),
         }}>{loading ? 'SENDING…' : `PLACE ${side}`}</button>
       )}

@@ -7,7 +7,7 @@
  * planner approvals. Each toast lives 30s (progress bar) and can be
  * dismissed with ✕. Mounted once in the root layout.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { getSocket } from '@/lib/socket'
 
 const TOAST_TTL_MS = 30_000
@@ -22,12 +22,12 @@ type Toast = {
 }
 
 const KIND_STYLE: Record<Toast['kind'], { color: string; icon: string }> = {
-  trade:   { color: '#2FBF71', icon: '◉' },
+  trade:   { color: '#2DBD80', icon: '◉' },
   reject:  { color: '#EAB308', icon: '⊘' },
-  news:    { color: '#4CA8E8', icon: '▣' },
-  risk:    { color: '#E5484D', icon: '⚠' },
-  planner: { color: '#4E80B4', icon: '⚖' },
-  error:   { color: '#E5484D', icon: '✕' },
+  news:    { color: '#3B8CFF', icon: '▣' },
+  risk:    { color: '#F2495C', icon: '⚠' },
+  planner: { color: '#FFB02E', icon: '⚖' },
+  error:   { color: '#F2495C', icon: '✕' },
 }
 
 let _nextId = 1
@@ -36,26 +36,26 @@ function ToastCard({ t, onClose }: { t: Toast; onClose: (id: number) => void }) 
   const s = KIND_STYLE[t.kind]
   return (
     <div className="fade-up" style={{
-      width: 320, background: '#111317', border: '1px solid #2B303A',
+      width: 320, background: '#15171C', border: '1px solid #333841',
       borderLeft: `3px solid ${s.color}`, borderRadius: 5, overflow: 'hidden',
       boxShadow: '0 6px 24px rgba(0,0,0,.55)', pointerEvents: 'auto',
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 10px 7px' }}>
         <span style={{ color: s.color, fontSize: 12.5, lineHeight: '14px', flexShrink: 0 }}>{s.icon}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 700, color: '#E6E9ED', letterSpacing: '.04em' }}>{t.title}</div>
-          {t.body && <div style={{ fontSize: 10.5, color: '#9BA3AD', marginTop: 2, lineHeight: 1.45, overflowWrap: 'break-word' }}>{t.body}</div>}
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: '#ECEEF1', letterSpacing: '.04em' }}>{t.title}</div>
+          {t.body && <div style={{ fontSize: 10.5, color: '#AEB3BB', marginTop: 2, lineHeight: 1.45, overflowWrap: 'break-word' }}>{t.body}</div>}
         </div>
         <button onClick={() => onClose(t.id)} aria-label="dismiss" style={{
-          background: 'none', border: 'none', color: '#5F6772', cursor: 'pointer',
+          background: 'none', border: 'none', color: '#71767F', cursor: 'pointer',
           fontSize: 11.5, lineHeight: '14px', padding: 0, flexShrink: 0,
         }}
-          onMouseEnter={e => (e.currentTarget.style.color = '#E6E9ED')}
-          onMouseLeave={e => (e.currentTarget.style.color = '#5F6772')}
+          onMouseEnter={e => (e.currentTarget.style.color = '#ECEEF1')}
+          onMouseLeave={e => (e.currentTarget.style.color = '#71767F')}
         >✕</button>
       </div>
       {/* TTL progress bar */}
-      <div style={{ height: 2, background: '#20242B' }}>
+      <div style={{ height: 2, background: '#23272E' }}>
         <div style={{
           height: '100%', background: `${s.color}88`, transformOrigin: 'left',
           animation: `toast-ttl ${TOAST_TTL_MS}ms linear forwards`,
@@ -67,19 +67,22 @@ function ToastCard({ t, onClose }: { t: Toast; onClose: (id: number) => void }) 
 
 export default function Toasts() {
   const [toasts, setToasts] = useState<Toast[]>([])
-  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
-
   const close = useCallback((id: number) => {
     setToasts(ts => ts.filter(t => t.id !== id))
-    const tm = timers.current.get(id)
-    if (tm) { clearTimeout(tm); timers.current.delete(id) }
   }, [])
 
   const push = useCallback((kind: Toast['kind'], title: string, body = '') => {
+    // Hidden tab: timers are throttled, so toasts would pile up and replay
+    // on return. The user can't see them anyway — drop instead of queueing.
+    if (typeof document !== 'undefined' && document.hidden) return
     const id = _nextId++
-    setToasts(ts => [...ts, { id, kind, title, body, ts: Date.now() }].slice(-MAX_TOASTS))
-    timers.current.set(id, setTimeout(() => close(id), TOAST_TTL_MS))
-  }, [close])
+    setToasts(ts => {
+      // Dedupe: identical title+body refreshes the existing toast instead
+      // of stacking a copy.
+      if (ts.some(t => t.title === title && t.body === body)) return ts
+      return [...ts, { id, kind, title, body, ts: Date.now() }].slice(-MAX_TOASTS)
+    })
+  }, [])
 
   useEffect(() => {
     const s = getSocket()
@@ -136,7 +139,17 @@ export default function Toasts() {
     }
   }, [push])
 
-  useEffect(() => () => { timers.current.forEach(clearTimeout) }, [])
+  // TTL enforcement by age sweep (robust across background-tab throttling)
+  useEffect(() => {
+    const t = setInterval(() => {
+      setToasts(ts => {
+        const now = Date.now()
+        const live = ts.filter(x => now - x.ts < TOAST_TTL_MS)
+        return live.length === ts.length ? ts : live
+      })
+    }, 1000)
+    return () => clearInterval(t)
+  }, [])
 
   return (
     <>

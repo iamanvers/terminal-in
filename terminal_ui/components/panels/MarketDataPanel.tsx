@@ -79,7 +79,7 @@ function Sparkline({ prices, up }: { prices: number[]; up: boolean }) {
   const pts = prices.map((p, i) => `${(i / (prices.length - 1)) * w},${h - ((p - min) / range) * h}`).join(' ')
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
-      <polyline points={pts} fill="none" stroke={up ? '#2FBF71' : '#E5484D'} strokeWidth="1.2" />
+      <polyline points={pts} fill="none" stroke={up ? '#2DBD80' : '#F2495C'} strokeWidth="1.2" />
     </svg>
   )
 }
@@ -88,10 +88,10 @@ function Sparkline({ prices, up }: { prices: number[]; up: boolean }) {
 function SkeletonRow() {
   return (
     <tr>
-      <td><div style={{ height: 8, width: 64, background: '#20242B', borderRadius: 3, animation: 'shimmer 1.4s ease-in-out infinite' }} /></td>
-      <td><div style={{ height: 8, width: 44, background: '#20242B', borderRadius: 3 }} /></td>
-      <td><div style={{ height: 8, width: 52, background: '#20242B', borderRadius: 3, animation: 'shimmer 1.4s ease-in-out infinite' }} /></td>
-      <td><div style={{ height: 8, width: 36, background: '#20242B', borderRadius: 3 }} /></td>
+      <td><div style={{ height: 8, width: 64, background: '#23272E', borderRadius: 3, animation: 'shimmer 1.4s ease-in-out infinite' }} /></td>
+      <td><div style={{ height: 8, width: 44, background: '#23272E', borderRadius: 3 }} /></td>
+      <td><div style={{ height: 8, width: 52, background: '#23272E', borderRadius: 3, animation: 'shimmer 1.4s ease-in-out infinite' }} /></td>
+      <td><div style={{ height: 8, width: 36, background: '#23272E', borderRadius: 3 }} /></td>
     </tr>
   )
 }
@@ -220,22 +220,22 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
       <style dangerouslySetInnerHTML={{ __html: SHIMMER_CSS }} />
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #2B303A', background: '#0F1114', flexShrink: 0 }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid #333841', background: '#121419', flexShrink: 0 }}>
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
             flex: 1, padding: '5px 0', fontSize: 10, fontWeight: 600,
             letterSpacing: '0.06em', background: 'none', border: 'none', cursor: 'pointer',
-            color: tab === t ? '#4E80B4' : '#5F6772',
-            borderBottom: tab === t ? '2px solid #4E80B4' : '2px solid transparent',
+            color: tab === t ? '#FFB02E' : '#71767F',
+            borderBottom: tab === t ? '2px solid #FFB02E' : '2px solid transparent',
           }}>{t}</button>
         ))}
       </div>
 
       {/* Market-closed notice */}
       {!marketOpen && (
-        <div style={{ padding: '3px 8px', background: '#0A0B0D', borderBottom: '1px solid #191C21', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#3C424B', display: 'inline-block' }} />
-          <span style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '.06em' }}>NSE CLOSED · last close prices</span>
+        <div style={{ padding: '3px 8px', background: '#0A0B0D', borderBottom: '1px solid #181B21', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#4A4F57', display: 'inline-block' }} />
+          <span style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.06em' }}>NSE CLOSED · last close prices</span>
         </div>
       )}
 
@@ -288,20 +288,20 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
           const sensexStocks = NSE_WATCHLIST.filter(w => SENSEX30_TOKENS.has(w.token))
           return (
             <>
-              <div style={{ padding: '8px 10px', borderBottom: '1px solid #20242B', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 10.5, color: '#4E80B4', fontWeight: 700, letterSpacing: '0.06em' }}>SENSEX</span>
+              <div style={{ padding: '8px 10px', borderBottom: '1px solid #23272E', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 10.5, color: '#FFB02E', fontWeight: 700, letterSpacing: '0.06em' }}>SENSEX</span>
                 {sensex ? (
                   <>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: '#E6E9ED', fontVariantNumeric: 'tabular-nums' }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: '#ECEEF1', fontVariantNumeric: 'tabular-nums' }}>
                       {sensex.price.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                     </span>
-                    <span style={{ fontSize: 11.5, fontWeight: 600, color: sensex.change >= 0 ? '#2FBF71' : '#E5484D' }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, color: sensex.change >= 0 ? '#2DBD80' : '#F2495C' }}>
                       {sensex.change >= 0 ? '+' : ''}{sensex.change.toFixed(2)}%
                     </span>
-                    <span style={{ fontSize: 9.5, color: '#5F6772', marginLeft: 'auto' }}>DELAYED</span>
+                    <span style={{ fontSize: 9.5, color: '#71767F', marginLeft: 'auto' }}>DELAYED</span>
                   </>
                 ) : (
-                  <button onClick={fetchGlobal} style={{ fontSize: 9.5, color: '#4E80B4', background: 'none', border: '1px solid #333', borderRadius: 3, padding: '2px 8px', cursor: 'pointer' }}>
+                  <button onClick={fetchGlobal} style={{ fontSize: 9.5, color: '#FFB02E', background: 'none', border: '1px solid #333', borderRadius: 3, padding: '2px 8px', cursor: 'pointer' }}>
                     {globalLoading ? '…' : 'LOAD'}
                   </button>
                 )}
@@ -353,8 +353,8 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
             : filteredGlobal.length === 0
               ? (
                 <div style={{ textAlign: 'center', marginTop: 20 }}>
-                  <p style={{ color: '#5F6772', fontSize: 10.5 }}>No data yet</p>
-                  <button onClick={fetchGlobal} style={{ marginTop: 6, fontSize: 10, color: '#4E80B4', background: 'none', border: '1px solid #333', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>
+                  <p style={{ color: '#71767F', fontSize: 10.5 }}>No data yet</p>
+                  <button onClick={fetchGlobal} style={{ marginTop: 6, fontSize: 10, color: '#FFB02E', background: 'none', border: '1px solid #333', borderRadius: 3, padding: '3px 10px', cursor: 'pointer' }}>
                     REFRESH
                   </button>
                 </div>
@@ -386,9 +386,9 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
         )}
 
         {tab !== 'NSE' && globalQuotes.length > 0 && (
-          <p style={{ fontSize: 9.5, color: '#3C424B', textAlign: 'center', padding: '4px 0' }}>
+          <p style={{ fontSize: 9.5, color: '#4A4F57', textAlign: 'center', padding: '4px 0' }}>
             DELAYED · yfinance · 5-min cache
-            <button onClick={fetchGlobal} style={{ marginLeft: 8, color: '#3C424B', background: 'none', border: 'none', cursor: 'pointer', fontSize: 9.5 }}>↺</button>
+            <button onClick={fetchGlobal} style={{ marginLeft: 8, color: '#4A4F57', background: 'none', border: 'none', cursor: 'pointer', fontSize: 9.5 }}>↺</button>
           </p>
         )}
       </div>

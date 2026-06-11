@@ -39,12 +39,12 @@ const TickerItem = React.memo(
   function TickerItem({ label, price, chg }: { label: string; price: number; chg: number }) {
     return (
       <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, flexShrink: 0, padding: '0 18px' }}>
-        <span style={{ fontSize: 9.5, color: '#5F6772', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{label}</span>
-        <span style={{ fontSize: 11.5, color: '#C3CAD3', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ fontSize: 9.5, color: '#71767F', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{label}</span>
+        <span style={{ fontSize: 11.5, color: '#CFD3D9', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
           {price > 0 ? price.toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '—'}
         </span>
         {price > 0 && (
-          <span style={{ fontSize: 10, color: chg >= 0 ? '#2FBF71' : '#E5484D', fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ fontSize: 10, color: chg >= 0 ? '#2DBD80' : '#F2495C', fontVariantNumeric: 'tabular-nums' }}>
             {chg >= 0 ? '+' : ''}{chg.toFixed(2)}%
           </span>
         )}
@@ -110,9 +110,9 @@ function TickerTape() {
   })), [prices])
 
   return (
-    <div style={{ height: 24, overflow: 'hidden', background: '#0A0B0D', borderBottom: '1px solid #20242B', display: 'flex', alignItems: 'center' }}>
+    <div style={{ height: 24, overflow: 'hidden', background: '#0A0B0D', borderBottom: '1px solid #23272E', display: 'flex', alignItems: 'center' }}>
       {!marketOpen && (
-        <span style={{ fontSize: 9.5, color: '#3C424B', letterSpacing: '0.08em', padding: '0 10px', flexShrink: 0, borderRight: '1px solid #20242B' }}>
+        <span style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '0.08em', padding: '0 10px', flexShrink: 0, borderRight: '1px solid #23272E' }}>
           CLOSED
         </span>
       )}
@@ -136,12 +136,12 @@ function NavHeader() {
   return (
     <header style={{
       height: 38, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '0 18px', borderBottom: '1px solid var(--border-strong, #2B303A)',
-      background: '#0F1114', flexShrink: 0,
+      padding: '0 18px', borderBottom: '1px solid var(--border-strong, #333841)',
+      background: '#121419', flexShrink: 0,
     }}>
-      <span style={{ fontFamily: 'var(--font-mono, monospace)', fontWeight: 700, color: '#4E80B4', letterSpacing: '0.12em', fontSize: 13, flexShrink: 0 }}>
-        TERMINAL<span style={{ color: '#4F5660' }}>//</span>IN
-        <span style={{ fontSize: 9.5, color: '#444B55', marginLeft: 10, letterSpacing: '0.08em', fontWeight: 500 }}>NSE · PAPER</span>
+      <span style={{ fontFamily: 'var(--font-mono, monospace)', fontWeight: 700, color: '#FFB02E', letterSpacing: '0.12em', fontSize: 13, flexShrink: 0 }}>
+        TERMINAL<span style={{ color: '#565B63' }}>//</span>IN
+        <span style={{ fontSize: 9.5, color: '#4A4F57', marginLeft: 10, letterSpacing: '0.08em', fontWeight: 500 }}>NSE · PAPER</span>
       </span>
 
       {/* Module navigation tabs */}
@@ -157,9 +157,9 @@ function NavHeader() {
                 fontSize: 10.5, fontWeight: active ? 700 : 500,
                 letterSpacing: '0.09em', padding: '0 16px',
                 textDecoration: 'none', cursor: 'pointer',
-                background:   active ? 'var(--accent-soft, #4E80B40E)' : 'transparent',
-                color:        active ? '#4E80B4' : '#5F6772',
-                boxShadow:    active ? 'inset 0 -2px 0 #4E80B4' : 'none',
+                background:   active ? 'var(--accent-soft, #FFB02E0E)' : 'transparent',
+                color:        active ? '#FFB02E' : '#71767F',
+                boxShadow:    active ? 'inset 0 -2px 0 #FFB02E' : 'none',
                 transition: 'color 0.15s, background 0.15s',
               }}
             >

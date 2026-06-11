@@ -56,7 +56,7 @@ const TRACKS: Track[] = [
   },
 ]
 
-const LEVEL_C = { beginner: C.green, intermediate: C.amber, advanced: '#E5484D' } as const
+const LEVEL_C = { beginner: C.green, intermediate: C.amber, advanced: '#F2495C' } as const
 
 export default function LearnPage() {
   const [track, setTrack] = useState<string>(TRACKS[0].id)
