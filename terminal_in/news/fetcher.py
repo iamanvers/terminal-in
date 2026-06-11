@@ -13,6 +13,7 @@ published on 'news.signal'.
 """
 
 import email.utils
+import html as _html
 import logging
 import re
 import time
@@ -139,8 +140,10 @@ class NewsFetcher:
             return None
         self._seen_urls.add(url)
 
-        headline = article.get('title', '') or ''
-        body = article.get('description', '') or ''
+        # Feeds emit HTML entities (&amp;, &#039;) — unescape once here so
+        # headlines render clean in every card, popup, and prompt downstream
+        headline = _html.unescape(article.get('title', '') or '')
+        body = _html.unescape(article.get('description', '') or '')
 
         # Cross-source dedup: the same story syndicated by multiple outlets
         norm = _norm_headline(headline)

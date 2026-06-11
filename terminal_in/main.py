@@ -191,6 +191,10 @@ def main():
         from terminal_in.execution.paper_broker import PaperBroker
         broker = PaperBroker(db=db, config=cfg)
 
+    # ── Portfolio ledger (data/portfolio.md — live statement of holdings) ─────
+    from terminal_in.reporting.portfolio_ledger import PortfolioLedger
+    _ledger = PortfolioLedger(db=db, broker=broker)
+
     # ── Settlement service (EOD auto-close + daily P&L reset) ─────────────────
     from terminal_in.execution.settlement import SettlementService
     settlement = SettlementService(db=db, broker=broker, supervisor=supervisor, metadata=metadata)

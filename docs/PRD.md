@@ -91,6 +91,10 @@ Pipeline per run: dataset rebuild (static corpora + own closed trades + hindsigh
 | Risk additions | Per-expiry concentration, max short-gamma exposure, event-day (expiry/budget/RBI) position limits |
 | Greeks (P3 bridge) | Black-Scholes delta/theta/vega per position, portfolio-level greek caps |
 
+### P2 — Portfolio holdings surface
+
+A persistent ledger now exists (`data/portfolio.md`, regenerated on every fill/close/EOD; backed by the `trades` table). Next build: a **HOLDINGS panel** on the EQUITIES page (cash positions with live marks, unrealized P&L, product type, day change) and a positions section on the F&O page once derivative positions exist. API: extend `/api/portfolio/positions` with marks + product; reuse the ledger's assembly logic.
+
 ### P2 — Backtest engine
 
 Replay 2y of real OHLCV through the **full agentic stack** (lenses → filters → deterministic-planner mode → gate) with walk-forward splits; Sharpe/Calmar/max-DD per strategy per regime; results feed DSA priors and the strategy gene pool. Lives in `terminal_in/backtest/`, surfaced on `/train`.
