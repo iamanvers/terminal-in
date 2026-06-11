@@ -95,6 +95,12 @@ class DB:
                 error           TEXT
             )''',
             'CREATE INDEX IF NOT EXISTS idx_training_runs_time ON training_runs(started_at DESC)',
+            # Operator settings — DB overrides on top of .env (PRD 5b.2)
+            '''CREATE TABLE IF NOT EXISTS app_settings (
+                key        TEXT PRIMARY KEY,
+                value      TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )''',
             # Dedup news across restarts and across sources carrying the same story
             # (clean existing dupes first or the unique index creation no-ops)
             'DELETE FROM news_log WHERE id NOT IN (SELECT MIN(id) FROM news_log GROUP BY url)',
@@ -750,6 +756,22 @@ class DB:
                            :lenses_json,:regime,:india_vix,:planner_action,:planner_reason,
                            :size_factor,:planner_mode,:llm_latency_ms,:signal_id)''',
                 rows,
+            )
+
+    # ── App settings (operator overrides on .env — PRD 5b.2) ──────────────
+
+    def get_app_settings(self) -> dict:
+        with self.conn() as c:
+            rows = c.execute('SELECT key, value FROM app_settings').fetchall()
+        return {r['key']: r['value'] for r in rows}
+
+    def set_app_setting(self, key: str, value: str) -> None:
+        import time as _t
+        with self.conn() as c:
+            c.execute(
+                'INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) '
+                'ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at',
+                (key, value, int(_t.time() * 1000)),
             )
 
     def get_recent_agent_decisions(self, limit: int = 50) -> list:

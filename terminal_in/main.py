@@ -71,6 +71,14 @@ def main():
 
     # ── Persistence layer ─────────────────────────────────────────────────────
     db = DB(cfg.sqlite_path)
+
+    # Operator settings (PRD 5b.2): stored overrides beat .env. They are
+    # pushed into os.environ and Config is rebuilt before anything reads it.
+    from terminal_in import app_settings
+    if app_settings.apply_overrides(db):
+        cfg = load_config()
+        _setup_logging(cfg.log_level)
+
     metadata = MetadataRepo(cfg.duckdb_path)
     artifacts = ArtifactStore(cfg.artifacts_dir)
     log.info('Data dir: %s', cfg.data_dir)
