@@ -208,7 +208,7 @@ Supersedes the earlier single-machine packaging decision: the app must now be **
 
 ## 5c. Model deploy + Claude-augmented training (P2, partially blocked)
 
-- **Weight adjustment after training** = the LoRA deploy pipeline: merge adapter → `convert_hf_to_gguf.py` (llama.cpp, not yet vendored) → `ollama create financial-analyst-vN` → planner hot-switch with rollback. Blocked on: a completed training run (smoke test in progress) + llama.cpp clone.
+- **Weight adjustment after training** — ✅ SHIPPED (2026-06-12): `terminal_in/agents/training/deploy.py` runs merge → GGUF f16 → Q4_K_M quantize → `ollama create financial-analyst-vN`; llama.cpp vendored (`vendor/llamacpp` Vulkan binaries + converter source). `POST /api/training/deploy {run_id}`. First deploy: financial-analyst-v1 (637 MB, ~28 tok/s CPU) from the smoke-test adapter. Model switch stays manual via the OLLAMA_MODEL setting (dropdown lists installed models) — promotion requires the eval set (still open below).
 - **Claude-as-teacher dataset expansion**: grow `strategy_pairs.py` with Claude-generated QA on documented winning strategies (momentum/quality factor literature, Varsity strategy modules, public quant write-ups) and periodic web-sourced market-structure updates. Quality bar: every generated pair must cite the mechanism (why the edge exists), not just the rule. Target +500 pairs per quarter, versioned in git.
 
 ### P4 / Release 2 — Next-generation base models
