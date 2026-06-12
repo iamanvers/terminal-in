@@ -392,6 +392,23 @@ def test_sector_concentration_allows_index_instruments():
     assert result.checks.get('sector_ok') is True
 
 
+def test_sector_small_book_never_deadlocks():
+    """With 1 open position, a 2nd trade in ANY sector must pass the sector
+    check (2026-06-12 bug: proportional cap blocked 80 signals in a row —
+    (0+1)/(1+1)=50% > 40% for every sector on a 1-position book)."""
+    one_open = [{'instrument_token': 738561}]   # RELIANCE (energy)
+    g = _make_gate(open_trades=one_open)
+    # different sector: full gate path must clear the sector check
+    r = g.gate(_signal(instrument_id=341249, limit_price=900.0, qty=1))   # HDFCBANK
+    assert r.checks.get('sector_ok') is True
+    # same sector: the floor allows a 2nd position per sector
+    assert g._check_sector(738561, one_open)
+    # the cap still bites on bigger books: 3rd financial in a 3-book = 100%
+    three_fin = [{'instrument_token': t} for t in (341249, 1270529, 779521)]
+    g3 = _make_gate(open_trades=three_fin)
+    assert not g3._check_sector(1510401, three_fin)   # AXISBANK blocked
+
+
 def test_sector_map_covers_all_instruments():
     """Every known instrument symbol must have a sector mapping."""
     missing = [s for s in KNOWN_TOKENS if s not in SECTOR_MAP]

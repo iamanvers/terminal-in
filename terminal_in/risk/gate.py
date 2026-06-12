@@ -314,8 +314,14 @@ class RiskSupervisor:
             1 for t in open_trades
             if _sector_of(t.get('instrument_token')) == new_sector
         )
-        # After adding this trade: (sector_count + 1) / (total + 1)
-        projected_pct = (sector_count + 1) / (len(open_trades) + 1)
+        # Small-book floor: the proportional cap is meaningless on tiny books —
+        # with 1 open position ANY second trade projects to >=50% and the book
+        # deadlocks (observed 2026-06-12: 80 signals blocked in a row). Always
+        # allow up to 2 positions per sector; apply the 40% cap beyond that.
+        sector_count_after = sector_count + 1
+        if sector_count_after <= 2:
+            return True
+        projected_pct = sector_count_after / (len(open_trades) + 1)
         return projected_pct <= MAX_SECTOR_PCT
 
     def _check_correlation(self, signal: dict, open_trades: list) -> bool:
