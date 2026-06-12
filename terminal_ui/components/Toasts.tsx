@@ -23,7 +23,7 @@ type Toast = {
 
 const KIND_STYLE: Record<Toast['kind'], { color: string; icon: string }> = {
   trade:   { color: '#2DBD80', icon: '◉' },
-  reject:  { color: '#EAB308', icon: '⊘' },
+  reject:  { color: '#FFB02E', icon: '⊘' },
   news:    { color: '#3B8CFF', icon: '▣' },
   risk:    { color: '#F2495C', icon: '⚠' },
   planner: { color: '#0094FB', icon: '⚖' },

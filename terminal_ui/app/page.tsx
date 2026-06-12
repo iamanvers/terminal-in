@@ -42,7 +42,7 @@ function BootScreen({ error }: { error: boolean }) {
     <div style={{
       flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      background: '#0A0B0D', gap: 0,
+      background: 'transparent', gap: 0,
     }}>
       {/* Logo */}
       <div style={{ marginBottom: 32, textAlign: 'center' }}>
@@ -116,10 +116,10 @@ function BootScreen({ error }: { error: boolean }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}>
               {STEPS.slice(0, step + 1).map((s, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 10, color: i < step ? '#2A4A2A' : '#0094FB', minWidth: 12 }}>
+                  <span style={{ fontSize: 10, color: i < step ? '#2DBD8066' : '#0094FB', minWidth: 12 }}>
                     {i < step ? '✓' : '›'}
                   </span>
-                  <span style={{ fontSize: 10, color: i < step ? '#2A4A2A' : '#AEB3BB', fontVariantNumeric: 'tabular-nums' }}>
+                  <span style={{ fontSize: 10, color: i < step ? '#2DBD8066' : '#AEB3BB', fontVariantNumeric: 'tabular-nums' }}>
                     {i === step ? s.replace('…', dotStr || '…') : s.replace('…', '')}
                   </span>
                 </div>
@@ -213,9 +213,9 @@ export default function TerminalPage() {
         display: 'grid',
         gridTemplateColumns: 'minmax(270px, 330px) 1fr minmax(280px, 320px)',
         gridTemplateRows: 'minmax(0, 1fr) 190px 210px',
-        gap: 7,
-        padding: '7px 9px',
-        background: '#0A0B0D',
+        gap: 8,
+        padding: '10px 12px',
+        background: 'transparent',
         overflow: 'hidden',
       }}>
         {/* Col 1, rows 1+2: Market Data (with tabs) */}

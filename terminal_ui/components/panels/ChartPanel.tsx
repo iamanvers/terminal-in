@@ -115,7 +115,7 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
     import('lightweight-charts').then(({ createChart, CrosshairMode }) => {
       if (cancelled || !containerRef.current) return
       const chart = createChart(containerRef.current, {
-        layout: { background: { color: '#1C1F25' }, textColor: '#666666' },
+        layout: { background: { color: '#1C1F25' }, textColor: '#71767F' },
         grid:   { vertLines: { color: '#23272E' }, horzLines: { color: '#23272E' } },
         crosshair: { mode: CrosshairMode.Normal },
         rightPriceScale: { borderColor: '#333841', scaleMargins: { top: 0.08, bottom: 0.22 } },
@@ -129,7 +129,7 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
         wickUpColor: '#2DBD80', wickDownColor: '#F2495C',
       })
       const ema9  = chart.addLineSeries({ color: '#0094FB', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
-      const ema21 = chart.addLineSeries({ color: '#4488FF', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+      const ema21 = chart.addLineSeries({ color: '#00B9FC', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
 
       let vol: unknown = null
       try {
@@ -268,9 +268,9 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
   // ── Status badge ─────────────────────────────────────────────────────────────
   const badge = (() => {
     if (loadState === 'loading') return { text: 'UPDATING', color: '#AEB3BB', bg: '#1C1F25' }
-    if (loadState === 'error')   return { text: 'NO DATA',  color: '#f87171', bg: '#1a0000' }
-    if (loadState === 'cached')  return { text: 'CACHED',   color: '#fb923c', bg: '#1f1000' }
-    if (marketOpen)              return { text: 'LIVE',     color: '#4ade80', bg: '#001a00' }
+    if (loadState === 'error')   return { text: 'NO DATA',  color: '#F2495C', bg: '#1A0004' }
+    if (loadState === 'cached')  return { text: 'CACHED',   color: '#FFB02E', bg: '#0E0A06' }
+    if (marketOpen)              return { text: 'LIVE',     color: '#2DBD80', bg: '#001A08' }
     return { text: 'CLOSED', color: '#71767F', bg: '#1C1F25' }
   })()
 
@@ -288,7 +288,7 @@ export default function ChartPanel({ symbolIdx: externalIdx, setSymbolIdx: exter
           <span className="accent">▸</span> CHART ·{' '}
           <span style={{ color: '#ECEEF1' }}>{symbolLabel}</span>
           <span style={{ fontSize: 9.5, color: '#71767F', marginLeft: 8 }}>
-            EMA <span style={{ color: '#0094FB' }}>9</span> / <span style={{ color: '#4488FF' }}>21</span>
+            EMA <span style={{ color: '#0094FB' }}>9</span> / <span style={{ color: '#00B9FC' }}>21</span>
           </span>
         </span>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

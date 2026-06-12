@@ -56,7 +56,7 @@ function IndexStrip({ regime }: { regime: RegimeState | null }) {
   const vixColor = vix > 25 ? C.red : vix > 18 ? C.amber : C.green
 
   return (
-    <div style={{ display: 'flex', alignItems: 'stretch', background: '#0C0D10', borderBottom: `1px solid ${C.border}`, flexShrink: 0, height: 58 }}>
+    <div style={{ display: 'flex', alignItems: 'stretch', background: 'rgba(12,13,16,0.82)', backdropFilter: 'blur(7px)', borderBottom: `1px solid ${C.border}`, flexShrink: 0, height: 58 }}>
       <div style={{ padding: '0 16px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 2, minWidth: 86 }}>
         <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text, letterSpacing: '.1em' }}>F&amp;O</span>
         <span style={{ fontSize: 9.5, fontWeight: 700, color: C.purple, letterSpacing: '.1em', background: '#15081A', border: `1px solid ${C.purple}33`, borderRadius: 3, padding: '1px 6px' }}>DERIVATIVES</span>
@@ -245,7 +245,7 @@ export default function FnoPage() {
   useEffect(() => { const t = setInterval(load, 15_000); return () => clearInterval(t) }, [load])
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: C.bg, overflow: 'hidden' }}>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'transparent', overflow: 'hidden' }}>
       <IndexStrip regime={regime} />
       <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 8, padding: '8px 10px', overflow: 'hidden' }}>
         <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>

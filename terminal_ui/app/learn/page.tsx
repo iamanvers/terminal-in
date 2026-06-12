@@ -63,7 +63,7 @@ export default function LearnPage() {
   const active = TRACKS.find(t => t.id === track) ?? TRACKS[0]
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', background: C.bg, overflow: 'hidden' }}>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', background: 'transparent', overflow: 'hidden' }}>
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 5, padding: '12px 16px', flexShrink: 0 }}>
         <div className="t-display" style={{ fontSize: 17 }}>Market Education</div>
         <div className="t-prose" style={{ fontSize: 11.5, marginTop: 2 }}>

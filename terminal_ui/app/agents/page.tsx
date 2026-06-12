@@ -102,9 +102,9 @@ function Chip({ label, value, color }: { label: string; value: React.ReactNode; 
 
 function Btn({ label, onClick, busy = false, danger = false, disabled = false, full = false, variant = 'default' }:
   { label: string; onClick: () => void; busy?: boolean; danger?: boolean; disabled?: boolean; full?: boolean; variant?: 'default' | 'ghost' | 'primary' }) {
-  const bg = danger ? '#1A0808' : variant === 'primary' ? '#0A1A0A' : 'transparent'
-  const clr = danger ? C.err : variant === 'primary' ? C.run : C.warn
-  const bdr = danger ? '#F2495C33' : variant === 'primary' ? '#2DBD8033' : '#4A4F57'
+  const bg = danger ? '#1A0808' : variant === 'primary' ? '#0094FB0E' : 'transparent'
+  const clr = danger ? C.err : variant === 'primary' ? '#0094FB' : '#AEB3BB'
+  const bdr = danger ? '#F2495C33' : variant === 'primary' ? '#0094FB33' : '#4A4F57'
   return (
     <button disabled={busy || disabled} onClick={onClick} style={{
       width: full ? '100%' : undefined,
@@ -291,8 +291,8 @@ function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh,
               padding: '6px 8px', textAlign: 'left',
               border: `1px solid ${done ? '#2DBD8044' : '#23272E'}`,
               borderRadius: 3, cursor: isBusy ? 'default' : 'pointer',
-              background: done ? '#001A00' : '#080808',
-              color: isBusy ? '#71767F' : done ? C.run : C.warn,
+              background: done ? '#2DBD801A' : '#080808',
+              color: isBusy ? '#71767F' : done ? C.run : '#AEB3BB',
               opacity: isBusy ? 0.5 : 1, transition: 'all .15s',
             }}>
               {isBusy ? '…' : done ? '✓ ' + label.split(' ').slice(1).join(' ') : label}
@@ -311,7 +311,7 @@ function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh,
               const sel = (document.getElementById('analyse-select') as HTMLSelectElement)?.value
               if (sel) trigger('analyse', () => api.analyse(sel))
             }}
-            style={{ fontSize: 10, fontWeight: 700, padding: '4px 8px', background: '#0A0B0D', border: '1px solid #23272E', borderRadius: 3, color: C.amber, cursor: 'pointer' }}
+            style={{ fontSize: 10, fontWeight: 700, padding: '4px 8px', background: '#0A0B0D', border: '1px solid #0094FB33', borderRadius: 3, color: '#0094FB', cursor: 'pointer' }}
           >
             RUN
           </button>
@@ -322,13 +322,13 @@ function LeftRail({ agents, filter, onFilter, riskState, instruments, onRefresh,
       </div>
 
       {/* AI Analyst shortcut */}
-      <div style={{ background: C.panel, border: `1px solid #1A2A1A`, borderRadius: 5, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-        <div style={{ fontSize: 9.5, color: '#2A4A2A', letterSpacing: '.08em', marginBottom: 2 }}>FINANCIAL AGENT</div>
+      <div style={{ background: C.panel, border: `1px solid #0094FB22`, borderRadius: 5, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <div style={{ fontSize: 9.5, color: '#006FF9', letterSpacing: '.08em', marginBottom: 2 }}>FINANCIAL AGENT</div>
         <button onClick={onOpenQuery} style={{
           width: '100%', fontSize: 10, fontWeight: 700, letterSpacing: '.05em',
           padding: '7px 8px', textAlign: 'left',
-          border: `1px solid #1A3A1A`, borderRadius: 3, cursor: 'pointer',
-          background: '#0A1A0A', color: C.run,
+          border: `1px solid #0094FB33`, borderRadius: 3, cursor: 'pointer',
+          background: '#0094FB0E', color: '#0094FB',
         }}>◈ OPEN AI ANALYST</button>
         <div style={{ fontSize: 9, color: '#333841', lineHeight: 1.4 }}>
           Natural language queries powered by Ollama open-source LLMs + yfinance data
@@ -819,7 +819,7 @@ function PipelineTab({ agents, decisions, selectedId, onSelect }:
 // EventBus Broadcast Tab
 // ─────────────────────────────────────────────────────────────────────────────
 const TOPIC_COLOR: Record<string, string> = {
-  'trade.opened': C.run, 'trade.closed': C.sub, 'order.approved': '#4CAF50',
+  'trade.opened': C.run, 'trade.closed': C.sub, 'order.approved': '#2DBD80',
   'order.rejected': C.err, 'strategy.signal': C.amber, 'kill_switch': C.err,
   'pnl': '#4A4F57', 'regime': '#4A4F57', 'ticks': '#23272E', 'scorecard': '#4A4F57',
 }
@@ -994,7 +994,7 @@ function AgentInspector({ agent, onRefresh }: { agent: AgentState; onRefresh: ()
 }
 
 function AuditLog({ entries }: { entries: AuditEntry[] }) {
-  const AUD_C: Record<string, string> = { GLOBAL_PAUSE: C.err, GLOBAL_RESUME: C.run, BLOCK_SYMBOL: C.warn, UNBLOCK_SYMBOL: '#4CAF50', KILL_ALL: C.err }
+  const AUD_C: Record<string, string> = { GLOBAL_PAUSE: C.err, GLOBAL_RESUME: C.run, BLOCK_SYMBOL: C.warn, UNBLOCK_SYMBOL: '#2DBD80', KILL_ALL: C.err }
   return (
     <div>
       <div style={{ fontSize: 9.5, color: '#4A4F57', letterSpacing: '.08em', marginBottom: 6, fontWeight: 700 }}>KILL SWITCH AUDIT</div>
@@ -1210,8 +1210,8 @@ function FinancialAgentPanel() {
             {messages.map((m, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', gap: 4 }}>
                 {m.role === 'user' && (
-                  <div style={{ maxWidth: '80%', background: '#0E1A0E', border: '1px solid #1A2A1A', borderRadius: '8px 8px 2px 8px', padding: '8px 12px' }}>
-                    <div style={{ fontSize: 10, color: '#8A8A8A', marginBottom: 3 }}>YOU</div>
+                  <div style={{ maxWidth: '80%', background: '#0094FB0E', border: '1px solid #0094FB22', borderRadius: '8px 8px 2px 8px', padding: '8px 12px' }}>
+                    <div style={{ fontSize: 10, color: '#71767F', marginBottom: 3 }}>YOU</div>
                     <div style={{ fontSize: 10.5, color: '#ECEEF1', lineHeight: 1.6 }}>{m.content}</div>
                   </div>
                 )}
@@ -1225,10 +1225,10 @@ function FinancialAgentPanel() {
                       {m.online === false && <span style={{ fontSize: 9, color: '#4A4F57' }}>rule-based</span>}
                     </div>
                     <div style={{
-                      background: m.role === 'error' ? '#1A0808' : '#0A0D0A',
-                      border: `1px solid ${m.role === 'error' ? '#F2495C22' : '#1A2A1A'}`,
+                      background: m.role === 'error' ? '#1A0808' : '#0C0D10',
+                      border: `1px solid ${m.role === 'error' ? '#F2495C22' : '#23272E'}`,
                       borderRadius: '2px 8px 8px 8px', padding: '10px 14px',
-                      fontSize: 10.5, color: m.role === 'error' ? C.err : '#C8C8C8',
+                      fontSize: 10.5, color: m.role === 'error' ? C.err : '#CFD3D9',
                       lineHeight: 1.65,
                     }}>
                       {renderAnswer(m.content)}
@@ -1273,8 +1273,8 @@ function FinancialAgentPanel() {
               disabled={loading || !input.trim()}
               style={{
                 fontSize: 10, fontWeight: 700, padding: '8px 16px', borderRadius: 4,
-                border: `1px solid ${C.run}33`, background: '#0A1A0A',
-                color: loading || !input.trim() ? '#4A4F57' : C.run,
+                border: `1px solid #0094FB33`, background: '#0094FB0E',
+                color: loading || !input.trim() ? '#4A4F57' : '#0094FB',
                 cursor: loading || !input.trim() ? 'default' : 'pointer',
               }}
             >
@@ -1697,7 +1697,7 @@ export default function AgentsPage() {
   return (
     <>
       <StyleTag />
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', background: C.bg, overflow: 'hidden' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', background: 'transparent', overflow: 'hidden' }}>
 
         <CommandStrip health={health} regime={regime} portfolio={portfolio} globalPaused={globalPaused} decisions={decisions} />
 

@@ -7,9 +7,9 @@
 // in the page background and panel gutters.
 import React, { useEffect, useRef } from 'react'
 
-const SPACING = 44          // px between nodes
-const RADIUS = 170          // cursor influence radius
-const BASE_ALPHA = 0.05     // idle visibility
+const SPACING = 42          // px between nodes
+const RADIUS = 210          // cursor influence radius
+const BASE_ALPHA = 0.09     // idle visibility
 const ACCENT = '0, 148, 251'   // #0094FB
 
 export default function MeshBackground() {
@@ -58,22 +58,23 @@ export default function MeshBackground() {
           const p = d2 < r2 ? (1 - Math.sqrt(d2) / RADIUS) : 0
           // subtle breathing at idle + displacement away from the cursor
           const breathe = Math.sin(t / 1900 + (i * 7 + j * 13) * 0.7) * 0.5 + 0.5
-          const push = p * 7 * energy
+          const push = p * 9 * (0.35 + 0.65 * energy)
           const x = gx + (d2 > 0 ? (dx / Math.sqrt(d2 + 1)) * push : 0)
           const y = gy + (d2 > 0 ? (dy / Math.sqrt(d2 + 1)) * push : 0)
-          const a = BASE_ALPHA * (0.5 + 0.5 * breathe) + p * p * 0.55 * (0.3 + 0.7 * energy)
+          const a = BASE_ALPHA * (0.5 + 0.5 * breathe) + p * p * 0.85 * (0.45 + 0.55 * energy)
 
-          if (p > 0.04) {
+          if (p > 0.03) {
             // energized links to right + down neighbours
-            ctx.strokeStyle = `rgba(${ACCENT}, ${a * 0.5})`
+            ctx.strokeStyle = `rgba(${ACCENT}, ${Math.min(0.6, a * 0.65)})`
             ctx.lineWidth = 1
             ctx.beginPath()
             ctx.moveTo(x, y); ctx.lineTo(gx + SPACING, gy)
             ctx.moveTo(x, y); ctx.lineTo(gx, gy + SPACING)
             ctx.stroke()
           }
-          ctx.fillStyle = `rgba(${ACCENT}, ${a})`
-          ctx.fillRect(x - 0.75, y - 0.75, 1.5, 1.5)
+          const s = 1.5 + p * 1.8   // nodes swell near the cursor
+          ctx.fillStyle = `rgba(${ACCENT}, ${Math.min(0.9, a)})`
+          ctx.fillRect(x - s / 2, y - s / 2, s, s)
         }
       }
       raf = requestAnimationFrame(draw)

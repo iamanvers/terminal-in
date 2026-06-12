@@ -142,7 +142,7 @@ function AccountBar({
   ]
 
   return (
-    <div style={{ display: 'flex', alignItems: 'stretch', background: '#0C0D10', borderBottom: `1px solid ${C.border}`, flexShrink: 0, height: 52 }}>
+    <div style={{ display: 'flex', alignItems: 'stretch', background: 'rgba(12,13,16,0.82)', backdropFilter: 'blur(7px)', borderBottom: `1px solid ${C.border}`, flexShrink: 0, height: 52 }}>
       {/* Module + mode badge */}
       <div style={{ padding: '0 16px', borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 2, minWidth: 86 }}>
         <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text, letterSpacing: '.1em' }}>EQUITIES</span>
@@ -1073,7 +1073,7 @@ export default function TradePage() {
   return (
     <>
       <StyleTag />
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: C.bg, overflow: 'hidden' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'transparent', overflow: 'hidden' }}>
         <AccountBar summary={summary} stats={stats} unrealized={unrealized} />
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 8, padding: '8px 10px', overflow: 'hidden' }}>

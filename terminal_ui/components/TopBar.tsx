@@ -111,7 +111,7 @@ function TickerTape() {
   })), [prices])
 
   return (
-    <div style={{ height: 24, overflow: 'hidden', background: '#0A0B0D', borderBottom: '1px solid #23272E', display: 'flex', alignItems: 'center' }}>
+    <div style={{ height: 24, overflow: 'hidden', background: 'rgba(10,11,13,0.78)', backdropFilter: 'blur(7px)', borderBottom: '1px solid #23272E', display: 'flex', alignItems: 'center' }}>
       {/* Market state lives in the top-right StatusDot — never inside the tape */}
       {/* Two identical sets with distinct key namespaces for seamless CSS marquee loop */}
       <div className="ticker-track">
@@ -135,7 +135,7 @@ function NavHeader() {
     <header style={{
       height: 38, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '0 18px', borderBottom: '1px solid var(--border-strong, #333841)',
-      background: '#121419', flexShrink: 0,
+      background: 'rgba(18,20,25,0.82)', backdropFilter: 'blur(7px)', flexShrink: 0,
     }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
         {/* Brand mark (same artwork as the favicon at app/icon.svg) */}

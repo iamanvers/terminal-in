@@ -8,7 +8,7 @@ const REGIMES = [
   { name: 'strong_bull', label: 'STRONG BULL', color: '#3FD487', mult: 1.2, desc: 'Trending hard up' },
   { name: 'bull',        label: 'BULL',        color: '#2DBD80', mult: 1.0, desc: 'Uptrend normal' },
   { name: 'sideways',    label: 'SIDEWAYS',    color: '#0094FB', mult: 0.7, desc: 'Range-bound' },
-  { name: 'bear',        label: 'BEAR',        color: '#EF5350', mult: 0.5, desc: 'Downtrend' },
+  { name: 'bear',        label: 'BEAR',        color: '#F2495C', mult: 0.5, desc: 'Downtrend' },
   { name: 'strong_bear', label: 'STRONG BEAR', color: '#A13238', mult: 0.3, desc: 'Hard down minimal' },
   { name: 'high_vol',    label: 'HIGH VOL',    color: '#B07CC6', mult: 0.2, desc: 'VIX elevated' },
 ]
@@ -44,7 +44,7 @@ export default function RiskDashboardPanel() {
   const currentDef = REGIMES.find(r => r.name === current)
 
   return (
-    <div style={{ height: '100%', background: '#0A0B0D', display: 'flex', alignItems: 'center', overflow: 'hidden', gap: 0 }}>
+    <div style={{ height: '100%', background: 'rgba(10,11,13,0.82)', backdropFilter: 'blur(7px)', display: 'flex', alignItems: 'center', overflow: 'hidden', gap: 0 }}>
 
       {/* Current regime — large pill on the left */}
       <div style={{
@@ -76,7 +76,7 @@ export default function RiskDashboardPanel() {
       </div>
       <div style={{ padding: '0 14px', height: '100%', flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, borderRight: '1px solid #23272E' }}>
         <span style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.09em' }}>INDIA VIX</span>
-        <span style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: vix > 25 ? '#EF5350' : vix > 18 ? '#0094FB' : '#AEB3BB' }}>
+        <span style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: vix > 25 ? '#F2495C' : vix > 18 ? '#0094FB' : '#AEB3BB' }}>
           {vix > 0 ? vix.toFixed(2) : '—'}
         </span>
       </div>
