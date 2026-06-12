@@ -319,10 +319,16 @@ class RiskSupervisor:
         # deadlocks (observed 2026-06-12: 80 signals blocked in a row). Always
         # allow up to 2 positions per sector; apply the 40% cap beyond that.
         sector_count_after = sector_count + 1
-        if sector_count_after <= 2:
+        import os as _os
+        floor_on = _os.environ.get('SECTOR_SMALL_BOOK_FLOOR', 'true').lower() in ('1', 'true', 'yes')
+        if floor_on and sector_count_after <= 2:
             return True
+        try:
+            cap = float(_os.environ.get('SECTOR_CAP_PCT', str(MAX_SECTOR_PCT)))
+        except ValueError:
+            cap = MAX_SECTOR_PCT
         projected_pct = sector_count_after / (len(open_trades) + 1)
-        return projected_pct <= MAX_SECTOR_PCT
+        return projected_pct <= cap
 
     def _check_correlation(self, signal: dict, open_trades: list) -> bool:
         """

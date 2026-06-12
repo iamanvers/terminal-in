@@ -113,8 +113,16 @@ class TradePlanner:
     def _enqueue(self, batch: dict):
         with self._cond:
             if self._pending is not None:
-                log.warning('Planner: dropping stale batch scan_id=%s (new scan arrived)',
-                            self._pending.get('scan_id'))
+                # Merge instead of dropping: engine signals and orchestrator
+                # scans share this queue — a candidate must never be lost to
+                # a race. Newest features win per symbol.
+                merged = {c['symbol']: c for c in self._pending.get('candidates', [])}
+                for c in batch.get('candidates', []):
+                    merged[c['symbol']] = c
+                batch = {**self._pending, **batch,
+                         'candidates': list(merged.values())}
+                log.info('Planner: merged pending batch (%d candidates)',
+                         len(batch['candidates']))
             self._pending = batch
             self._cond.notify()
 

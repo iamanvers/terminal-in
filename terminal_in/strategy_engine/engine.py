@@ -5,6 +5,7 @@ emits signals to 'strategy.signal' topic for the RiskSupervisor to gate.
 """
 
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from threading import Lock
@@ -240,7 +241,33 @@ class StrategyEngine:
                          signal.instrument_id, signal.quantity,
                          signal.confidence, signal.regime)
 
-                bus.publish('strategy.signal', signal.__dict__ if not hasattr(signal, '__dataclass_fields__') else _signal_to_dict(signal))
+                payload = signal.__dict__ if not hasattr(signal, '__dataclass_fields__') else _signal_to_dict(signal)
+                if os.environ.get('PLANNER_GATES_ENGINE', 'true').lower() in ('1', 'true', 'yes'):
+                    # Dual control: deterministic strategy proposed it, the LLM
+                    # judge must concur before the risk gate sees it. The
+                    # planner's degraded mode (stricter deterministic bar)
+                    # covers Ollama outages — never a silent bypass.
+                    entry = float(payload.get('limit_price') or payload.get('price') or 0)
+                    sl = float(payload.get('stop_loss') or 0)
+                    tgt = float(payload.get('target') or 0)
+                    rr = abs(tgt - entry) / abs(entry - sl) if entry and sl and abs(entry - sl) > 1e-9 else 1.0
+                    conf = float(payload.get('confidence') or 0.5)
+                    bus.publish('planner.candidates', {
+                        'scan_id': -1, 'source': 'engine',
+                        'regime': getattr(self, '_last_regime', None) or 'unknown',
+                        'candidates': [{
+                            'symbol': payload.get('tradingsymbol') or str(payload.get('instrument_id')),
+                            'side': payload.get('side'),
+                            'ev': round(conf * rr, 2),
+                            'confidence': conf,
+                            'persistence': 1,
+                            'price': entry,
+                            'lenses': [payload.get('strategy_id', 'ENGINE')],
+                            'signal': payload,
+                        }],
+                    })
+                else:
+                    bus.publish('strategy.signal', payload)
 
         # Publish updated regime
         bus.publish('regime.update', {

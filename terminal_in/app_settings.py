@@ -30,6 +30,12 @@ SCHEMA: list[dict] = [
     dict(env='DAILY_LOSS_CAP_PCT', group='Trading', label='Daily loss cap (fraction)',
          type='number', min=0.005, max=0.2, default=0.04, hot=False),
 
+    dict(env='SECTOR_CAP_PCT', group='Trading', label='Sector cap (fraction of book)',
+         type='number', min=0.2, max=1.0, default=0.40, hot=True),
+    dict(env='SECTOR_SMALL_BOOK_FLOOR', group='Trading', label='Small-book sector floor',
+         type='bool', default=True, hot=True,
+         help='always allow 2 positions per sector; cap applies beyond'),
+
     # ── Planner ──────────────────────────────────────────────────────────
     dict(env='PLANNER_ENABLED', group='Planner', label='LLM planner', type='bool',
          default=True, hot=False,
@@ -40,6 +46,9 @@ SCHEMA: list[dict] = [
     # dropdown of installed models when Ollama is reachable
     dict(env='OLLAMA_MODEL', group='Planner', label='Model', type='text',
          default='qwen2.5:3b', hot=False),
+    dict(env='PLANNER_GATES_ENGINE', group='Planner', label='LLM judge gates engine signals',
+         type='bool', default=True, hot=True,
+         help='deterministic strategies AND the LLM judge must both concur'),
     dict(env='PLANNER_TIMEOUT_S', group='Planner', label='LLM timeout (s)',
          type='number', min=10, max=110, default=60, hot=False,
          help='must stay below the 120s scan interval'),

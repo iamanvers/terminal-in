@@ -102,11 +102,17 @@ The packaged app (5b) raises the design bar from "internal terminal" to "product
 - **Design options review**: structured comparison before the P2 build — (a) keep hand-rolled CSS system, (b) adopt headless primitives (Radix) under our tokens for menus/dialogs/tooltips, (c) full component library (rejected by default: locks the visual identity). Decision recorded here before any code.
 - **Palette consistency audit (PR-blocking)**: zero hex literals outside `lib/theme.ts` + `globals.css`; CI-style grep check added to the test suite; PDF/report colors derive from the same ramp constants.
 
-### P2 — Backtest engine
+### P2 — Backtest engine ← NEXT PHASE (declared 2026-06-12)
 
 Replay 2y of real OHLCV through the **full agentic stack** (lenses → filters → deterministic-planner mode → gate) with walk-forward splits; Sharpe/Calmar/max-DD per strategy per regime; results feed DSA priors and the strategy gene pool. Lives in `terminal_in/backtest/`, surfaced on `/train`.
 
-### P2 — Training eval + deploy automation
+### P2 — Training eval + deploy automation — ✅ SHIPPED (2026-06-12)
+
+Eval set live (`agents/training/evalset.py`, 42 graded items / 4 categories; results in `data/training/eval/`). **First verdict: qwen2.5:3b 83.3% vs financial-analyst-v2 9.5% — v2 NOT promoted.** The recursive pipeline (train→deploy→eval) is fully proven; the 1.1B base model is the bottleneck (cannot follow instructions). Path: LoRA on a ~3–4B instruct base (qwen2.5:3b itself, or a Release-2 model) — ~19h CPU per full run, or wait for better hardware. Deploy automation shipped earlier (5c).
+
+**Dual-control execution (owner mandate 2026-06-12):** every trade now requires BOTH a deterministic strategy signal AND LLM-judge concurrence — engine signals route through the planner (`PLANNER_GATES_ENGINE`, settings toggle, default on; degraded mode = stricter deterministic bar, never silent). Planner batches merge rather than drop. Sector gate: small-book floor + cap are hot settings (`SECTOR_SMALL_BOOK_FLOOR`, `SECTOR_CAP_PCT`) after the 2026-06-12 deadlock fix.
+
+### P2 — (superseded) original eval/deploy notes
 
 - Held-out eval set (~200 prompts: sentiment, NSE strategy QA, planner-verdict format checks); score each adapter before/after; promote only on improvement.
 - One-click deploy: merge adapter → GGUF (vendored llama.cpp) → `ollama create financial-analyst-vN` → planner hot-switches model → previous model kept for rollback.
