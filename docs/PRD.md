@@ -102,7 +102,12 @@ The packaged app (5b) raises the design bar from "internal terminal" to "product
 - **Design options review**: structured comparison before the P2 build — (a) keep hand-rolled CSS system, (b) adopt headless primitives (Radix) under our tokens for menus/dialogs/tooltips, (c) full component library (rejected by default: locks the visual identity). Decision recorded here before any code.
 - **Palette consistency audit (PR-blocking)**: zero hex literals outside `lib/theme.ts` + `globals.css`; CI-style grep check added to the test suite; PDF/report colors derive from the same ramp constants.
 
-### P2 — Backtest engine ← NEXT PHASE (declared 2026-06-12)
+### P2 — Backtest engine — ◐ v1 SHIPPED (2026-06-12)
+
+`terminal_in/backtest/engine.py`: replays real daily OHLCV (DB, ≥250 bars enforced, no lookahead — bar-t signals fill at t+1 open) through lens signals → persistence ≥2 → deterministic planner bar → gate-lite (max positions, sector floor+cap) → SL/target fills (stop-before-target, slippage+costs). Per-strategy + walk-forward-by-year stats → data/backtests/.
+First run (500d, 67 symbols): 10 trades, all S4; +0.14%, Sharpe 0.11, max DD −0.61%. **Known v1 gaps:** fixed 1.625 R:R makes the EV bar admit only deep-oversold S4 (S2/S5 confidences can never clear 1.2 — use the live orchestrator EV formula next); engine-strategy replay and the LLM-planner replay (sampled) pending; surface on /train.
+
+(original spec follows)
 
 Replay 2y of real OHLCV through the **full agentic stack** (lenses → filters → deterministic-planner mode → gate) with walk-forward splits; Sharpe/Calmar/max-DD per strategy per regime; results feed DSA priors and the strategy gene pool. Lives in `terminal_in/backtest/`, surfaced on `/train`.
 
