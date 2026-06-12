@@ -1088,8 +1088,8 @@ export default function TradePage() {
                 <button key={t} onClick={() => setTab(t)} style={{
                   padding: '0 18px', height: '100%', fontSize: 10, fontWeight: tab === t ? 700 : 400,
                   letterSpacing: '.08em', background: 'transparent', border: 'none',
-                  borderBottom: `2px solid ${tab === t ? C.amber : 'transparent'}`,
-                  color: tab === t ? C.amber : C.muted, cursor: 'pointer', textTransform: 'uppercase',
+                  borderBottom: `2px solid ${tab === t ? '#0094FB' : 'transparent'}`,
+                  color: tab === t ? '#0094FB' : C.muted, cursor: 'pointer', textTransform: 'uppercase',
                 }}>{t === 'book' ? `BOOK (${positions.filter(p => filter === 'ALL' || p.strategy_id === filter).length})` : t.toUpperCase()}</button>
               ))}
               <div style={{ flex: 1 }} />

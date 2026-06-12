@@ -63,6 +63,7 @@ Three feedback loops at three speeds — trade-by-trade control (supervisor), ba
 - **Risk** — 13-check pre-trade gate, sector concentration via full-universe sector map, drawdown/daily-loss caps, kill switch, margin check that *rejects* unpriceable orders
 - **Data** — real NSE OHLCV via yfinance (730d daily + 60d 5m, gap-aware backfill, 24h refresh), live quotes, FinBERT news sentiment
 - **Health** — `/api/health` reports every degraded subsystem; the UI badges them. No silent fallbacks anywhere in the signal path.
+- **Design system** — layered cool-dark surfaces under an embossed dot-matrix mesh (cursor acts as a soft lamp; the grid never moves), frosted-glass chrome, electric-blue accent ramp (gold strictly = warning), Geist Mono for data / Georgia for display. Single palette source: `terminal_ui/lib/theme.ts` + `styles/globals.css`.
 
 ## Quick start
 

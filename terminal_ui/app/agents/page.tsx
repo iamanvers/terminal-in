@@ -1707,8 +1707,8 @@ export default function AgentsPage() {
             <button key={key} onClick={() => setTab(key)} style={{
               padding: '8px 20px', fontSize: 10, fontWeight: tab === key ? 800 : 500, letterSpacing: '.09em',
               background: 'transparent', border: 'none',
-              borderBottom: `2px solid ${tab === key ? C.warn : 'transparent'}`,
-              color: tab === key ? C.warn : '#4A4F57', cursor: 'pointer',
+              borderBottom: `2px solid ${tab === key ? '#0094FB' : 'transparent'}`,
+              color: tab === key ? '#0094FB' : '#4A4F57', cursor: 'pointer',
             }}>{label}</button>
           ))}
           <div style={{ flex: 1 }} />
@@ -1718,9 +1718,9 @@ export default function AgentsPage() {
               {FILTER_LABELS.map(({ key, label }) => (
                 <button key={key} onClick={() => setFilter(key)} style={{
                   fontSize: 9.5, padding: '2px 7px', borderRadius: 3,
-                  border: `1px solid ${filter === key ? C.warn : 'transparent'}`,
+                  border: `1px solid ${filter === key ? '#0094FB55' : 'transparent'}`,
                   background: filter === key ? '#0094FB0A' : 'transparent',
-                  color: filter === key ? C.warn : '#71767F', cursor: 'pointer',
+                  color: filter === key ? '#0094FB' : '#71767F', cursor: 'pointer',
                 }}>{label}</button>
               ))}
             </div>

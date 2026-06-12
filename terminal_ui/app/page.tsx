@@ -212,7 +212,7 @@ export default function TerminalPage() {
         flex: 1, minHeight: 0,
         display: 'grid',
         gridTemplateColumns: 'minmax(270px, 330px) 1fr minmax(280px, 320px)',
-        gridTemplateRows: 'minmax(0, 1fr) 190px 210px',
+        gridTemplateRows: 'minmax(0, 1fr) minmax(170px, 21vh) minmax(190px, 23vh)',
         gap: 8,
         padding: '10px 12px',
         background: 'transparent',

@@ -1,24 +1,29 @@
 """
-Backtest engine v1 (PRD P2) — replay real daily OHLCV through the
-deterministic core of the live pipeline:
+Backtest engine v2 (PRD P2) — replay real daily OHLCV through the
+deterministic core of the live pipeline, with formula parity against
+the live orchestrator (v1 used a fixed R:R that starved S2/S5):
 
-  lens signals (S2 52w breakout · S4 RSI reversion · S5 EMA pullback)
-    → persistence filter (>=2 consecutive days)
+  market regime (heuristic classifier rules on NIFTY 50 + INDIA VIX,
+                 3-day hysteresis — i.e. exactly degraded/heuristic mode)
+    → lens signals (S2 52w breakout · S4 RSI reversion · S5 EMA pullback
+                    · MOM volume surge — live conditions + confidences,
+                    regime multiplier applied, WR prior 0.5 ⇒ factor 1.0)
+    → EV = avg_conf × R:R × vol_factor × convergence_bonus   (live formula)
+    → persistence filter (>=2 consecutive days, same side)
     → deterministic planner bar (EV >= 1.2, conf >= 0.45 — the same
       stricter bar the live planner uses in degraded mode)
     → gate-lite (max positions, sector floor+cap, one position/symbol)
-    → fills with next-day open entry, SL/target exits on daily bars
-      (stop checked BEFORE target on the same bar — conservative)
+    → fills with next-day open entry, SL/target = ±1.5/2.5 ATR (live),
+      exits on daily bars (stop checked BEFORE target — conservative)
 
 Strictly real data: reads ohlcv_1d from the live DB; refuses to run on
 fewer than 250 bars per symbol. No lookahead: signals computed on bar t
-execute at bar t+1's open.
+execute at bar t+1's open; the regime on day t uses closes up to t.
 
-v1 scope notes (PRD): the LLM planner is represented by its deterministic
-degraded bar (replaying actual LLM calls over 2y x 72 symbols is days of
-compute); intraday strategies (S1 ORB) need 1m history beyond the 60d we
-retain — excluded. Walk-forward = expanding-window yearly splits reported
-separately so regime dependence is visible.
+v2 scope notes (PRD): long-only (cash segment — S4/S8 SELL legs and
+intraday S1 excluded); the LLM planner is represented by its
+deterministic degraded bar; NEWS lens needs historical headlines we
+don't retain. Walk-forward = yearly splits reported separately.
 
 CLI:
   .venv/Scripts/python.exe -m terminal_in.backtest.engine            # full run
@@ -28,7 +33,7 @@ CLI:
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -38,7 +43,7 @@ log = logging.getLogger(__name__)
 
 OUT_DIR = Path('./data/backtests')
 
-# Mirror the live bars (signal_filters / planner degraded mode)
+# Mirror the live bars (orchestrator / signal_filters / planner degraded mode)
 MIN_EV         = 1.2
 MIN_CONF       = 0.45
 PERSIST_N      = 2
@@ -50,17 +55,23 @@ COST_PER_TRADE = 20.0
 CAPITAL        = 1_000_000.0
 RISK_PER_TRADE = 0.05          # 5% of equity notional per position (live default)
 
+# orchestrator._REGIME_MULT — confidence multiplier, not a gate
+REGIME_MULT = {'strong_bull': 1.20, 'bull': 1.10, 'sideways': 0.90,
+               'bear': 0.80, 'strong_bear': 0.70, 'high_vol': 0.75}
+
 
 @dataclass
 class Trade:
     symbol: str
-    strategy: str
+    strategy: str           # lens convergence set, e.g. 'S2+MOM'
     side: str
     entry_date: str
     entry: float
     sl: float
     target: float
     qty: int
+    regime: str = ''
+    ev: float = 0.0
     exit_date: str = ''
     exit_price: float = 0.0
     exit_reason: str = ''
@@ -80,14 +91,17 @@ def _indicators(df: pd.DataFrame) -> pd.DataFrame:
     out['open'] = df['open']
     out['high'] = df['high']
     out['low'] = df['low']
+    vol = df['volume'] if 'volume' in df.columns else pd.Series(0.0, index=df.index)
+    out['vol'] = vol
+    out['vol_avg20'] = vol.rolling(20, min_periods=5).mean()
     delta = c.diff()
     gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
     loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
     rs = gain / loss.replace(0, np.nan)
     out['rsi'] = (100 - 100 / (1 + rs)).fillna(50)
-    out['ema21'] = c.ewm(span=21, adjust=False).mean()
+    out['ema20'] = c.ewm(span=20, adjust=False).mean()
     out['ema50'] = c.ewm(span=50, adjust=False).mean()
-    out['hh252'] = c.rolling(252, min_periods=100).max()
+    out['hh252'] = df['high'].rolling(252, min_periods=100).max()
     tr = pd.concat([df['high'] - df['low'],
                     (df['high'] - c.shift()).abs(),
                     (df['low'] - c.shift()).abs()], axis=1).max(axis=1)
@@ -95,26 +109,93 @@ def _indicators(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _lens_signals(ind: pd.DataFrame) -> pd.DataFrame:
-    """Daily lens conditions — same logic family as the live lenses."""
-    sig = pd.DataFrame(index=ind.index)
-    c, rsi = ind['close'], ind['rsi']
-    # S2: 52-week-high breakout (within 1% of the high, trending)
-    sig['S2'] = (c >= ind['hh252'] * 0.99) & (c > ind['ema50'])
-    # S4: RSI reversion (oversold in an uptrend)
-    sig['S4'] = (rsi < 32) & (c > ind['ema50'])
-    # S5: EMA pullback (uptrend, pullback to the 21 EMA)
-    sig['S5'] = (c > ind['ema50']) & (c < ind['ema21'] * 1.01) & (c > ind['ema21'] * 0.97) & (rsi.between(40, 60))
-    return sig
+# ── Market regime: classifier._classify_heuristic rules + 3-day hysteresis ───
+
+def _regime_series(nifty: pd.DataFrame | None, vix: pd.DataFrame | None) -> dict:
+    """date → regime name. Heuristic-mode parity: 21d log-ret vol + 20d return
+    + VIX level, raw call only switches after holding 3 consecutive days."""
+    if nifty is None or len(nifty) < 30:
+        return {}
+    close = nifty['close']
+    vix_close = vix['close'] if vix is not None else None
+
+    log_rets = np.log(close).diff()
+    vol21 = log_rets.rolling(21, min_periods=10).std() * np.sqrt(252)
+    ret20 = (close / close.shift(20) - 1).clip(-0.25, 0.25)
+
+    out: dict = {}
+    current, pending, pend_n = 'sideways', None, 0
+    for d in close.index:
+        av = float(vol21.get(d, np.nan))
+        r2 = float(ret20.get(d, np.nan))
+        vx = float(vix_close.get(d, 0.0)) if vix_close is not None and d in vix_close.index else 0.0
+        if np.isnan(r2):
+            out[d] = current
+            continue
+        if vx > 25 or (not np.isnan(av) and av > 0.40):
+            raw = 'high_vol'
+        elif r2 > 0.06:
+            raw = 'strong_bull'
+        elif r2 > 0.02:
+            raw = 'bull'
+        elif r2 < -0.06:
+            raw = 'strong_bear'
+        elif r2 < -0.02:
+            raw = 'bear'
+        else:
+            raw = 'sideways'
+        if raw == current:
+            pending, pend_n = None, 0
+        elif raw == pending:
+            pend_n += 1
+            if pend_n >= 3:
+                current, pending, pend_n = raw, None, 0
+        else:
+            pending, pend_n = raw, 1
+        out[d] = current
+    return out
 
 
-def _confidence(ind_row: pd.Series, lens: str) -> float:
-    rsi = float(ind_row['rsi'])
-    if lens == 'S4':
-        return min(0.9, 0.45 + (32 - rsi) / 40)
-    if lens == 'S2':
-        return 0.62
-    return 0.55
+# ── Lens evaluation: live orchestrator conditions, BUY side ──────────────────
+
+def _lenses(row: pd.Series, regime: str) -> list[tuple[str, float]]:
+    """Returns [(lens, confidence)] — confidences mirror orchestrator._scan_symbol
+    with strategy WR at the uninformed prior (0.7 + 0.6×0.5 = 1.0)."""
+    mult = REGIME_MULT.get(regime, 1.0)
+    price, rsi = float(row['close']), float(row['rsi'])
+    ema20, ema50 = float(row['ema20']), float(row['ema50'])
+    hh252 = float(row['hh252']) if not np.isnan(row['hh252']) else 0.0
+    vol_now = float(row['vol'])
+    vol_avg = float(row['vol_avg20']) if row['vol_avg20'] and not np.isnan(row['vol_avg20']) else 1.0
+    vol_factor = min(2.5, vol_now / max(vol_avg, 1.0))
+
+    out: list[tuple[str, float]] = []
+
+    # S2: 52-week breakout (blocked in bear regimes, like live)
+    if hh252 > 0 and price > hh252 * 0.990 and regime not in ('bear', 'strong_bear'):
+        vol_ok = vol_now > vol_avg * 1.3
+        base = 0.65 if (price >= hh252 and vol_ok) else 0.44
+        out.append(('S2', min(base * mult, 0.90)))
+
+    # S4: RSI oversold reversion (fires in all regimes, like live)
+    if rsi < 38:
+        base = min(0.48 + (38 - rsi) / 38 * 0.38, 0.86)
+        out.append(('S4', min(base * mult, 0.90)))
+
+    # S5: EMA pullback in an uptrend
+    if price > ema50:
+        prox = abs(price - ema20) / max(ema20, 1)
+        if prox < 0.025 and 36 <= rsi <= 64:
+            base = 0.52 + (1 - prox / 0.025) * 0.15
+            out.append(('S5', min(base * mult, 0.90)))
+
+    # MOM: above EMA20 on a volume surge
+    if price > ema20 and vol_factor > 1.5:
+        cross = (price / ema20 - 1) * 100
+        if 0.1 < cross < 2.5:
+            out.append(('MOM', min(0.48 * mult, 0.75)))
+
+    return out
 
 
 def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None) -> dict:
@@ -130,15 +211,18 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None) -> 
     if symbols:
         eq_tokens = {t: s for t, s in eq_tokens.items() if s in symbols}
 
-    all_1d = db.get_ohlcv_1d_all(list(eq_tokens), limit=days + 300)
+    # index series for the market regime
+    idx_tokens = [KNOWN_TOKENS.get('NIFTY 50'), KNOWN_TOKENS.get('INDIA VIX')]
+    all_1d = db.get_ohlcv_1d_all(list(eq_tokens) + [t for t in idx_tokens if t],
+                                 limit=days + 300)
+    regimes = _regime_series(all_1d.get(idx_tokens[0]), all_1d.get(idx_tokens[1]))
+
     data: dict[str, pd.DataFrame] = {}
     for tok, sym in eq_tokens.items():
         df = all_1d.get(tok)
         if df is None or len(df) < 250:
             continue
-        ind = _indicators(df)
-        ind['sig'] = 0
-        data[sym] = pd.concat([ind, _lens_signals(ind)], axis=1)
+        data[sym] = _indicators(df)
 
     if not data:
         raise RuntimeError('backtest: no symbols with >=250 real daily bars')
@@ -151,12 +235,14 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None) -> 
     equity = CAPITAL
     positions: dict[str, Position] = {}
     closed: list[Trade] = []
-    persist: dict[tuple[str, str], int] = {}
+    persist: dict[str, int] = {}            # symbol → consecutive candidate days
     daily_equity: list[tuple[str, float]] = []
 
     for i, d in enumerate(dates[:-1]):
         nxt = dates[i + 1]
-        # ── exits on today's bar ──
+        regime = regimes.get(d, 'sideways')
+
+        # ── exits on today's bar (stop before target — conservative) ──
         for sym in list(positions):
             pos, df = positions[sym], data[sym]
             if d not in df.index:
@@ -176,50 +262,69 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None) -> 
                 closed.append(t)
                 del positions[sym]
 
-        # ── new signals on bar d, executed at nxt open ──
+        # ── candidates on bar d (live EV formula), executed at nxt open ──
+        seen_today: set[str] = set()
         for sym, df in data.items():
-            if sym in positions or d not in df.index or nxt not in df.index:
+            if d not in df.index or nxt not in df.index:
                 continue
             row = df.loc[d]
-            for lens in ('S2', 'S4', 'S5'):
-                if not bool(row[lens]):
-                    persist[(sym, lens)] = 0
-                    continue
-                persist[(sym, lens)] = persist.get((sym, lens), 0) + 1
-                if persist[(sym, lens)] < PERSIST_N:
-                    continue
-                conf = _confidence(row, lens)
-                atr = float(row['atr'])
-                entry = float(df.loc[nxt]['open']) * (1 + SLIPPAGE)
-                sl, target = entry - 1.6 * atr, entry + 2.6 * atr
-                rr = (target - entry) / max(entry - sl, 1e-9)
-                ev = conf * rr
-                if ev < MIN_EV or conf < MIN_CONF:          # planner bar
-                    continue
-                if len(positions) >= MAX_POSITIONS:          # gate-lite
-                    continue
-                sec = sectors.get(sym, 'other')
-                sec_n = sum(1 for p in positions.values() if p.sector == sec) + 1
-                if sec_n > SECTOR_FLOOR and sec_n / (len(positions) + 1) > SECTOR_CAP:
-                    continue
-                qty = max(1, int((equity * RISK_PER_TRADE) / entry))
-                t = Trade(sym, lens, 'BUY', str(nxt)[:10], entry, sl, target, qty)
-                positions[sym] = Position(t, sec)
-                equity -= COST_PER_TRADE
-                break   # one lens per symbol per day
+            lenses = _lenses(row, regime)
+            if not lenses:
+                continue
+            seen_today.add(sym)
+            persist[sym] = persist.get(sym, 0) + 1
+            if sym in positions or persist[sym] < PERSIST_N:
+                continue
+
+            price = float(row['close'])
+            atr = float(row['atr'])
+            vol_now = float(row['vol'])
+            vol_avg = float(row['vol_avg20']) if row['vol_avg20'] and not np.isnan(row['vol_avg20']) else 1.0
+            vol_factor = min(2.5, vol_now / max(vol_avg, 1.0))
+
+            avg_conf = sum(c for _, c in lenses) / len(lenses)
+            conv_bonus = 1.0 + (len(lenses) - 1) * 0.10
+            sl, tgt = price - 1.5 * atr, price + 2.5 * atr      # live multiples
+            rr = (tgt - price) / max(price - sl, 1e-9)
+            ev = avg_conf * rr * vol_factor * conv_bonus        # live formula
+
+            if ev < MIN_EV or avg_conf < MIN_CONF:              # planner bar
+                continue
+            if len(positions) >= MAX_POSITIONS:                  # gate-lite
+                continue
+            sec = sectors.get(sym, 'other')
+            sec_n = sum(1 for p in positions.values() if p.sector == sec) + 1
+            if sec_n > SECTOR_FLOOR and sec_n / (len(positions) + 1) > SECTOR_CAP:
+                continue
+
+            entry = float(df.loc[nxt]['open']) * (1 + SLIPPAGE)
+            # SL/target re-anchored on the actual fill, same ATR distances
+            sl_f, tgt_f = entry - 1.5 * atr, entry + 2.5 * atr
+            qty = max(1, int((equity * RISK_PER_TRADE) / entry))
+            strat = '+'.join(l for l, _ in lenses)
+            t = Trade(sym, strat, 'BUY', str(nxt)[:10], entry, sl_f, tgt_f, qty,
+                      regime=regime, ev=round(ev, 3))
+            positions[sym] = Position(t, sec)
+            equity -= COST_PER_TRADE
+
+        # reset persistence for symbols that produced no candidate today
+        for sym in list(persist):
+            if sym not in seen_today:
+                persist[sym] = 0
 
         mark = equity + sum(
             (float(data[s].loc[d]['close']) - p.trade.entry) * p.trade.qty
             for s, p in positions.items() if d in data[s].index)
         daily_equity.append((str(d)[:10], mark))
 
-    return _report(closed, daily_equity, days)
+    return _report(closed, daily_equity, days, regimes, dates)
 
 
-def _report(closed: list[Trade], daily_equity: list, days: int) -> dict:
+def _report(closed: list[Trade], daily_equity: list, days: int,
+            regimes: dict, dates: list) -> dict:
     eq = pd.Series({d: v for d, v in daily_equity})
     rets = eq.pct_change().dropna()
-    dd = (eq / eq.cummax() - 1).min()
+    dd = (eq / eq.cummax() - 1).min() if len(eq) else 0.0
     sharpe = float(rets.mean() / rets.std() * np.sqrt(252)) if len(rets) > 20 and rets.std() > 0 else 0.0
 
     def stats(trades):
@@ -231,21 +336,29 @@ def _report(closed: list[Trade], daily_equity: list, days: int) -> dict:
                 'total_pnl': round(sum(t.pnl for t in trades)),
                 'avg_pnl': round(sum(t.pnl for t in trades) / len(trades))}
 
-    per_strategy = {s: stats([t for t in closed if t.strategy == s])
-                    for s in sorted({t.strategy for t in closed})}
-    # walk-forward visibility: yearly buckets
+    # per-lens attribution: a convergence trade credits every member lens
+    lens_names = sorted({l for t in closed for l in t.strategy.split('+')})
+    per_lens = {l: stats([t for t in closed if l in t.strategy.split('+')])
+                for l in lens_names}
+    per_regime = {r: stats([t for t in closed if t.regime == r])
+                  for r in sorted({t.regime for t in closed})}
     by_year: dict[str, list] = {}
     for t in closed:
         by_year.setdefault(t.exit_date[:4], []).append(t)
 
+    window = [d for d in dates if d in regimes]
+    regime_days = pd.Series([regimes[d] for d in window]).value_counts().to_dict() if window else {}
+
     result = {
-        'ts': int(time.time() * 1000), 'days': days,
+        'ts': int(time.time() * 1000), 'days': days, 'engine': 'v2-live-ev',
         'final_equity': round(float(eq.iloc[-1])) if len(eq) else CAPITAL,
         'return_pct': round((float(eq.iloc[-1]) / CAPITAL - 1) * 100, 2) if len(eq) else 0,
         'max_drawdown_pct': round(float(dd) * 100, 2),
         'sharpe': round(sharpe, 2),
         'trades': stats(closed),
-        'per_strategy': per_strategy,
+        'per_lens': per_lens,
+        'per_regime': per_regime,
+        'regime_days': regime_days,
         'walk_forward_years': {y: stats(ts) for y, ts in sorted(by_year.items())},
     }
     OUT_DIR.mkdir(parents=True, exist_ok=True)
