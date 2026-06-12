@@ -1761,3 +1761,12 @@ Target: 10–15% above entry (analyst upgrade target price)"""
 ),
 
 ]
+
+
+# Tranche 2: novel strategy families + macro/news analyst layer (PRD 5c)
+from terminal_in.agents.training.strategy_pairs_v2 import (  # noqa: E402
+    STRATEGY_PAIRS_V2, MACRO_PAIRS,
+)
+
+STRATEGY_PAIRS.extend(STRATEGY_PAIRS_V2)
+STRATEGY_PAIRS.extend(MACRO_PAIRS)
