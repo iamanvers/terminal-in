@@ -46,9 +46,9 @@ LORA_DROPOUT = 0.05
 TARGET_MODS  = ['q_proj', 'k_proj', 'v_proj', 'o_proj']
 
 # Training config
-MAX_SEQ_LEN  = 512
-BATCH_SIZE   = 2
-GRAD_ACCUM   = 8      # effective batch = 16
+MAX_SEQ_LEN  = int(os.environ.get('LORA_MAX_SEQ_LEN', '512'))
+BATCH_SIZE   = int(os.environ.get('LORA_BATCH_SIZE', '2'))
+GRAD_ACCUM   = int(os.environ.get('LORA_GRAD_ACCUM', '8'))   # effective batch = B*GA
 EPOCHS       = 3
 LR           = 2e-4
 WARMUP_RATIO = 0.05
@@ -115,9 +115,14 @@ def train() -> None:
     # ── Model ─────────────────────────────────────────────────────────────
     log.info(f'Loading model: {BASE_MODEL} (this may take a few minutes)')
     device_map = 'auto' if torch.cuda.is_available() else 'cpu'
+    # CPU dtype: fp32 for small bases; bf16 fits 3B-class models in 16GB RAM
+    # (LORA_DTYPE=bf16). Zen3 lacks native bf16 ops — slower per step, but it
+    # is the only way a 3B base trains on this machine at all.
+    cpu_dtype = {'bf16': torch.bfloat16, 'fp16': torch.float16}.get(
+        os.environ.get('LORA_DTYPE', 'fp32'), torch.float32)
     model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL,
-        dtype=torch.float32 if device_map == 'cpu' else torch.float16,
+        dtype=cpu_dtype if device_map == 'cpu' else torch.float16,
         device_map=device_map,
         trust_remote_code=True,
     )

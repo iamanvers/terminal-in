@@ -230,6 +230,16 @@ Supersedes the earlier single-machine packaging decision: the app must now be **
 - **Weight adjustment after training** — ✅ SHIPPED (2026-06-12): `terminal_in/agents/training/deploy.py` runs merge → GGUF f16 → Q4_K_M quantize → `ollama create financial-analyst-vN`; llama.cpp vendored (`vendor/llamacpp` Vulkan binaries + converter source). `POST /api/training/deploy {run_id}`. First deploy: financial-analyst-v1 (637 MB, ~28 tok/s CPU) from the smoke-test adapter. Model switch stays manual via the OLLAMA_MODEL setting (dropdown lists installed models) — promotion requires the eval set (still open below).
 - **Claude-as-teacher dataset expansion**: grow `strategy_pairs.py` with Claude-generated QA on documented winning strategies (momentum/quality factor literature, Varsity strategy modules, public quant write-ups) and periodic web-sourced market-structure updates. Quality bar: every generated pair must cite the mechanism (why the edge exists), not just the rule. Target +500 pairs per quarter, versioned in git.
 
+### Base-model selection for training (decided 2026-06-12)
+
+| Use | Model | License | Why |
+|---|---|---|---|
+| **LoRA training base (now)** | Qwen2.5-3B-Instruct, bf16 on CPU | Qwen research (personal use OK; NOT for installer) | Best-in-class instruction following at a size that fits 16 GB RAM in bf16 (~6 GB); same family as the planner runtime |
+| Inference upgrades (Release 2) | Qwen3-4B (Apache-2.0), Phi-4-mini (MIT) | Redistributable | Drop-in via Ollama/GGUF, no training required; eval-gated |
+| Retired | TinyLlama-1.1B | Apache-2.0 | Proved the pipeline; failed the eval gate (9.5%) — cannot follow instructions |
+
+Training-fit knobs added to `train_lora.py`: `LORA_DTYPE=bf16`, `LORA_BATCH_SIZE=1`, `LORA_GRAD_ACCUM=16`, `LORA_MAX_SEQ_LEN=384` is the expected 3B CPU recipe (~19–29 h/350 steps; weekend job, not overnight).
+
 ### P4 / Release 2 — Next-generation base models
 
 The current stack (qwen2.5:3b judge, TinyLlama-1.1B trainee) was chosen for CPU-era constraints. Once the packaged app ships and hardware detection (5b.4) is live, re-evaluate against the then-best small open-source models — candidates as of writing: **Qwen3 4B/8B**, **Llama 4 small variants**, **Phi-4-mini**, **Gemma 3 4B**, **DeepSeek-R1 distills (7B/8B)** — all GGUF-served via the bundled llama.cpp, so a model swap is a file replacement + Modelfile bump, no code change.
