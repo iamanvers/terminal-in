@@ -80,9 +80,14 @@ cd terminal_ui ; $env:BUILD_STATIC='1' ; npx next build ; cd ..
 .venv\Scripts\python.exe -m terminal_in.main          # API :5000
 cd terminal_ui ; npm run dev                          # UI :3000
 
+# Build the shipped desktop app (native window, no browser)
+.venv\Scripts\pyinstaller packaging\terminal_in.spec --noconfirm   # → dist\TerminalIN\TerminalIN.exe
+
 # Tests
-.venv\Scripts\pytest tests\ -v                        # 119 tests
+.venv\Scripts\pytest tests\ -v                        # 135 tests
 ```
+
+**Dev vs shipped:** in development the backend serves on `localhost:5000` and you use a browser — convenient for iteration. The **packaged `.exe` is a self-serving desktop app**: it runs the backend on a private loopback port and hosts the UI in a native `TERMINAL//IN` window (WebView2), so there is no browser and no visible URL. Hardware maximization (`hw.apply()` — all logical cores) runs in both.
 
 Operator guide: [docs/USAGE.md](docs/USAGE.md) · Product specification: [docs/PRD.md](docs/PRD.md) · Legal & privacy: [docs/LEGAL.md](docs/LEGAL.md)
 
@@ -90,7 +95,7 @@ Operator guide: [docs/USAGE.md](docs/USAGE.md) · Product specification: [docs/P
 
 ## Recursive training (TRAIN module)
 
-Each run: rebuild the SFT dataset (financial corpora **+ the system's own closed trades + hindsight-judged planner decisions**) → LoRA fine-tune TinyLlama-1.1B in an isolated subprocess → record the real loss curve per run. Smoke test (200 steps, ~30–60 min CPU) or full run (overnight). Deploy path: merge adapter → GGUF → `ollama create` — until then the planner runs on the prompt-tuned base model.
+Each run: rebuild the SFT dataset (financial corpora **+ the system's own closed trades + hindsight-judged planner decisions**) → LoRA fine-tune the base SLM (Qwen2.5-3B-Instruct; TinyLlama-1.1B for fast smoke runs) in an isolated subprocess → record the real loss curve per run, surfaced live on the `/train` cockpit. Deploy path: merge adapter → GGUF → `ollama create` → **eval-gate** (42-item set; must beat the incumbent) before it replaces the planner/analyst.
 
 ## Latency posture (and the honest limits)
 

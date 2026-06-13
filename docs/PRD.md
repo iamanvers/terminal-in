@@ -230,8 +230,16 @@ E (RL-in-imagination) is the expensive, optional, last phase.
 
 Supersedes the earlier single-machine packaging decision: the app must now be **installable on any Windows machine, run standalone, and receive remote updates**. Single-process serving (static UI via Flask, `background.ps1`) shipped earlier remains the runtime foundation the installer wraps.
 
-### 5b.1 Windows installer (.exe) — IN PROGRESS (2026-06-12)
-**Status:** spec + frozen-mode entry shipped (`packaging/run_app.py`, `packaging/terminal_in.spec`); data-dir contract implemented (exe chdirs to `%LOCALAPPDATA%\TerminalIN`, bundled UI via `UI_OUT_DIR`). Build iterations so far: (1) relative spec paths silently produced an empty 34 MB bundle — all paths must anchor on `SPECPATH`; (2) rebuild failed on a `dist/` file lock from a still-running boot test — kill `TerminalIN.exe` before rebuilding. Build 3 in progress. **Next:** boot-verify the onedir bundle, then the Inno Setup wrapper (Start-menu/desktop/auto-start, license page = docs/LEGAL.md) and the first-run wizard.
+### 5b.1 Windows installer (.exe) — IN PROGRESS (2026-06-14)
+**Status:** spec + frozen-mode entry shipped (`packaging/run_app.py`, `packaging/terminal_in.spec`); data-dir contract implemented (exe chdirs to `%LOCALAPPDATA%\TerminalIN`, bundled UI via `UI_OUT_DIR`). **Boot-tested (2026-06-14):** the onedir exe launches, binds the API, and creates the per-user data dir — caught + fixed a bug where the UI 404'd (bundled datas live in `_internal/` = `sys._MEIPASS`, not next to the exe).
+
+**Self-serving desktop app (owner mandate 2026-06-14):** the shipped exe must NOT be "open your browser to localhost." It is now a native app:
+- The Flask/SocketIO backend is the app's internal engine, bound to **127.0.0.1 on a free port** (`TIN_HOST`/`TIN_PORT`; dev stays `0.0.0.0:5000`). The local server is the standard IPC layer for a Python-backed desktop app — keeping the polished web UI without an HTTP rewrite — but the port is an invisible loopback detail, never a visible URL.
+- The UI is hosted in a **native OS window via pywebview** (WebView2 on Windows), titled `TERMINAL//IN`, with the brand icon (`terminalin.ico`). Browser fallback only if the native runtime is absent (flagged).
+- **Hardware maximization runs in-process** (`hw.apply()` at boot) — the shipped app engages all logical cores exactly like dev.
+- Build flags: `console=False` (no console window; logs → `%LOCALAPPDATA%\TerminalIN\data\logs`), `icon` + `version_info.txt` (file properties read `TERMINAL//IN`), pywebview/pythonnet bundled.
+
+**Next:** rebuild the exe to bake in the desktop shell + UI-path fix, then the Inno Setup wrapper (Start-menu/desktop shortcut with the icon, license page = docs/LEGAL.md) and the first-run wizard.
 
 - **PyInstaller `--onedir`** build of the backend (never `--onefile` — torch/transformers make a 3–5 GB payload; onedir avoids per-launch temp unpacking), bundling Python 3.14 runtime + `terminal_in/` + static `terminal_ui/out`.
 - **Inno Setup** wraps the onedir tree + bundled LLM (5b.3) into `TERMINAL-IN-Setup.exe`: Start-menu entry, desktop shortcut, optional logon auto-start (replaces `background.ps1 -Install`).

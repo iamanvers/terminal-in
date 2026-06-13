@@ -45,3 +45,11 @@ yfinance>=0.2.38
 # DuckDB is used for backtest results, strategy performance history, daily summaries,
 # model training metadata, and agent evaluations. Falls back to no-op if not installed.
 duckdb>=0.10.0
+
+# ── Packaging: self-serving desktop app (PyInstaller onedir) ──────────────────
+# pywebview hosts the UI in a native OS window (WebView2 on Windows) so the
+# shipped exe is a real app, not "open your browser to localhost". pythonnet is
+# its Windows (winforms/edgechromium) backend. Dev mode doesn't need these.
+pywebview>=5.0
+pythonnet>=3.0
+pyinstaller>=6.0

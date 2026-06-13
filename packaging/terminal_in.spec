@@ -23,6 +23,10 @@ hiddenimports = [
     'engineio.async_drivers.threading',   # flask-socketio threading mode
     'simple_websocket',
     'dotenv',
+    # native desktop window (pywebview → WebView2 via pythonnet/winforms)
+    'webview', 'clr', 'clr_loader',
+    *collect_submodules('webview'),
+    *collect_submodules('clr_loader'),
     *collect_submodules('terminal_in'),
 ]
 
@@ -31,7 +35,10 @@ datas = [
     (os.path.join(ROOT, 'Modelfile'), '.'),
     (os.path.join(ROOT, 'docs', 'LEGAL.md'), 'docs'),
     (os.path.join(ROOT, 'docs', 'USAGE.md'), 'docs'),
+    (os.path.join(SPECPATH, 'terminalin.ico'), '.'),     # window/app icon
     *collect_data_files('transformers', include_py_files=False),
+    *collect_data_files('webview'),                       # bridge JS + assets
+    *collect_data_files('clr_loader'),                    # native ffi
 ]
 
 a = Analysis(
@@ -61,12 +68,14 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name='TerminalIN',
-    icon=None,
+    icon=os.path.join(SPECPATH, 'terminalin.ico'),
+    version=os.path.join(SPECPATH, 'version_info.txt'),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True,             # console build: logs visible; -w later via Inno
+    console=False,            # self-serving desktop app — no console window
+                              # (logs go to %LOCALAPPDATA%/TerminalIN/data/logs)
 )
 
 coll = COLLECT(

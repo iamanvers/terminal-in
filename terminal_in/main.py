@@ -242,23 +242,29 @@ def main():
     if streamer is not None:
         pass  # KiteStreamer.run() manages its own thread internally
 
+    # Host/port are env-driven so the packaged desktop shell can bind the
+    # internal API to localhost on a free port (TIN_HOST/TIN_PORT). Dev default
+    # stays 0.0.0.0:5000 — unchanged.
+    import os as _os, socket as _socket
+    _host = _os.environ.get('TIN_HOST', '0.0.0.0')
+    _port = int(_os.environ.get('TIN_PORT', '5000'))
+
     # Fail fast with a clear message if the API port is already taken
     # (e.g. a previous instance still running) instead of a raw traceback.
-    import socket as _socket
     try:
         probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-        probe.bind(('0.0.0.0', 5000))
+        probe.bind((_host, _port))
         probe.close()
     except OSError:
-        log.error('Port 5000 is already in use — is another TERMINAL//IN instance running? '
-                  'Stop it (or: netstat -ano | findstr :5000) and restart.')
+        log.error('Port %d is already in use — is another TERMINAL//IN instance running? '
+                  'Stop it (or: netstat -ano | findstr :%d) and restart.', _port, _port)
         sys.exit(1)
 
-    log.info('All components started — API on http://0.0.0.0:5000')
+    log.info('All components started — API on http://%s:%d', _host, _port)
 
     # Start Flask in main thread (blocks until stop)
     flask_thread = Thread(
-        target=lambda: sio.run(flask_app, host='0.0.0.0', port=5000, use_reloader=False,
+        target=lambda: sio.run(flask_app, host=_host, port=_port, use_reloader=False,
                                log_output=False, allow_unsafe_werkzeug=True),
         daemon=True,
         name='flask',
