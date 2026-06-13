@@ -22,7 +22,10 @@ FROZEN = getattr(sys, 'frozen', False)
 
 
 def _prepare_frozen_env() -> None:
-    bundle = Path(sys.executable).parent          # onedir root
+    # PyInstaller onedir places bundled `datas` (the UI) under _internal/, which
+    # is sys._MEIPASS — NOT next to the exe. Using the exe's own dir left
+    # UI_OUT_DIR unset and the app served the API but 404'd the UI.
+    bundle = Path(getattr(sys, '_MEIPASS', Path(sys.executable).parent))
     appdata = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'TerminalIN'
     for sub in ('data', 'data/logs', 'data/reports', 'data/artifacts'):
         (appdata / sub).mkdir(parents=True, exist_ok=True)
