@@ -7,11 +7,26 @@
  * planner approvals. Each toast lives 30s (progress bar) and can be
  * dismissed with ✕. Mounted once in the root layout.
  */
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { getSocket } from '@/lib/socket'
 
 const TOAST_TTL_MS = 30_000
 const MAX_TOASTS = 5
+
+// Persistent "already shown" set for news headlines. The server replays recent
+// events from its ring buffer when a client (re)connects after a backend
+// restart — without this, every previously-seen news popup fires again. Keyed
+// by a stable news id (url/id/headline) and persisted in localStorage.
+const SEEN_NEWS_KEY = 'tin_seen_news'
+const SEEN_NEWS_MAX = 800
+function loadSeenNews(): Set<string> {
+  if (typeof localStorage === 'undefined') return new Set()
+  try { return new Set(JSON.parse(localStorage.getItem(SEEN_NEWS_KEY) || '[]')) } catch { return new Set() }
+}
+function persistSeenNews(set: Set<string>) {
+  if (typeof localStorage === 'undefined') return
+  try { localStorage.setItem(SEEN_NEWS_KEY, JSON.stringify([...set].slice(-SEEN_NEWS_MAX))) } catch { /* quota */ }
+}
 
 type Toast = {
   id: number
@@ -67,6 +82,7 @@ function ToastCard({ t, onClose }: { t: Toast; onClose: (id: number) => void }) 
 
 export default function Toasts() {
   const [toasts, setToasts] = useState<Toast[]>([])
+  const seenNews = useRef<Set<string>>(new Set())
   const close = useCallback((id: number) => {
     setToasts(ts => ts.filter(t => t.id !== id))
   }, [])
@@ -89,6 +105,7 @@ export default function Toasts() {
     type P = Record<string, unknown>
     const num = (v: unknown) => (typeof v === 'number' ? v : 0)
     const str = (v: unknown) => (v == null ? '' : String(v))
+    seenNews.current = loadSeenNews()   // restore across reloads / restarts
 
     const onOpened = (p: P) =>
       push('trade', `TRADE OPENED — ${str(p.side)} ${str(p.tradingsymbol || p.instrument_token)}`,
@@ -102,6 +119,10 @@ export default function Toasts() {
       push('reject', 'ORDER REJECTED', `${str(p.strategy_id)} ${str(p.side)} — ${str(p.reason)}`)
     const onNews = (p: P) => {
       if (p.impact !== 'high') return   // only headline-worthy items
+      const key = str(p.url || p.id || p.headline)
+      if (!key || seenNews.current.has(key)) return   // already shown (even pre-restart)
+      seenNews.current.add(key)
+      persistSeenNews(seenNews.current)
       push('news', `HIGH IMPACT — ${str(p.sentiment).toUpperCase()}`, str(p.headline).slice(0, 140))
     }
     const onKill = (p: P) =>

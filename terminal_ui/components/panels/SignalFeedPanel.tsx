@@ -153,7 +153,7 @@ export default function SignalFeedPanel() {
   }, [])
 
   useEffect(() => {
-    const loadNews = () => api.news(60).then(setNews).catch(() => {})
+    const loadNews = () => api.news(200).then(setNews).catch(() => {})
     loadNews()
     api.events().then(setEvents).catch(() => {})
     // RSS lands every 15 min server-side; refresh the list each minute
@@ -174,7 +174,7 @@ export default function SignalFeedPanel() {
       newsFilter === 'all' ? true
       : newsFilter === 'high' ? n.impact === 'high'
       : n.sentiment === newsFilter)
-    .slice(0, 80)
+    .slice(0, 200)
 
   const newsCountLabel = `${allNews.length}`
 
