@@ -166,7 +166,9 @@ export default function LearnPage() {
             fontSize: 10, fontWeight: 700, letterSpacing: '.07em', padding: '7px 13px',
             borderRadius: 4, cursor: 'pointer',
             border: `1px solid ${track === t.id ? t.color + '66' : C.border}`,
-            background: track === t.id ? `${t.color}0E` : C.panel,
+            // opaque surfaces both states — a translucent selected bg let the
+            // mesh glow through and read as a spotlight on the active tab
+            background: track === t.id ? C.card : C.panel,
             color: track === t.id ? t.color : C.muted,
           }}>{t.label}</button>
         ))}
@@ -181,7 +183,7 @@ export default function LearnPage() {
               fontSize: 9, fontWeight: 700, letterSpacing: '.06em', padding: '3px 9px', borderRadius: 3, cursor: 'pointer',
               textTransform: 'uppercase',
               border: `1px solid ${level === lv ? (lv === 'all' ? C.accent : LEVEL_C[lv]) + '66' : C.border}`,
-              background: level === lv ? (lv === 'all' ? C.accent : LEVEL_C[lv]) + '12' : 'transparent',
+              background: level === lv ? C.card : C.panel,
               color: level === lv ? (lv === 'all' ? C.accent : LEVEL_C[lv]) : C.dim,
             }}>{lv}</button>
           ))}

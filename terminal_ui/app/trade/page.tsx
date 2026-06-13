@@ -335,13 +335,17 @@ function PositionsTable({
           </span>
         )}
       </div>
+      {/* One scroll area for header + rows so a wide table scrolls INSIDE the
+          panel (header sticky) instead of extending past it / getting clipped */}
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+       <div style={{ minWidth: 'max-content' }}>
       {/* Header */}
-      <div style={{ display: 'grid', gridTemplateColumns: PCOLS, gap: 0, padding: '4px 10px', background: '#080808', flexShrink: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: PCOLS, gap: 0, padding: '4px 10px', background: '#080808', position: 'sticky', top: 0, zIndex: 1 }}>
         <TH>INSTRUMENT</TH><TH>SIDE</TH><TH>STRAT</TH><TH align="right">QTY</TH>
         <TH align="right">ENTRY</TH><TH align="right">CMP</TH><TH align="right">UNREAL</TH>
         <TH>%</TH><TH>SL DIST ▸</TH><TH>TGT DIST ▸</TH><TH align="right">AGE</TH><TH></TH>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div>
         {rows.length === 0 ? (
           <div style={{ textAlign: 'center', color: C.dim, fontSize: 10.5, padding: 32 }}>No open positions</div>
         ) : rows.map(pos => {
@@ -396,6 +400,8 @@ function PositionsTable({
           )
         })}
       </div>
+       </div>
+      </div>
     </div>
   )
 }
@@ -430,11 +436,13 @@ function TradeHistory({
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="filter…"
           style={{ marginLeft: 'auto', background: '#0C0D10', border: `1px solid ${C.border}`, color: C.sub, fontSize: 10, padding: '2px 7px', borderRadius: 3, width: 80 }} />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: HCOLS, gap: 0, padding: '4px 10px', background: '#080808', flexShrink: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+       <div style={{ minWidth: 'max-content' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: HCOLS, gap: 0, padding: '4px 10px', background: '#080808', position: 'sticky', top: 0, zIndex: 1 }}>
         <TH>TIME</TH><TH>INSTRUMENT</TH><TH>SIDE</TH><TH>STRAT</TH>
         <TH align="right">ENTRY</TH><TH align="right">EXIT</TH><TH align="right">P&L</TH><TH>DUR</TH><TH>REASON</TH>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div>
         {rows.length === 0
           ? <div style={{ textAlign: 'center', color: C.dim, fontSize: 10.5, padding: 24 }}>No closed trades</div>
           : rows.map(t => {
@@ -462,6 +470,8 @@ function TradeHistory({
             )
           })
         }
+      </div>
+       </div>
       </div>
     </div>
   )
@@ -707,8 +717,10 @@ function SignalsView({ tokenMap }: { tokenMap: TokenMap }) {
         </div>
       </div>
 
-      {/* Content */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      {/* Content — solid surface so the cards/rows don't float over the page
+          mesh (it showed through the gaps as a grid over the signals list).
+          The mesh stays visible in the page gutters around this panel. */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: 6 }}>
         {tab === 'opps' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {results.length === 0 && (
@@ -1080,10 +1092,9 @@ export default function TradePage() {
           {/* Left rail */}
           <LeftRail filter={filter} onFilter={setFilter} stats={stats} scorecards={scorecards} />
 
-          {/* Center + inspector live in a relative container so the inspector
-              slides over the right edge instead of compressing the center
-              (opening it used to reflow the whole book) */}
-          <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
+          {/* Center + inspector are static side-by-side panes (the inspector is
+              a reserved column, never a floating overlay on the table) */}
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', gap: 8 }}>
 
           {/* Center */}
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1118,12 +1129,9 @@ export default function TradePage() {
             </div>
           </div>
 
-          {/* Right inspector — slide-over overlay (no reflow of the center) */}
+          {/* Right inspector — static reserved column (slides in, no overlay) */}
           {sel && (
-            <div className="slide-in-right" style={{
-              position: 'absolute', top: 0, right: 0, bottom: 0, zIndex: 5,
-              boxShadow: '-14px 0 30px rgba(0,0,0,.45)',
-            }}>
+            <div className="slide-in-right" style={{ flexShrink: 0 }}>
               <TradeInspector
                 kind={sel.kind}
                 id={sel.kind !== 'order' ? sel.id : null}

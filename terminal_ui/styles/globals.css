@@ -59,6 +59,10 @@
 
 * { box-sizing: border-box; }
 
+/* Themed scrollbars everywhere (Firefox/Edge use scrollbar-color; without a
+   global rule they fall back to the OS white scrollbar on dark surfaces). */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+
 html, body {
   background: var(--bg);
   color: var(--text);

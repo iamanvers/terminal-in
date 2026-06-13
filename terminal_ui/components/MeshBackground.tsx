@@ -79,10 +79,13 @@ export default function MeshBackground() {
       else { lamp.x += (mouse.x - lamp.x) * 0.22; lamp.y += (mouse.y - lamp.y) * 0.22 }
 
       if (lamp.x > -999) {
-        // soft ambient halo under the lamp — reads instantly, dots stay put
+        // Soft accent halo under the cursor — the pronounced hover. It lives on
+        // the z-0 background canvas, BEHIND all content; dense work surfaces
+        // (e.g. the trade blotter) are painted opaque so it can't bleed through
+        // them. Only genuinely transparent page backgrounds let it glow.
         const halo = ctx.createRadialGradient(lamp.x, lamp.y, 0, lamp.x, lamp.y, RADIUS)
-        halo.addColorStop(0, `rgba(${ACCENT}, 0.085)`)
-        halo.addColorStop(0.55, `rgba(${ACCENT}, 0.03)`)
+        halo.addColorStop(0, `rgba(${ACCENT}, 0.10)`)
+        halo.addColorStop(0.55, `rgba(${ACCENT}, 0.035)`)
         halo.addColorStop(1, `rgba(${ACCENT}, 0)`)
         ctx.fillStyle = halo
         ctx.fillRect(lamp.x - RADIUS, lamp.y - RADIUS, RADIUS * 2, RADIUS * 2)
