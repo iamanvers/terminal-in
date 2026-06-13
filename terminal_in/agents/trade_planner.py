@@ -133,6 +133,7 @@ class TradePlanner:
             with self._cond:
                 while self._pending is None and not stop_event.is_set():
                     self._cond.wait(timeout=2.0)
+                    registry.alive('PLANNER')   # waiting, not stopped — keep HB fresh
                 batch, self._pending = self._pending, None
             if batch is None or stop_event.is_set():
                 continue

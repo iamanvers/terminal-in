@@ -93,6 +93,16 @@ class AgentRegistry:
                 s.last_heartbeat = time.time()
                 s.status = 'running'
 
+    def alive(self, agent_id: str):
+        """Liveness ping for event-driven agents that are idle but NOT stopped
+        (e.g. the planner waiting on an orchestrator batch). Refreshes the
+        heartbeat so the UI reads 'waiting', not 'stale', without claiming the
+        agent is actively 'running'. Never overrides paused/error."""
+        with self._lock:
+            s = self._agents.get(agent_id)
+            if s and s.status not in ('paused', 'error'):
+                s.last_heartbeat = time.time()
+
     def record_eval(self, agent_id: str):
         with self._lock:
             s = self._agents.get(agent_id)

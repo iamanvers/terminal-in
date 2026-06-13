@@ -78,6 +78,59 @@ function isNSEOpen() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Agent state semantics — the registry stores idle|running|paused|error, but
+// every agent here is an EVENT-DRIVEN loop. 'idle' almost always means "alive,
+// waiting for work" (the PLANNER waits for orchestrator candidates; strategies
+// wait for the engine cycle), NOT "stopped". We derive a state that says so,
+// and pick the right PRIMARY action — a trigger for waiting agents, resume for
+// paused ones — instead of showing a meaningless 'pause' on something idle.
+// ─────────────────────────────────────────────────────────────────────────────
+type AgentMode = 'active' | 'waiting' | 'paused' | 'error' | 'stale'
+function agentMode(a: AgentState): AgentMode {
+  if (a.status === 'paused') return 'paused'
+  if (a.status === 'error')  return 'error'
+  if (a.status === 'running' && a.heartbeat_age_s < 180) return 'active'
+  if (a.heartbeat_age_s > 900) return 'stale'
+  return 'waiting'
+}
+const MODE_C: Record<AgentMode, string> = {
+  active: C.run, waiting: C.accent, paused: C.warn, error: C.err, stale: C.muted,
+}
+const MODE_LABEL: Record<AgentMode, string> = {
+  active: 'ACTIVE', waiting: 'WAITING', paused: 'PAUSED', error: 'ERROR', stale: 'STALE',
+}
+// What an agent is waiting on — surfaced so a quiet planner reads as "ready",
+// not "broken". Empty ⇒ no hint.
+const WAITING_FOR: Record<string, string> = {
+  PLANNER:      'orchestrator candidates',
+  ORCHESTRATOR: 'next scan cycle',
+  ENGINE:       'next eval cycle',
+  GATE:         'an order to vet',
+  BROKER:       'an approved order',
+}
+// A trigger that actually launches work for this agent — so idle agents are
+// launchable, not only pausable. The planner can't run standalone (it judges a
+// scan's candidates), so its trigger fires an orchestrator scan to feed it.
+function triggerFor(a: AgentState): { label: string; fn: () => Promise<unknown>; title: string } | null {
+  if (a.agent_id === 'ENGINE')       return { label: '⟳ RUN EVAL',   title: 'Force a strategy-engine evaluation now', fn: () => api.agentForceEval('ENGINE') }
+  if (a.agent_id === 'ORCHESTRATOR') return { label: '⟳ RUN SCAN',   title: 'Run a multi-lens scan now',              fn: () => api.orchestratorScan() }
+  if (a.agent_id === 'PLANNER')      return { label: '⟳ FEED (SCAN)', title: 'Planner judges candidates from a scan — run one to feed it', fn: () => api.orchestratorScan() }
+  if (a.agent_type === 'strategy')   return { label: '⟳ RUN EVAL',   title: 'Strategies run inside the engine cycle — force one now', fn: () => api.agentForceEval('ENGINE') }
+  return null
+}
+
+function ModeDot({ mode, size = 8 }: { mode: AgentMode; size?: number }) {
+  const color = MODE_C[mode]
+  const cls = mode === 'active' ? 'ap-run' : mode === 'error' ? 'ap-err' : ''
+  return (
+    <span className={cls} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: size + 8, height: size + 8, flexShrink: 0 }}>
+      <span className="ring" style={{ position: 'absolute', width: size, height: size, borderRadius: '50%', background: color, opacity: 0 }} />
+      <span className="core" style={{ width: size, height: size, borderRadius: '50%', background: color, zIndex: 1 }} />
+    </span>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Primitives
 // ─────────────────────────────────────────────────────────────────────────────
 function Dot({ status, size = 8 }: { status: string; size?: number }) {
@@ -100,13 +153,13 @@ function Chip({ label, value, color }: { label: string; value: React.ReactNode; 
   )
 }
 
-function Btn({ label, onClick, busy = false, danger = false, disabled = false, full = false, variant = 'default' }:
-  { label: string; onClick: () => void; busy?: boolean; danger?: boolean; disabled?: boolean; full?: boolean; variant?: 'default' | 'ghost' | 'primary' }) {
+function Btn({ label, onClick, busy = false, danger = false, disabled = false, full = false, variant = 'default', title }:
+  { label: string; onClick: () => void; busy?: boolean; danger?: boolean; disabled?: boolean; full?: boolean; variant?: 'default' | 'ghost' | 'primary'; title?: string }) {
   const bg = danger ? '#1A0808' : variant === 'primary' ? '#0094FB0E' : 'transparent'
   const clr = danger ? C.err : variant === 'primary' ? '#0094FB' : '#AEB3BB'
   const bdr = danger ? '#F2495C33' : variant === 'primary' ? '#0094FB33' : '#4A4F57'
   return (
-    <button disabled={busy || disabled} onClick={onClick} style={{
+    <button disabled={busy || disabled} onClick={onClick} title={title} style={{
       width: full ? '100%' : undefined,
       fontSize: 10, fontWeight: 700, letterSpacing: '.06em', padding: '5px 10px',
       border: `1px solid ${bdr}`, borderRadius: 3, cursor: (busy || disabled) ? 'default' : 'pointer',
@@ -532,31 +585,39 @@ function SystemAgentCard({ agent, scorecard, onRefresh, selected, onClick }:
   const [busy, setBusy] = useState(false)
   useEffect(() => { setThresh(String(agent.confidence_threshold)) }, [agent.confidence_threshold])
   async function act(fn: () => Promise<unknown>) { setBusy(true); try { await fn() } finally { setBusy(false); onRefresh() } }
-  const isPaused = agent.status === 'paused'
+  const mode = agentMode(agent)
+  const isPaused = mode === 'paused'
+  const trig = triggerFor(agent)
+  const waitHint = mode === 'waiting' ? WAITING_FOR[agent.agent_id] : ''
 
   return (
     <div onClick={onClick} style={{
-      background: agent.status === 'error' ? '#0E0808' : isPaused ? '#0E0A06' : '#0E0E0E',
-      border: `1px solid ${agent.status === 'error' ? '#F2495C22' : isPaused ? '#0094FB22' : selected ? '#0094FB18' : C.border}`,
+      background: mode === 'error' ? '#0E0808' : isPaused ? '#0E0A06' : '#0E0E0E',
+      border: `1px solid ${mode === 'error' ? '#F2495C22' : isPaused ? '#FFB02E22' : selected ? '#0094FB33' : C.border}`,
       borderRadius: 5, padding: '11px 13px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 9,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Dot status={agent.status} size={8} />
+        <ModeDot mode={mode} size={8} />
         <span style={{ fontSize: 15, color: '#333841' }}>{AGENT_ICON[agent.agent_id] ?? '◯'}</span>
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
             <span style={{ fontSize: 11.5, fontWeight: 800, color: '#ECEEF1', letterSpacing: '.03em' }}>{agent.agent_id}</span>
-            <span style={{ fontSize: 9, color: C.warn, background: '#0094FB11', border: '1px solid #0094FB22', borderRadius: 2, padding: '0 5px', letterSpacing: '.05em' }}>
+            <span style={{ fontSize: 9, color: C.steel, background: '#3A64B011', border: '1px solid #3A64B033', borderRadius: 2, padding: '0 5px', letterSpacing: '.05em' }}>
               {agent.agent_type.toUpperCase()}
             </span>
           </div>
           <div style={{ fontSize: 9.5, color: '#4A4F57', marginTop: 1 }}>{AGENT_DESC[agent.agent_id] ?? agent.description}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-          <span style={{ fontSize: 9.5, color: STATUS_C[agent.status], fontWeight: 700, letterSpacing: '.06em' }}>{agent.status.toUpperCase()}</span>
+          <span style={{ fontSize: 9.5, color: MODE_C[mode], fontWeight: 700, letterSpacing: '.06em' }}>{MODE_LABEL[mode]}</span>
           <span style={{ fontSize: 9.5, color: ageC(agent.heartbeat_age_s) }}>HB {fmtAge(agent.heartbeat_age_s)}</span>
         </div>
       </div>
+      {waitHint && (
+        <div style={{ fontSize: 9, color: C.accent, background: '#0094FB0A', border: '1px solid #0094FB1A', borderRadius: 3, padding: '3px 8px' }}>
+          ◷ waiting for {waitHint}
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, background: '#080808', borderRadius: 3, padding: '7px 10px' }}>
         <Chip label="EVALS"     value={fmtN(agent.eval_count)} />
         <Chip label="SIGNALS"   value={fmtN(agent.signal_count)} />
@@ -575,11 +636,12 @@ function SystemAgentCard({ agent, scorecard, onRefresh, selected, onClick }:
         <div style={{ fontSize: 9.5, color: C.err, background: '#1A0808', border: '1px solid #F2495C22', borderRadius: 3, padding: '5px 8px', wordBreak: 'break-all' }}>⚠ {agent.last_error}</div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={e => e.stopPropagation()}>
-        <Btn label={isPaused ? '▶ RESUME' : '⏸ PAUSE'} busy={busy}
-          onClick={() => act(isPaused ? () => api.agentResume(agent.agent_id) : () => api.agentPause(agent.agent_id))} />
-        {agent.agent_id === 'ENGINE' && (
-          <Btn label="⟳ FORCE EVAL" busy={busy} onClick={() => act(() => api.agentForceEval(agent.agent_id))} variant="primary" />
-        )}
+        {/* Primary action: launch/trigger when not paused; resume when paused */}
+        {isPaused
+          ? <Btn label="▶ RESUME" busy={busy} variant="primary" onClick={() => act(() => api.agentResume(agent.agent_id))} />
+          : trig && <Btn label={trig.label} busy={busy} variant="primary" onClick={() => act(trig.fn)} />}
+        {/* Pause is the secondary suppression control (hidden once paused) */}
+        {!isPaused && <Btn label="⏸ PAUSE" busy={busy} onClick={() => act(() => api.agentPause(agent.agent_id))} />}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{ fontSize: 9.5, color: '#4A4F57' }}>conf≥</span>
           <input type="number" min="0" max="1" step="0.01" value={thresh} onChange={e => setThresh(e.target.value)}
@@ -595,19 +657,21 @@ function StrategyCard({ agent, scorecard, learner, alloc, onRefresh, selected, o
   { agent: AgentState; scorecard?: Scorecard; learner?: LearnerParams; alloc: number; onRefresh: () => void; selected: boolean; onClick: () => void }) {
   const [busy, setBusy] = useState(false)
   async function act(fn: () => Promise<unknown>) { setBusy(true); try { await fn() } finally { setBusy(false); onRefresh() } }
-  const isPaused = agent.status === 'paused'
+  const mode = agentMode(agent)
+  const isPaused = mode === 'paused'
+  const trig = triggerFor(agent)
 
   return (
     <div onClick={onClick} style={{
-      background: agent.status === 'error' ? '#0E0808' : isPaused ? '#0E0A06' : C.card,
-      border: `1px solid ${agent.status === 'error' ? '#F2495C22' : isPaused ? '#0094FB22' : selected ? '#0094FB22' : C.border}`,
+      background: mode === 'error' ? '#0E0808' : isPaused ? '#0E0A06' : C.card,
+      border: `1px solid ${mode === 'error' ? '#F2495C22' : isPaused ? '#FFB02E22' : selected ? '#0094FB33' : C.border}`,
       borderRadius: 4, padding: '10px 11px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 7,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <Dot status={agent.status} size={6} />
+        <ModeDot mode={mode} size={6} />
         <span style={{ fontSize: 10.5, color: '#333841' }}>{AGENT_ICON[agent.agent_id] ?? '◯'}</span>
         <span style={{ fontSize: 11.5, fontWeight: 800, color: '#ECEEF1', flex: 1 }}>{agent.agent_id}</span>
-        <span style={{ fontSize: 9, color: ageC(agent.heartbeat_age_s) }}>{fmtAge(agent.heartbeat_age_s)}</span>
+        <span style={{ fontSize: 9, color: MODE_C[mode], fontWeight: 700, letterSpacing: '.04em' }}>{MODE_LABEL[mode]}</span>
       </div>
       <div style={{ fontSize: 9.5, color: '#4A4F57', marginTop: -3 }}>{AGENT_DESC[agent.agent_id] ?? agent.description}</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
@@ -639,8 +703,10 @@ function StrategyCard({ agent, scorecard, learner, alloc, onRefresh, selected, o
         <div style={{ fontSize: 9, color: C.err, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>⚠ {agent.last_error}</div>
       )}
       <div style={{ display: 'flex', gap: 5 }} onClick={e => e.stopPropagation()}>
-        <Btn label={isPaused ? '▶' : '⏸'} busy={busy}
-          onClick={() => act(isPaused ? () => api.agentResume(agent.agent_id) : () => api.agentPause(agent.agent_id))} />
+        {isPaused
+          ? <Btn label="▶ RESUME" busy={busy} variant="primary" onClick={() => act(() => api.agentResume(agent.agent_id))} />
+          : trig && <Btn label={trig.label} busy={busy} variant="primary" onClick={() => act(trig.fn)} />}
+        {!isPaused && <Btn label="⏸" busy={busy} onClick={() => act(() => api.agentPause(agent.agent_id))} />}
         <span style={{ fontSize: 9.5, color: '#4A4F57', marginLeft: 'auto', alignSelf: 'center' }}>{fmtN(agent.signal_count)} sigs</span>
       </div>
     </div>
@@ -955,18 +1021,27 @@ function AgentInspector({ agent, onRefresh }: { agent: AgentState; onRefresh: ()
   const [busy, setBusy] = useState(false)
   useEffect(() => { setThresh(String(agent.confidence_threshold)) }, [agent.confidence_threshold])
   async function act(fn: () => Promise<unknown>) { setBusy(true); try { await fn() } finally { setBusy(false); onRefresh() } }
+  const mode = agentMode(agent)
+  const isPaused = mode === 'paused'
+  const trig = triggerFor(agent)
+  const waitHint = mode === 'waiting' ? WAITING_FOR[agent.agent_id] : ''
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Dot status={agent.status} size={8} />
+        <ModeDot mode={mode} size={8} />
         <div>
           <div style={{ fontSize: 11.5, fontWeight: 800, color: '#ECEEF1' }}>{agent.agent_id}</div>
           <div style={{ fontSize: 9.5, color: '#4A4F57' }}>{AGENT_DESC[agent.agent_id] ?? agent.description}</div>
         </div>
       </div>
+      {waitHint && (
+        <div style={{ fontSize: 9.5, color: C.accent, background: '#0094FB0A', border: '1px solid #0094FB1A', borderRadius: 3, padding: '5px 8px' }}>
+          ◷ Alive and waiting for {waitHint}. Use the trigger below to drive a cycle now.
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, background: '#080808', borderRadius: 4, padding: '8px' }}>
-        <Chip label="STATUS"    value={agent.status.toUpperCase()} color={STATUS_C[agent.status]} />
+        <Chip label="STATE"     value={MODE_LABEL[mode]} color={MODE_C[mode]} />
         <Chip label="HEARTBEAT" value={fmtAge(agent.heartbeat_age_s)} color={ageC(agent.heartbeat_age_s)} />
         <Chip label="EVALS"     value={fmtN(agent.eval_count)} />
         <Chip label="SIGNALS"   value={fmtN(agent.signal_count)} />
@@ -977,11 +1052,12 @@ function AgentInspector({ agent, onRefresh }: { agent: AgentState; onRefresh: ()
         <div style={{ fontSize: 9.5, color: C.err, background: '#1A0808', borderRadius: 3, padding: '6px 8px', wordBreak: 'break-all' }}>⚠ {agent.last_error}</div>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        <Btn label={agent.status === 'paused' ? '▶ RESUME AGENT' : '⏸ PAUSE AGENT'} busy={busy} full
-          onClick={() => act(agent.status === 'paused' ? () => api.agentResume(agent.agent_id) : () => api.agentPause(agent.agent_id))} />
-        {agent.agent_id === 'ENGINE' && (
-          <Btn label="⟳ FORCE EVALUATE NOW" busy={busy} full variant="primary" onClick={() => act(() => api.agentForceEval(agent.agent_id))} />
+        {trig && !isPaused && (
+          <Btn label={trig.label.replace('⟳ ', '⟳ ') + (agent.agent_id === 'PLANNER' ? '' : ' NOW')} busy={busy} full variant="primary"
+            title={trig.title} onClick={() => act(trig.fn)} />
         )}
+        <Btn label={isPaused ? '▶ RESUME AGENT' : '⏸ PAUSE AGENT'} busy={busy} full variant={isPaused ? 'primary' : 'default'}
+          onClick={() => act(isPaused ? () => api.agentResume(agent.agent_id) : () => api.agentPause(agent.agent_id))} />
         <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginTop: 2 }}>
           <span style={{ fontSize: 9.5, color: '#4A4F57', flexShrink: 0 }}>conf ≥</span>
           <input type="number" min="0" max="1" step="0.01" value={thresh} onChange={e => setThresh(e.target.value)}
