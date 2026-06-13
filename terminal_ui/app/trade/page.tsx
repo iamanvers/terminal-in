@@ -822,7 +822,7 @@ function TradeInspector({
   const [prefill, setPrefill] = useState<{ symbol: string; side: 'BUY'|'SELL'; sl?: number; target?: number } | null>(null)
 
   return (
-    <div style={{ width: 270, display: 'flex', flexDirection: 'column', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
+    <div style={{ width: 270, height: '100%', display: 'flex', flexDirection: 'column', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '7px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
         <span style={{ fontSize: 10, color: C.muted, letterSpacing: '.07em', fontWeight: 700, flex: 1 }}>
           {showOrder ? 'ORDER TICKET' : kind === 'position' ? 'POSITION DETAIL' : kind === 'trade' ? 'TRADE DETAIL' : 'ORDER TICKET'}
@@ -1080,8 +1080,13 @@ export default function TradePage() {
           {/* Left rail */}
           <LeftRail filter={filter} onFilter={setFilter} stats={stats} scorecards={scorecards} />
 
+          {/* Center + inspector live in a relative container so the inspector
+              slides over the right edge instead of compressing the center
+              (opening it used to reflow the whole book) */}
+          <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
+
           {/* Center */}
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {/* Tab bar */}
             <div style={{ display: 'flex', alignItems: 'center', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden', flexShrink: 0, height: 34 }}>
               {(['book', 'performance', 'signals'] as Tab[]).map(t => (
@@ -1113,16 +1118,22 @@ export default function TradePage() {
             </div>
           </div>
 
-          {/* Right inspector */}
+          {/* Right inspector — slide-over overlay (no reflow of the center) */}
           {sel && (
-            <TradeInspector
-              kind={sel.kind}
-              id={sel.kind !== 'order' ? sel.id : null}
-              positions={positions} trades={trades} ticks={ticks} tokenMap={tokenMap}
-              onClose={() => setSel(null)}
-              instruments={instruments} equity={summary?.equity ?? 1_000_000}
-            />
+            <div className="slide-in-right" style={{
+              position: 'absolute', top: 0, right: 0, bottom: 0, zIndex: 5,
+              boxShadow: '-14px 0 30px rgba(0,0,0,.45)',
+            }}>
+              <TradeInspector
+                kind={sel.kind}
+                id={sel.kind !== 'order' ? sel.id : null}
+                positions={positions} trades={trades} ticks={ticks} tokenMap={tokenMap}
+                onClose={() => setSel(null)}
+                instruments={instruments} equity={summary?.equity ?? 1_000_000}
+              />
+            </div>
           )}
+          </div>
         </div>
       </div>
     </>

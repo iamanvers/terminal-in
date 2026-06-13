@@ -186,6 +186,13 @@ html, body {
 .flash-neg { animation: flash-neg 0.4s ease; }
 .fade-up   { animation: fade-up .18s ease-out; }
 
+/* Right-anchored slide-over (inspectors / detail panels — no layout reflow) */
+@keyframes slide-in-right {
+  from { transform: translateX(14px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.slide-in-right { animation: slide-in-right .2s cubic-bezier(.22,1,.36,1); }
+
 /* ── Ticker marquee ────────────────────────────────────────────────────── */
 @keyframes marquee {
   0%   { transform: translateX(0); }

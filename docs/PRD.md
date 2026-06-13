@@ -140,6 +140,44 @@ Cross-cutting requirements for multi-asset: per-segment market calendars and set
 
 Multi-leg positions (spreads, straddles, iron condors) as first-class objects: combined margin, net greeks, payoff curves in UI, leg-level fills, early-exit rules.
 
+### P3/P4 — Module 6: World-Model Decisioning Core (forward-looking judge)
+
+**Full design: [docs/WORLD_MODEL.md](WORLD_MODEL.md).** Owner mandate 2026-06-13.
+
+The current decisioning core is **backward-looking**: lenses compute indicators on
+past bars, the EV formula is a static heuristic, and the LLM judge recalls a
+hindsight record and *guesses* — it never simulates the future. M6 replaces the
+heart of the pipeline with a forward model, synthesising three ideas:
+
+- **JEPA** (Joint-Embedding Predictive Architecture) — learn a market-state
+  **latent** and predict in *representation* space, not price space. Markets are
+  near-efficient: predicting tomorrow's close fits noise (both reference papers
+  cap at ~54% direction accuracy and one *underperforms* buy-and-hold). Predicting
+  the *latent* (regime drift, factor/vol structure, lead-lag) is tractable and
+  actionable. The HMM regime becomes an interpretable projection of this latent.
+- **World models** (Dreamer-lineage) — a latent **transition model** rolls `z_t`
+  forward into a *distribution* of futures (imagination), read out as model-based
+  EV: `E[return]`, CVaR downside, `P(target before stop)`, horizon — replacing the
+  static `conf·RR·vol·convergence`.
+- **Directional competence** (Zhu et al. 2026, LSTM-RF) — track trailing HR+/HR−
+  per lens×direction×regime and weight/abstain accordingly. Cheapest, highest
+  effort/reward; buildable now with the existing hindsight loop and no new ML.
+
+**Honest framing:** "99th percentile" = breadth + forward simulation +
+calibration/abstention + risk discipline, **not** predictive-accuracy magic (which
+the literature shows is unreachable). Success is measured in Sharpe / max-DD /
+hit-rate-when-not-abstaining.
+
+**Slots in** between the lenses and the LLM judge; the judge becomes a reasoning
+layer over a quantified forward distribution. **Hard fences:** imagination/latent
+rollouts are NEVER persisted as market data (REAL-DATA-ONLY preserved); the risk
+gate stays final; degraded mode falls back to the current judge and is flagged;
+**promotion is gated on beating the current judge in walk-forward backtest** (10y
+data + engine v2). Staged A→E (encoder · competence · world model · model-based EV
+judge · optional latent policy), each shippable and eval-gated; the 10y backfill
+(Change_46) is the training substrate. CPU-feasible at small latent dims for A–D;
+E (RL-in-imagination) is the expensive, optional, last phase.
+
 ---
 
 ## 5. Low-latency roadmap

@@ -189,9 +189,10 @@ Python 3.14 on Windows 11. Interpreter: `.venv/Scripts/python.exe`.
 - P2: Training eval set + deploy automation (merge → GGUF via llama.cpp → ollama create)
 - P2 latency: Kite WebSocket ticks in live mode, event-driven scans, async planner fast-lane
 - P3: Multi-asset (NSE CDS FX → MCX commodities → global read-only → IBKR), options strategy engine
-- HMM training once 500+ days of real data accumulate
+- P3/P4: **Module 6 — World-Model Decisioning Core** (forward-looking judge). Design: `docs/WORLD_MODEL.md`. Replaces the backward-looking core (lenses recall + LLM guesses from hindsight) with JEPA market-state latent + world-model imagination (model-based EV) + directional competence (trailing HR+/HR− per lens×dir×regime, from the hindsight loop). The 10y backfill is the training substrate. Staged A→E, each eval-gated on beating the current judge in walk-forward backtest. "99th percentile" = breadth + forward simulation + abstention + risk discipline, NOT predictive-accuracy magic (literature caps ~54% direction). Phase C (competence) is buildable now with no new ML — best effort/reward, do first.
 
 **Hard invariants (PR-blocking):**
 - No synthetic/random market data in ohlcv_* tables or the tick path — ever
+- **World-model imagination / latent rollouts are NEVER persisted as market data, never fed to lenses/strategies as bars, never shown as quotes** — imagination is a fenced planning tool inside the judge (M6); the REAL-DATA-ONLY mandate covers it
 - Any fallback must log WARN + appear in /api/health + badge in UI (no silent degradation)
-- The planner can veto/shrink signals but can never bypass the risk gate
+- The planner/judge can veto/shrink signals but can never bypass the risk gate
