@@ -392,6 +392,19 @@ export type TrainingStatus = {
   current_run: Partial<TrainingRun> & { dataset_counts?: Record<string, number> } | null
 }
 
+export type TrainingProgress = {
+  active: boolean
+  run_id?: string
+  global_step?: number
+  max_steps?: number | null
+  elapsed?: string | null
+  eta?: string | null
+  sec_per_step?: number | null
+  loss?: number | null
+  losses?: number[]
+  updated_ms?: number
+}
+
 export type AgentQueryResponse = {
   answer: string
   tool_calls: Array<{ tool: string; args: Record<string, unknown>; result: unknown }>
@@ -494,7 +507,13 @@ export const api = {
   supervisorState: () => get<SupervisorState>('/agents/supervisor/state'),
   backendHealth: () => get<BackendHealth>('/health'),
   trainingStatus: () => get<TrainingStatus>('/training/status'),
+  trainingProgress: () => get<TrainingProgress>('/training/progress'),
   trainingRuns: (limit = 20) => get<TrainingRun[]>(`/training/runs?limit=${limit}`),
+  trainingDeploy: (runId: string) =>
+    fetch(`${BASE}/training/deploy`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ run_id: runId }),
+    }).then(r => r.json()),
   trainingStart: (maxSteps = -1) =>
     fetch(`${BASE}/training/start`, {
       method: 'POST',

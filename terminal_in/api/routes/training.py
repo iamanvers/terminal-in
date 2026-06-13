@@ -41,6 +41,50 @@ def runs():
     return jsonify(rows)
 
 
+@bp.route('/progress')
+def progress():
+    """Live progress for the newest run — parses run_dir/train.log (tqdm step
+    bar + loss lines). Reads the file, not orchestrator state, so it works for
+    DETACHED runs (e.g. the long 3B run launched outside Flask) too."""
+    import re
+    from pathlib import Path
+    runs_dir = Path('./data/training/runs')
+    if not runs_dir.exists():
+        return jsonify({'active': False})
+    dirs = sorted([d for d in runs_dir.iterdir() if d.is_dir()],
+                  key=lambda d: d.stat().st_mtime, reverse=True)
+    for d in dirs[:5]:
+        logp = d / 'train.log'
+        if not logp.exists():
+            continue
+        try:
+            txt = logp.read_text(encoding='utf-8', errors='ignore')
+        except Exception:
+            continue
+        idx = txt.rfind('Starting training')
+        if idx < 0:
+            continue                      # model still loading / tokenizing
+        seg = txt[idx:]
+        # tqdm training bar:  12%|█▏ | 42/350 [12:30<1:30:00, 18.5s/it]
+        steps = re.findall(r'(\d+)/(\d+)\s*\[([\d:]+)<([^,]+),\s*([\d.]+)s/it\]', seg)
+        losses = re.findall(r"'loss':\s*([\d.]+)", seg)
+        done = 'DONE' in txt or 'training complete' in txt.lower()
+        last = steps[-1] if steps else None
+        return jsonify({
+            'active': not done,
+            'run_id': d.name,
+            'global_step': int(last[0]) if last else 0,
+            'max_steps':   int(last[1]) if last else None,
+            'elapsed':     last[2] if last else None,
+            'eta':         last[3].strip() if last else None,
+            'sec_per_step': float(last[4]) if last else None,
+            'loss':        float(losses[-1]) if losses else None,
+            'losses':      [float(x) for x in losses[-50:]],
+            'updated_ms':  int(logp.stat().st_mtime * 1000),
+        })
+    return jsonify({'active': False})
+
+
 @bp.route('/start', methods=['POST'])
 def start():
     if _trainer is None:
