@@ -115,6 +115,68 @@ def backfill(db, token_map: dict[int, str], days: int = 730) -> int:
         return sum(pool.map(_fetch_one, work))
 
 
+def backfill_history(db, token_map: dict[int, str], days: int = 3650) -> int:
+    """
+    Deep-history backfill (backdated data for HMM training + backtests).
+    The regular backfill() only fills FORWARD from each symbol's last stored
+    bar — symbols never grow history backward. This pass checks each token's
+    EARLIEST stored date and fetches the missing [target_start, first_date)
+    window. Gap-aware and idempotent: once a symbol reaches the target depth
+    (or yfinance has nothing older) subsequent runs are no-ops.
+    Returns count of symbols that gained older bars.
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        log.warning('yfinance not installed — skipping deep-history backfill')
+        return 0
+
+    target_start = date.today() - timedelta(days=days)
+    first_dates = db.get_ohlcv_first_dates(list(token_map.keys()))
+
+    work: list[tuple[int, str, date]] = []
+    for token, symbol in token_map.items():
+        first_str = first_dates.get(token)
+        if not first_str:
+            continue   # no data at all — the regular backfill() owns that case
+        first_date = date.fromisoformat(first_str)
+        # 7-day slack: yfinance listings rarely start exactly at the target
+        if first_date <= target_start + timedelta(days=7):
+            continue
+        work.append((token, symbol, first_date))
+
+    def _fetch_one(item: tuple[int, str, date]) -> int:
+        token, symbol, first_date = item
+        ticker_str = _yf_ticker(symbol)
+        try:
+            tk   = yf.Ticker(ticker_str)
+            hist = tk.history(start=target_start.isoformat(), end=first_date.isoformat(),
+                              interval='1d', auto_adjust=True)
+            if hist.empty:
+                return 0
+            bars = [{
+                'date':             str(idx.date()),
+                'instrument_token': token,
+                'open':             float(row['Open']),
+                'high':             float(row['High']),
+                'low':              float(row['Low']),
+                'close':            float(row['Close']),
+                'volume':           int(row['Volume']),
+            } for idx, row in hist.iterrows()]
+            db.insert_ohlcv_1d_batch(bars)
+            log.info('yfinance history %s (%s) — %d backdated bars (%s → %s)',
+                     symbol, ticker_str, len(bars), bars[0]['date'], bars[-1]['date'])
+            return 1
+        except Exception:
+            log.warning('yfinance history fetch failed for %s (%s)', symbol, ticker_str)
+            return 0
+
+    if not work:
+        return 0
+    with ThreadPoolExecutor(max_workers=_FETCH_WORKERS, thread_name_prefix='yf-hist') as pool:
+        return sum(pool.map(_fetch_one, work))
+
+
 def backfill_intraday(db, token_map: dict[int, str], interval: str = '5m') -> int:
     """
     Download intraday bars from yfinance and store in ohlcv_1m table.

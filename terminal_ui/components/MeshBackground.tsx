@@ -79,6 +79,14 @@ export default function MeshBackground() {
       else { lamp.x += (mouse.x - lamp.x) * 0.22; lamp.y += (mouse.y - lamp.y) * 0.22 }
 
       if (lamp.x > -999) {
+        // soft ambient halo under the lamp — reads instantly, dots stay put
+        const halo = ctx.createRadialGradient(lamp.x, lamp.y, 0, lamp.x, lamp.y, RADIUS)
+        halo.addColorStop(0, `rgba(${ACCENT}, 0.085)`)
+        halo.addColorStop(0.55, `rgba(${ACCENT}, 0.03)`)
+        halo.addColorStop(1, `rgba(${ACCENT}, 0)`)
+        ctx.fillStyle = halo
+        ctx.fillRect(lamp.x - RADIUS, lamp.y - RADIUS, RADIUS * 2, RADIUS * 2)
+
         const r2 = RADIUS * RADIUS
         const i0 = Math.max(0, Math.floor((lamp.x - RADIUS) / SPACING))
         const i1 = Math.min(cols - 1, Math.ceil((lamp.x + RADIUS) / SPACING))
@@ -93,12 +101,16 @@ export default function MeshBackground() {
             if (d2 >= r2) continue
             const t = 1 - Math.sqrt(d2) / RADIUS
             const p = t * t                       // smooth lamp falloff
+            // deeper shadow under lit studs — emboss depth grows with light
+            ctx.fillStyle = `rgba(0, 0, 0, ${Math.min(0.85, BASE_SHADOW + p * 0.35)})`
+            ctx.fillRect(x - DOT / 2 + 0.8, y - DOT / 2 + 0.8, DOT, DOT)
             // accent-lit face over the same fixed footprint — no movement
-            stud(ctx, x, y, `rgba(${ACCENT}, ${Math.min(0.75, BASE_LIGHT + p * 0.5)})`)
+            ctx.fillStyle = `rgba(${ACCENT}, ${Math.min(1, BASE_LIGHT + p * 0.95)})`
+            ctx.fillRect(x - DOT / 2, y - DOT / 2, DOT, DOT)
             // specular catch on the brightest studs — the raised feel
-            if (p > 0.18) {
-              ctx.fillStyle = `rgba(255, 255, 255, ${p * 0.28})`
-              ctx.fillRect(x - DOT / 2 - 0.5, y - DOT / 2 - 0.5, 0.9, 0.9)
+            if (p > 0.12) {
+              ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(0.65, p * 0.6)})`
+              ctx.fillRect(x - DOT / 2 - 0.5, y - DOT / 2 - 0.5, 1.1, 1.1)
             }
           }
         }

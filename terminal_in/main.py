@@ -293,7 +293,7 @@ def _start_ohlcv_backfill(db, instruments: dict, cfg):
     1. Runs immediately on startup — fills any gaps since last stored date per symbol.
     2. Schedules a daily refresh every 24 h so the DB stays current even across long downtimes.
     """
-    from terminal_in.data_ingest.yf_fetcher import backfill, backfill_intraday
+    from terminal_in.data_ingest.yf_fetcher import backfill, backfill_history, backfill_intraday
     token_map = {tok: sym for sym, tok in instruments.items()}
 
     def _fill(label: str):
@@ -301,15 +301,44 @@ def _start_ohlcv_backfill(db, instruments: dict, cfg):
             n = backfill(db, token_map)          # smart gap-aware, skips up-to-date symbols
             if n > 0:
                 log.info('yfinance daily backfill [%s] — %d symbols updated', label, n)
+            # deep history (default 10y) — idempotent, no-op once at target depth;
+            # feeds HMM regime training (needs 500+ days) and walk-forward backtests
+            nh = backfill_history(db, token_map)
+            if nh > 0:
+                log.info('yfinance deep-history backfill [%s] — %d symbols extended', label, nh)
             n5 = backfill_intraday(db, token_map, interval='5m')
             if n5 > 0:
                 log.info('yfinance 5m intraday backfill [%s] — %d symbols updated', label, n5)
         except Exception:
             log.exception('OHLCV backfill [%s] failed (non-fatal)', label)
 
+    def _maybe_train_hmm():
+        """Self-bootstrap the regime model: once enough real history exists and
+        no model is on disk, train it in the background and hot-swap it into the
+        live classifier singleton (flips /api/health off regime_heuristic).
+        Idempotent — a no-op once hmm_model.pkl is present."""
+        try:
+            from terminal_in.strategy_engine.regime import train as regime_train
+            from terminal_in.strategy_engine.regime.classifier import classifier, MODEL_PATH
+            import os
+            if os.path.exists(MODEL_PATH):
+                return
+            nifty = db.get_ohlcv_1d(256265, limit=2000)
+            if len(nifty) < 500:
+                log.info('HMM auto-train deferred — only %d NIFTY bars (<500)', len(nifty))
+                return
+            log.info('HMM auto-train — no model on disk, %d bars available', len(nifty))
+            model = regime_train.train(db, days=2000)
+            if model is not None:
+                classifier._model = model        # hot-swap into the running singleton
+                log.info('HMM model trained + hot-loaded — regime mode now HMM')
+        except Exception:
+            log.exception('HMM auto-train failed (non-fatal — stays heuristic)')
+
     def _periodic_refresh():
         """Refresh once at startup, then every 24 h."""
         _fill('startup')
+        _maybe_train_hmm()
         while not _stop_event.is_set():
             _stop_event.wait(timeout=86400)   # 24 hours
             if not _stop_event.is_set():

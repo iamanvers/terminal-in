@@ -54,11 +54,15 @@ def train(db, days: int = 500):
     """
     Pull Nifty 1d OHLCV + VIX from DB, build features, train HMM, save model.
     """
+    # hmmlearn has no Python 3.14 wheel (needs MSVC); when available it is
+    # preferred, otherwise the pure-NumPy implementation (same interface)
     try:
         from hmmlearn import hmm
+        GaussianHMM = hmm.GaussianHMM
+        backend = 'hmmlearn'
     except ImportError:
-        log.error('hmmlearn not installed — run: pip install hmmlearn')
-        return
+        from terminal_in.strategy_engine.regime.nphmm import GaussianHMM
+        backend = 'nphmm (pure NumPy)'
 
     from terminal_in.strategy_engine.regime.classifier import _extract_features
 
@@ -83,16 +87,19 @@ def train(db, days: int = 500):
         log.error('Insufficient clean features (%d rows) after NA removal', len(feat_clean))
         return
 
-    log.info('Training HMM on %d samples, %d features', len(feat_clean), feat_clean.shape[1])
+    log.info('Training HMM [%s] on %d samples, %d features', backend, len(feat_clean), feat_clean.shape[1])
 
-    model = hmm.GaussianHMM(
-        n_components=N_STATES,
-        covariance_type='full',
-        n_iter=200,
-        tol=1e-4,
-        random_state=42,
-        verbose=False,
-    )
+    if backend == 'hmmlearn':
+        model = GaussianHMM(
+            n_components=N_STATES,
+            covariance_type='full',
+            n_iter=200,
+            tol=1e-4,
+            random_state=42,
+            verbose=False,
+        )
+    else:
+        model = GaussianHMM(n_components=N_STATES, n_iter=200, tol=1e-4, random_state=42)
     model.fit(feat_clean, lengths=[len(feat_clean)])
     log.info('HMM training complete. Score: %.4f', model.score(feat_clean))
 
@@ -111,6 +118,7 @@ if __name__ == '__main__':
     parser.add_argument('--days', type=int, default=500, help='Days of history to train on')
     args = parser.parse_args()
 
+    from terminal_in.config import load_config
     from terminal_in.db import DB
-    db = DB()
+    db = DB(load_config().sqlite_path)
     train(db, days=args.days)

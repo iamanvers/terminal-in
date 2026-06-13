@@ -1456,6 +1456,61 @@ function SupervisorPanel({ state }: { state: SupervisorState | null }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Verdict ribbon — the judge's last rulings, surfaced on COMMAND so the
+// page's real story isn't buried in the DECISION LOG tab
+// ─────────────────────────────────────────────────────────────────────────────
+const ACTION_C: Record<string, string> = {
+  approve: C.green, fired: C.green, reject: C.red, filtered: '#71767F',
+}
+
+function VerdictRibbon({ decisions, onOpenLog }:
+  { decisions: AgentDecision[]; onOpenLog: () => void }) {
+  const latest = decisions
+    .filter(d => d.planner_action !== 'filtered')
+    .slice(0, 3)
+  if (latest.length === 0) return null
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'stretch', gap: 8, flexShrink: 0,
+      padding: '8px 10px', background: '#0C0D10', border: `1px solid ${C.border}`, borderRadius: 5,
+    }}>
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', flexShrink: 0, paddingRight: 10, borderRight: `1px solid ${C.border}` }}>
+        <span style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.09em', fontWeight: 700 }}>LAST</span>
+        <span style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.09em', fontWeight: 700 }}>VERDICTS</span>
+      </div>
+      {latest.map(d => (
+        <div key={d.decision_id} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3, justifyContent: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text }}>{d.symbol}</span>
+            <span style={{
+              fontSize: 9, fontWeight: 700, letterSpacing: '.05em', padding: '1px 6px', borderRadius: 3,
+              color: ACTION_C[d.planner_action] ?? C.muted,
+              border: `1px solid ${(ACTION_C[d.planner_action] ?? C.muted)}44`,
+            }}>{d.planner_action.toUpperCase()}</span>
+            {d.planner_mode === 'degraded' && (
+              <span style={{ fontSize: 8.5, color: C.amber, border: `1px solid ${C.amber}44`, borderRadius: 3, padding: '0 4px' }}>DEGRADED</span>
+            )}
+            {d.hindsight_outcome && (
+              <span style={{ fontSize: 9, color: HINDSIGHT_C[d.hindsight_outcome] ?? C.muted }}>
+                {d.hindsight_outcome.replace('_', ' ')}{d.hindsight_ret_pct != null ? ` ${d.hindsight_ret_pct > 0 ? '+' : ''}${d.hindsight_ret_pct.toFixed(1)}%` : ''}
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 9.5, color: '#71767F', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {d.planner_reason ?? '—'}
+          </div>
+        </div>
+      ))}
+      <button onClick={onOpenLog} style={{
+        alignSelf: 'center', flexShrink: 0, fontSize: 9.5, fontWeight: 700, letterSpacing: '.06em',
+        background: 'transparent', border: `1px solid ${C.border2}`, borderRadius: 3,
+        color: '#0094FB', cursor: 'pointer', padding: '4px 10px',
+      }}>LOG →</button>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Decision log tab (planner decisions + hindsight)
 // ─────────────────────────────────────────────────────────────────────────────
 const HINDSIGHT_C: Record<string, string> = {
@@ -1757,6 +1812,9 @@ export default function AgentsPage() {
             {tab === 'command' && (
               <div style={{ flex: 1, overflowY: 'auto' }}>
                 <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {/* The judge's most recent rulings — page's headline */}
+                  <VerdictRibbon decisions={agentDecisions} onOpenLog={() => setTab('judge')} />
+
                   {/* Orchestrator scan results — the core agentic output */}
                   <OrchestratorPanel state={orchState} onScan={load} />
 

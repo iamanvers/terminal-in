@@ -144,13 +144,13 @@ docs/PRD.md                         ← product requirements: F&O execution P2, 
 
 **Daily reports** — `terminal_in/reporting/daily_report.py`: pre-open brief 08:55 IST (fresh scan at 08:50) + EOD 15:45 → branded PDF (reportlab; Rs not ₹ — Helvetica glyph) → SMTP email (`SMTP_*`, `REPORT_EMAIL_TO` in .env). On-demand: `POST /api/training/report/run`.
 
-**OHLCV data** — `yf_fetcher.backfill()` is gap-aware: checks `db.get_ohlcv_last_dates()` and fetches only missing days; 24h refresh thread. `YF_MAP`: NIFTY 50→^NSEI, BANKNIFTY→^NSEBANK, VIX→^INDIAVIX, **TATAMOTORS→TMPV.NS** (2025 demerger delisted TATAMOTORS.NS on Yahoo), equities→SYMBOL.NS.
+**OHLCV data** — `yf_fetcher.backfill()` is gap-aware FORWARD (checks `db.get_ohlcv_last_dates()`, fetches only missing recent days); `backfill_history()` is gap-aware BACKWARD (checks `db.get_ohlcv_first_dates()`, fetches the missing [target_start, earliest) window — default 10y, idempotent once at depth). Both run in the 24h refresh thread; deep history feeds HMM training + walk-forward backtests. All 72 symbols reach back to 2016 (~2,470 daily bars). `YF_MAP`: NIFTY 50→^NSEI, BANKNIFTY→^NSEBANK, VIX→^INDIAVIX, **TATAMOTORS→TMPV.NS** (2025 demerger delisted TATAMOTORS.NS on Yahoo), equities→SYMBOL.NS.
 
 **DB API conventions** — `get_ohlcv_1d/1m` return pandas DataFrames with DatetimeIndex. `insert_trade(dict)` accepts `instrument_id` or `instrument_token`. `agent_decisions` table stores planner verdicts + hindsight (see decision_memory.py).
 
 **pandas 2.x timestamps** — convert via `(series - pd.Timestamp('1970-01-01', tz='UTC')) // pd.Timedelta('1ms')`, never `.astype('int64')`.
 
-**HMM classifier** — 6 states; heuristic fallback until `hmm_model.pkl` exists (degraded mode, reported in /api/health). 3-day hysteresis. `classifier.mode` → 'hmm'|'heuristic'.
+**HMM classifier** — 6 states; heuristic fallback until `hmm_model.pkl` exists (degraded mode, reported in /api/health). 3-day hysteresis. `classifier.mode` → 'hmm'|'heuristic'. Trainer (`regime/train.py`) uses **hmmlearn when importable, else `regime/nphmm.py`** — a pure-NumPy Gaussian HMM (log-space Baum-Welch + Viterbi, full covars, k-means init, sticky-transition prior) written because hmmlearn ships no Python 3.14 wheel. Same interface (fit/predict/predict_proba/score/means_), picklable, so the classifier loads either backend unchanged. **Self-bootstrapping**: `main._maybe_train_hmm()` trains in the backfill thread on boot when ≥500 NIFTY bars exist and no model is on disk, then hot-swaps into the live `classifier` singleton (no restart needed). `hmm_model.pkl` is gitignored (per-deployment artifact, like the DB). Trained model: learned transmat diagonal ~0.93–0.98 (correctly sticky regimes).
 
 **DSA scoring** — `0.40 × regime_fit + 0.30 × Bayesian_WR + 0.30 × rolling_Sharpe`; monthly rebalance, ±15% gradient cap, 5% floor; WARNs when scoring on uninformed priors.
 
@@ -164,7 +164,7 @@ docs/PRD.md                         ← product requirements: F&O execution P2, 
 
 Install: `pip install -r requirements.txt` (inside `.venv`).
 
-**hmmlearn** — needs MS C++ Build Tools on Windows; heuristic mode works without it.
+**hmmlearn** — no Python 3.14 wheel; build fails without MSVC. `regime/nphmm.py` (pure NumPy + scikit-learn k-means init) is the in-tree replacement and the active backend on 3.14 — no MSVC needed.
 **FinBERT (torch + transformers)** — torch 2.11.0+cpu + transformers 5.6.2, confirmed working.
 **Training stack** — trl 1.3.0, peft 0.19.1, datasets 4.8.5, accelerate 1.13.0 (see TRL gotchas above).
 **yfinance 1.3.0** — backfill + live quotes, confirmed working.

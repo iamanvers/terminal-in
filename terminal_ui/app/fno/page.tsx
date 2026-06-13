@@ -207,7 +207,25 @@ function ContractReference() {
 
 // ── Phase 2 footer strip ──────────────────────────────────────────────────────
 function RoadmapStrip() {
+  // collapsed to a one-line chip after first view — the roadmap shouldn't
+  // burn a permanent row to repeat itself (persisted in localStorage)
+  const [open, setOpen] = useState(false)
+  useEffect(() => { setOpen(localStorage.getItem('fno_roadmap_seen') !== '1') }, [])
+  const dismiss = () => { localStorage.setItem('fno_roadmap_seen', '1'); setOpen(false) }
   const items = ['Contract chain', 'Lot-based fills', 'SPAN margin', 'Multi-leg options (P3)']
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} style={{
+        alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6,
+        fontSize: 9.5, fontWeight: 700, letterSpacing: '.07em', padding: '2px 9px',
+        background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 3,
+        color: C.muted, cursor: 'pointer',
+      }}>
+        ⓘ EXECUTION · PHASE 2
+      </button>
+    )
+  }
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', flexShrink: 0,
@@ -220,6 +238,10 @@ function RoadmapStrip() {
       <span style={{ fontSize: 9.5, color: C.muted, marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         index signals route via NIFTYBEES until then — see PRD
       </span>
+      <button onClick={dismiss} style={{
+        background: 'none', border: 'none', color: C.muted, cursor: 'pointer',
+        fontSize: 11, padding: '0 2px', flexShrink: 0, lineHeight: 1,
+      }} title="Collapse — reopen from the chip">✕</button>
     </div>
   )
 }

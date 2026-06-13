@@ -1094,9 +1094,9 @@ export default function TradePage() {
               ))}
               <div style={{ flex: 1 }} />
               <button onClick={() => setSel({ kind: 'order' })} style={{
-                height: '100%', padding: '0 14px', fontSize: 10, fontWeight: 700, background: '#001A08',
-                border: 'none', borderLeft: `1px solid ${C.border}`, color: C.green, cursor: 'pointer', letterSpacing: '.06em',
-              }}>⊕ ORDER</button>
+                height: '100%', padding: '0 22px', fontSize: 10.5, fontWeight: 800, background: '#0094FB14',
+                border: 'none', borderLeft: `2px solid #0094FB`, color: '#00B9FC', cursor: 'pointer', letterSpacing: '.08em',
+              }}>⊕ NEW ORDER</button>
               <button onClick={load} style={{ height: '100%', padding: '0 12px', fontSize: 10, color: C.muted, background: 'none', border: 'none', borderLeft: `1px solid ${C.border}`, cursor: 'pointer' }}>↺</button>
             </div>
 
