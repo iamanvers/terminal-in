@@ -203,6 +203,127 @@ forward distribution. The risk gate is untouched and final.
 
 ---
 
+## 3½. Reasoning + multimodal fusion — tying it all together
+
+> Owner mandate 2026-06-13: *"we still need some intelligent reasoning, and it
+> would ideally need to be pre-trained, and trained by us only … a good logical
+> arch that accomplishes a goal with all relevant data — the math (current),
+> market sentiment, news, company financials, how all things tie back, the
+> reasoning."*
+
+Two clarifications reshape M6. (1) The judge must do **intelligent reasoning**,
+not just emit a number from a latent. (2) The model must be **ours** — a
+pre-trained foundation we fine-tune *locally on our own data*, never a black-box
+external call in the trade loop. And it must integrate **everything that moves a
+stock**: the math (technicals, what we have today) **plus sentiment, news,
+company financials, and how they all tie back to one another.**
+
+That implies two coupled subsystems over five data planes.
+
+### Dual-process judge (simulation + deliberation)
+
+- **System 1 — the World Model (fast, quantitative intuition).** The JEPA latent
+  + transition model (A/B above). It *simulates* forward and outputs a
+  distribution — E[ret], CVaR, P(target before stop). It does not explain; it
+  imagines.
+- **System 2 — the Reasoning Layer (slow, deliberative).** Our own fine-tuned
+  financial SLM. It *reasons*: integrates the heterogeneous evidence, builds a
+  causal narrative ("RBI on hold + crude falling + this OMC at 11× with improving
+  GRMs + sector breadth turning up → constructive"), sanity-checks the world
+  model's numbers against the fundamentals and the news, sizes, and — crucially —
+  **abstains when the evidence does not cohere.**
+
+Neither alone suffices: the world model can't read a balance sheet or explain;
+the SLM can't numerically simulate forward and will hallucinate if left to
+"guess." **Coupling them is the design.**
+
+### Five data planes → one unified market-state latent
+
+The JEPA encoder becomes **multimodal**. Each plane has a small encoder; outputs
+fuse (concat + cross-attention) into the unified latent `z` that the world model
+rolls forward and the SLM reads:
+
+1. **Technical plane** — OHLCV-derived features/indicators (today's lenses). Have it.
+2. **Relational plane ("how it all ties back")** — an **entity graph**: nodes =
+   {stocks, sectors, indices, macro factors}; edges = {same-sector, price
+   co-movement/correlation, supply-chain/peer, factor exposure}. A small **graph
+   network / relational attention** propagates signal across linked names — so one
+   bank's print, or a crude move, informs every connected node. (Zhu et al. 2026
+   cite exactly this: industry + co-movement + supply-chain graph + BERT sentiment
+   → Transformer.)
+3. **Fundamental plane** — company financials: P&L, balance sheet, cash flow,
+   valuation/quality/growth ratios, quarterly results vs estimates. Structured
+   features per symbol, refreshed on results.
+4. **News / sentiment plane** — headlines + FinBERT sentiment (have it), event
+   tags (results / rating change / regulatory), recency-weighted. The text itself
+   is also retrievable by the SLM at reason-time.
+5. **Macro plane** — RBI rates, CPI, USDINR, crude, India VIX, global indices. The
+   regime backbone.
+
+The unified `z` is therefore a learned representation of *the whole situation* —
+price action, who-it's-connected-to, the books, the news, and the macro weather —
+not just the chart.
+
+### The reasoning model: pre-trained, then ours alone
+
+- **Pre-trained foundation.** A capable open base (the Qwen2.5-3B path already
+  chosen) carries general language + finance literacy. We do **not** train
+  language from scratch — that's the "pre-trained" half.
+- **Trained by us only.** All specialization is local LoRA on **our** data — own
+  trades, hindsight-judged decisions, strategy/macro QA, and (new) world-model-
+  grounded reasoning traces. We own every adapter; the trade loop never calls an
+  external model. (Matches the recursive-training pipeline + the no-cloud mandate.)
+- **How we teach *reasoning* (three signals, all local):**
+  1. **Teacher-distilled curriculum.** During development, a strong teacher
+     (Claude — the "Claude-augmented training" already in the PRD) generates
+     high-quality reasoning traces that fuse the five planes + the world model's
+     forward numbers into an explained verdict. We fine-tune our SLM to reproduce
+     that reasoning. The teacher writes the textbook; our model learns it and keeps
+     the weights.
+  2. **Outcome grounding.** The hindsight loop tells us which *reasoning* preceded
+     good P&L. We preference-weight traces that led to `would_win` over
+     plausible-but-wrong ones — reasoning graded by realized money, not eloquence.
+  3. **World-model consistency.** A verifier penalizes narratives that contradict
+     the simulated distribution (a bullish thesis when the rollout shows P(stop
+     before target) high). Reasoning must be *consistent with the simulation* —
+     closing the loop between System 1 and System 2.
+
+### How the two subsystems talk (staged, honest)
+
+- **Stage 1 (cheap, works now): textual grounding.** The world model's outputs +
+  retrieved evidence (relations, fundamentals, recent news) render as a compact
+  structured context block; the SLM reasons over it in natural language. This is a
+  direct evolution of today's planner prompt — same plumbing, vastly richer,
+  forward-looking inputs. **Most of the value lands here.**
+- **Stage 2 (research-grade, later): embedding-level coupling.** Project the
+  world-model latent `z` into soft-prompt tokens / a small adapter the SLM attends
+  to directly, so reasoning is conditioned on the *representation*, not just a text
+  summary. Only if Stage 1 proves the value.
+
+### New data ingestion this requires
+
+- **Fundamentals:** yfinance statements/ratios + (Indian depth) screener.in / NSE
+  filings; quarterly cadence. New ingest module, cached, real-only.
+- **News archive:** we only have what we've collected — start **accumulating now**
+  (the model sharpens as the archive grows); the SLM's language understanding
+  covers cold-start news at inference.
+- **Macro series:** RBI rates, CPI, USDINR, crude, global indices — small fetcher.
+- **Graph:** sector map (have it) + rolling correlations (computable) seed the
+  edges; supply-chain/peer edges added incrementally.
+
+### Honest position
+
+This is the most ambitious thing in the system, and the literature ceiling still
+holds: even a multimodal reasoning judge won't *predict prices* well (nothing
+does). Its edge is **coherence and abstention** — fusing five evidence planes into
+a forward-simulated, self-consistent, *explained* decision, and declining when
+they disagree. We stage so the cheap high-value parts (relational + fundamental +
+news context feeding a better-grounded reasoning prompt — Stage 1) land long
+before the research-grade embedding coupling, and every stage is eval-gated on
+beating the current judge in walk-forward backtest.
+
+---
+
 ## 4. Training & data — and why the 10-year backfill matters
 
 The deep-history backfill (Change_46: all 72 symbols to 2016, ~2,470 daily bars
@@ -269,6 +390,15 @@ Ryzen 7 7730U, 8C/16T, 16 GB, CPU-only (no CUDA; iGPU via DirectML/Vulkan only).
 
 Phase **C** is buildable now with no new ML and likely the best
 effort/reward ratio — do it first, alongside (A).
+
+**Multimodal + reasoning (§3½) maps onto this as a parallel data-plane track**,
+sequenced cheap→expensive: **(i)** wire fundamentals + macro + relational
+(correlation) context into the existing planner prompt — *Stage-1 textual
+grounding, no new ML, ships like Phase C*; **(ii)** add the relational graph
+network and fundamental encoder into the JEPA fusion (rides on Phase A/B);
+**(iii)** the teacher-distilled, outcome-grounded reasoning curriculum for our SLM
+(extends the recursive-training pipeline); **(iv)** Stage-2 embedding-level
+latent→SLM coupling (research-grade, last). Each gated like everything else.
 
 ---
 
