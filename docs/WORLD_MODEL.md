@@ -123,6 +123,48 @@ reliability of that signal source in this direction and this regime** — and
 **abstains** when no source clears a competence threshold. This is the cheap,
 high-value meta-layer, and it is buildable today with zero new ML.
 
+### 2d. Pragmatic forward EV — gradient boosting + time-series FMs (the near-term System 1)
+
+The full System 1 in §3½ — a JEPA latent rolled forward by a world model into an
+outcome distribution — is research-grade (Phases A/B). But its **job** (D: replace
+the static `conf·RR·vol·convergence` with a *learned, calibrated, forward* EV) has
+a far cheaper realization that ships now and is **the same component, not a
+detour**:
+
+- **A gradient-boosted EV head (LightGBM / XGBoost).** The forward win-probability
+  / E[ret] estimate is a **tabular** problem — the candidate feature vector
+  (`ev, conf, persistence, rsi, vol_factor, rr, regime, breadth, sector, lens-set`,
+  + the planes below) → the realized hindsight outcome we *already log*. Tree
+  ensembles are the state-of-the-art tool for exactly this, train in **seconds on
+  CPU**, calibrate cleanly (isotonic/Platt), and emit `P(target before stop)` +
+  `E[ret]` directly. This is component **(D)'s System-1 core, available before any
+  JEPA exists** — a learned EV replacing the heuristic one. The literature is
+  explicit that *numeric direction/EV is a tabular/quant problem where LLMs are
+  weak* (≤54% ceiling, both papers); the tree supplies the number, the SLM reasons
+  over it. (See [reference_specialized_models](../) memory.)
+- **Time-series foundation models as a feature, not an oracle.** Chronos-Bolt
+  (Amazon, 9–48M, fast on CPU), TimesFM, or Moirai give a zero-shot short-horizon
+  forecast band. That band is **one more input** to the GBT EV head now, and to the
+  JEPA technical plane later — never a standalone signal (univariate,
+  direction-limited). It is how "a pretrained forward model" enters the core
+  cheaply, ahead of training our own world model.
+
+So the redesign has a **graceful capability ladder for System 1**, all feeding the
+same LLM judge and all gated by the same backtest engine:
+
+```
+heuristic EV (today)
+   → GBT EV head + TSFM feature   (Phase D₀ — learned EV, CPU, buildable now)
+   → JEPA latent + world-model rollout EV   (Phases A/B/D — research-grade)
+   → ensemble / supersede, whichever wins walk-forward
+```
+
+The gradient-boosted head is **not an independent model** — it is the interim
+occupant of the world model's seat, chosen because it delivers a calibrated
+forward number on this laptop today while the JEPA stack is built and proven. When
+(B) matures, the two are ensembled or the better one wins the gate; the judge's
+interface (consume a calibrated forward EV distribution) never changes.
+
 ---
 
 ## 3. Target architecture — Module 6
@@ -222,10 +264,12 @@ That implies two coupled subsystems over five data planes.
 
 ### Dual-process judge (simulation + deliberation)
 
-- **System 1 — the World Model (fast, quantitative intuition).** The JEPA latent
-  + transition model (A/B above). It *simulates* forward and outputs a
-  distribution — E[ret], CVaR, P(target before stop). It does not explain; it
-  imagines.
+- **System 1 — the quantitative forward core (fast intuition).** Outputs a
+  calibrated forward distribution — E[ret], CVaR, P(target before stop) — that the
+  judge reasons over. It has the capability ladder of §2d: **today** a
+  gradient-boosted EV head (+ TSFM forecast feature) trained on hindsight outcomes;
+  **later** the JEPA latent + world-model rollout (A/B). It *estimates/simulates*
+  forward; it does not explain.
 - **System 2 — the Reasoning Layer (slow, deliberative).** Our own fine-tuned
   financial SLM. It *reasons*: integrates the heterogeneous evidence, builds a
   causal narrative ("RBI on hold + crude falling + this OMC at 11× with improving
@@ -384,12 +428,17 @@ Ryzen 7 7730U, 8C/16T, 16 GB, CPU-only (no CUDA; iGPU via DirectML/Vulkan only).
 |------|-------------|-----------|------|
 | **A** | JEPA-lite encoder + regime probe; `z_t` in bus cache; `/api/health.m6` | encoder trains, regime probe ≈ HMM agreement, no collapse (VICReg variance floor) | probe matches HMM ≥70% of days; latent variance non-degenerate |
 | **C** | Directional competence weights + abstention (cheapest, do early/parallel) | trailing HR+/HR− per lens×dir×regime wired from hindsight | backtest: competence-weighting ≥ flat on Sharpe |
+| **D₀** | **Gradient-boosted EV head (+ optional TSFM feature) replaces heuristic EV — the buildable-now System 1 (§2d)** | hindsight outcomes labelled; LightGBM trains + calibrates on the candidate feature vector | **walk-forward backtest beats heuristic-EV judge, no >5pt category regression** |
 | **B** | Latent world model + uncertainty ensemble; imagination rollout (fenced) | transition model trains; rollouts produce calibrated return bands | rollout return-bands calibrated on held-out (coverage ≈ nominal) |
-| **D** | Model-based EV replaces heuristic EV; LLM judge consumes forward distribution | (A)+(B)+(C) live | **walk-forward backtest beats current judge, no >5pt category regression** |
+| **D** | World-model rollout EV supersedes/ensembles the D₀ head; LLM judge consumes forward distribution | (A)+(B)+(C)+(D₀) live | **walk-forward beats the D₀ judge, no >5pt category regression** |
 | **E** | Latent policy (RL-in-imagination) for size/timing — *optional* | (D) promoted + stable | real walk-forward + 60-day paper record beats (D) |
 
 Phase **C** is buildable now with no new ML and likely the best
-effort/reward ratio — do it first, alongside (A).
+effort/reward ratio — do it first. **Phase D₀** (the gradient-boosted EV head,
+§2d) is the next concrete step: it's the first *learned, forward* EV, runs on this
+laptop, and turns the backtest engine into the live promotion gate — all before the
+research-grade JEPA stack (A/B/D). C + D₀ together are the near-term build; A/B/D/E
+are the research arc.
 
 **Multimodal + reasoning (§3½) maps onto this as a parallel data-plane track**,
 sequenced cheap→expensive: **(i)** wire fundamentals + macro + relational
