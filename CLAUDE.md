@@ -11,7 +11,7 @@ Bloomberg-style **agentic** algorithmic trading terminal for Indian markets (NSE
 # Run via launcher (also creates venv + installs deps)
 .\start.ps1
 
-# Run tests (119 passing)
+# Run tests (160 passing)
 .venv/Scripts/pytest tests/ -v
 
 # Train HMM regime classifier (after accumulating 500+ days of data)
@@ -100,8 +100,9 @@ terminal_in/                        ← Python backend
 terminal_ui/                        ← Next.js 14 frontend (modules: MARKET·EQUITIES·F&O·AGENTS·TRAIN·BACKTEST)
   app/page.tsx                      — MARKET: boot gate w/ retry+backoff, 3-col grid
   app/trade/page.tsx                — EQUITIES: cash cockpit (order ticket = EQ instruments only)
-  app/fno/page.tsx                  — F&O: index complex + lot sizes, index signals, VIX context,
-                                      Phase-2 derivatives scaffold (chain/lots/SPAN — see PRD)
+  app/fno/page.tsx                  — F&O: COCKPIT (index complex + lot sizes, index signals,
+                                      VIX context) | OPTION CHAIN (theoretical premiums + greeks,
+                                      expiry/strike, lot-based paper order). SPAN gate = Stage 4
   app/agents/page.tsx               — AGENTS: matrix, OrchestratorPanel, PlannerPanel,
                                       SupervisorPanel, DECISION LOG tab (hindsight), AI ANALYST
   app/train/page.tsx                — TRAIN: recursive training pipeline UI + run history
@@ -188,8 +189,9 @@ Python 3.14 on Windows 11. Interpreter: `.venv/Scripts/python.exe`.
 ## What's Built / What's Next
 
 **Complete:**
-- Modules: MARKET, EQUITIES (cash cockpit), F&O Phase 1 (view+signals), AGENTS (full agentic layer: planner/supervisor/memory/filters), TRAIN (recursive training pipeline)
-- 72-symbol universe with full sector coverage; real-data-only ingest; degraded-mode surfacing; 113 tests passing
+- Modules: MARKET, EQUITIES (cash cockpit), F&O (view+signals + chain + lot-based paper execution), AGENTS (full agentic layer: planner/supervisor/memory/filters), TRAIN (recursive training pipeline), BACKTEST (walk-forward eval over 10y real OHLCV)
+- F&O execution Stages 1–3 shipped: contract model + Black-Scholes theoretical chain (`data_ingest/fno_instruments.py`, `execution/options_pricing.py`, `/api/fno/*`), OPTION CHAIN UI, and lot-based paper execution (`execution/fno_paper_broker.py` — premium P&L, expiry square-off, shared account). Stage 4 (SPAN-approx margin gate) + Stage 5 (migrate S1/S8 to real derivatives) remain.
+- 72-symbol universe with full sector coverage; real-data-only ingest; degraded-mode surfacing; 160 tests passing
 - Low-latency Tier 1: vectorized indicators (72-symbol pass ≈ 67 ms), LOW_LATENCY priority flag, PYTHON_JIT opt-in (see PRD §5)
 
 **Remaining (see docs/PRD.md for full detail):**

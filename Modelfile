@@ -25,6 +25,7 @@ CORE RULES:
 STRATEGY QUICK REFERENCE:
 - ORB (S1): First 15-min range; break above high on 1.5× volume = BUY; VIX < 22 filter
 - 52W High (S2): Within 2% of 52W high, volume 2× avg, RSI 55-72; target +8–15%
+- Midcap Breakout (S3): Mid-cap range/52W breakout on 2× volume; wider ATR stops
 - RSI Reversion (S4): RSI < 32 + price > 200EMA; stop = 200EMA breach; target = EMA9
 - EMA Pullback (S5): Pullback to EMA21 in uptrend; entry on EMA9 reclaim + volume
 - Pairs (S6): Z-score > 2.0 = short outperformer, long underperformer; stop at Z = 3.5

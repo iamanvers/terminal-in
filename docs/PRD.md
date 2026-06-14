@@ -39,7 +39,7 @@ A single-user, laptop-local, **agentic trading terminal** for Indian markets tha
 |---|---|---|
 | Market intelligence | `/` | ✅ Shipped |
 | Equities cockpit (cash) | `/trade` | ✅ Shipped |
-| F&O (derivatives) | `/fno` | ◐ Phase 1 (view + signals); execution = P2 |
+| F&O (derivatives) | `/fno` | ◑ Phase 1 (view + signals) + chain + lot-based paper execution; SPAN gate + strategy migration remain |
 | Agent orchestration | `/agents` | ✅ Shipped incl. LLM planner |
 | Recursive training | `/train` | ✅ Shipped (deploy step manual) |
 | Education | `/learn` | ✅ Shipped |
@@ -77,19 +77,19 @@ Pipeline per run: dataset rebuild (static corpora + own closed trades + hindsigh
 
 ## 4. Roadmap
 
-### P2 — F&O execution (next major build)
+### P2 — F&O execution (in progress — Stages 1–3 shipped)
 
 **Why separate from equities:** derivatives differ in every dimension that matters — lot-based sizing, expiry lifecycle, SPAN margining, non-linear payoff, and the underlyings (indices) are not cash-tradeable at all. Bolting options onto the cash pipeline would corrupt risk checks; F&O gets its own instrument model, broker path, and gate checks.
 
-| Feature | Requirement |
+| Feature | Status |
 |---|---|
-| Contract model | `fno_instruments` table: underlying, expiry, strike, opt_type, lot_size, from Kite instruments dump (live) / NSE bhavcopy (paper) |
-| Chain UI | NIFTY/BANKNIFTY weekly + monthly chains with OI, IV, volume per strike on `/fno` |
-| Paper execution | Lot-based orders; expiry-aware positions; auto square-off at expiry; option premium P&L |
-| Margin | SPAN-approximation for short options/futures replacing the 30% notional rule (per-segment margin model in the gate) |
-| Strategies | S1 ORB and S8 VIX migrate to actual derivative expressions (buy ATM option / futures) instead of NIFTYBEES proxy |
-| Risk additions | Per-expiry concentration, max short-gamma exposure, event-day (expiry/budget/RBI) position limits |
-| Greeks (P3 bridge) | Black-Scholes delta/theta/vega per position, portfolio-level greek caps |
+| Contract model | ✅ `data_ingest/fno_instruments.py`: synthetic deterministic tokens, expiry calendar (weekly NIFTY / monthly per index), strike chain. Live Kite-dump ingestion deferred to live mode. |
+| Chain UI | ✅ OPTION CHAIN view on `/fno`: CE/PE premiums + greeks per strike, ATM highlight, expiry chips. **OI/real-IV are live-only (null in paper, never fabricated)** — premiums are Black-Scholes theoretical from real spot + India VIX (labeled). |
+| Paper execution | ✅ `execution/fno_paper_broker.py`: lot-based orders, premium P&L, theoretical mark-to-market on underlying ticks, expiry square-off at intrinsic; shares the cash account. |
+| Margin | ◐ short legs reserve a **SPAN-approx** (notional × 12% band) placeholder; the rigorous per-contract SPAN model in the gate is **Stage 4**. |
+| Strategies | ☐ **Stage 5** — S1 ORB and S8 VIX migrate to actual derivative expressions (buy ATM option / futures) instead of NIFTYBEES proxy. |
+| Risk additions | ☐ Per-expiry concentration, max short-gamma exposure, event-day (expiry/budget/RBI) position limits (with Stage 4). |
+| Greeks (P3 bridge) | ✅ Black-Scholes delta/theta/vega/gamma per contract (`execution/options_pricing.py`); portfolio-level greek caps pending. |
 
 ### P2 — Portfolio holdings surface
 
@@ -299,7 +299,7 @@ Gate for adoption (per model, on the eval set from §P2 training): ≥10% better
 
 ## 6. Quality & operations
 
-- **Tests:** 119 passing (gate, broker, persistence, filters, planner, supervisor); every new module ships with unit tests; planner/LLM tests run fully mocked.
+- **Tests:** 160 passing (gate, broker, persistence, filters, planner, supervisor, backtest, F&O pricing + broker); every new module ships with unit tests; planner/LLM tests run fully mocked.
 - **No-silent-degradation invariant:** any subsystem fallback must (a) log at WARN with rate limiting, (b) appear in `/api/health`, (c) badge in the UI. PR-blocking rule.
 - **Real-data invariant:** no synthetic/random market data may enter `ohlcv_*` tables or the tick path. PR-blocking rule.
 - **Commit convention:** `Change_N: summary` on `main`.

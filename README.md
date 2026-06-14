@@ -14,9 +14,10 @@
 |--------|-------|--------------|
 | **MARKET** | `/` | Live watchlist (72 NSE instruments), candlestick charts, news + FinBERT sentiment, global context (indices/FX/commodities), economic calendar |
 | **EQUITIES** | `/trade` | Cash cockpit: **portfolio statement** (composition, holdings with live marks, MIS/CNC products), positions book, order ticket, trade history, P&L attribution, equity curve |
-| **F&O** | `/fno` | Derivatives module: index complex (NIFTY/BANKNIFTY/FINNIFTY + lot sizes), India VIX context, index strategy signals. Contract chain + lot-based execution + SPAN margin are Phase 2 (see PRD) |
+| **F&O** | `/fno` | Derivatives module: COCKPIT (index complex NIFTY/BANKNIFTY/FINNIFTY + lot sizes, India VIX, index signals) and **OPTION CHAIN** (per-strike premiums + greeks, expiry/strike, lot-based paper execution). Premiums are Black-Scholes theoretical (real spot + India VIX); rigorous SPAN margin gate is the next stage (see PRD) |
 | **AGENTS** | `/agents` | The agentic core: actionable-only scan view, **LLM Trade Planner verdicts with reasoning**, supervisor control loop, decision log with hindsight, EventBus inspector, **streaming app-aware AI analyst** |
 | **TRAIN** | `/train` | **Recursive model training**: rebuild dataset from the system's own trades + judged decisions → LoRA fine-tune → loss metrics → run history |
+| **BACKTEST** | `/backtest` | **Walk-forward backtest** over 10y real OHLCV through the deterministic decision core (no lookahead): equity curve, per-lens/per-regime attribution, walk-forward-by-year, closed trades |
 
 ## The agentic decision flow
 
@@ -84,7 +85,7 @@ cd terminal_ui ; npm run dev                          # UI :3000
 .venv\Scripts\pyinstaller packaging\terminal_in.spec --noconfirm   # → dist\TerminalIN\TerminalIN.exe
 
 # Tests
-.venv\Scripts\pytest tests\ -v                        # 135 tests
+.venv\Scripts\pytest tests\ -v                        # 160 tests
 ```
 
 **Dev vs shipped:** in development the backend serves on `localhost:5000` and you use a browser — convenient for iteration. The **packaged `.exe` is a self-serving desktop app**: it runs the backend on a private loopback port and hosts the UI in a native `TERMINAL//IN` window (WebView2), so there is no browser and no visible URL. Hardware maximization (`hw.apply()` — all logical cores) runs in both.
@@ -114,8 +115,8 @@ TERMINAL//IN is a personal analysis and automation tool — **not investment adv
 
 ## Roadmap (detail in [docs/PRD.md](docs/PRD.md))
 
-- **P2** — F&O execution: option chains, lot-based paper fills, SPAN margin, expiry handling
-- **P2** — Backtest engine: replay 2y of real OHLCV through the full agentic stack, walk-forward validation
+- **P2** — F&O execution: ✅ option chain + lot-based paper fills + expiry square-off shipped; SPAN margin gate + strategy migration to derivatives remain
+- **P2** — Backtest engine: ✅ shipped — walk-forward over 10y real OHLCV through the decision core, equity curve + attribution on `/backtest`
 - **P3** — Multi-asset: NSE CDS currency futures (USDINR), MCX commodities (gold/crude), then global venues
 - **P3** — Options strategies as first-class multi-leg positions (spreads, condors, greeks)
 
@@ -127,12 +128,13 @@ terminal_in/            Python backend (threads + EventBus)
                         decision_memory, signal_filters, learner, training/
   strategy_engine/      8 strategies, regime HMM, DSA
   risk/                 M2 gate, M3 analyst, event calendar
-  execution/            paper broker, Kite broker, EOD settlement
-  data_ingest/          yfinance backfill + live feed, instrument registry (72 symbols)
+  execution/            paper broker, F&O paper broker, options pricing, Kite broker, EOD settlement
+  backtest/             walk-forward engine (real OHLCV replay, no lookahead)
+  data_ingest/          yfinance backfill + live feed, instrument registry (72 symbols), F&O contracts
   news/                 NewsAPI + FinBERT
-  api/                  Flask + SocketIO (threading mode), 9 route blueprints
-terminal_ui/            Next.js 14 — MARKET / EQUITIES / F&O / AGENTS / TRAIN
-tests/                  113 tests (gate, broker, persistence, filters, planner, supervisor)
+  api/                  Flask + SocketIO (threading mode), route blueprints
+terminal_ui/            Next.js 14 — MARKET / EQUITIES / F&O / AGENTS / TRAIN / BACKTEST
+tests/                  160 tests (gate, broker, persistence, filters, planner, supervisor, backtest, F&O)
 docs/PRD.md             Product requirements + multi-asset and low-latency roadmaps
 ```
 

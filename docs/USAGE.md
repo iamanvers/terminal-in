@@ -60,9 +60,10 @@ and recipient are supplied in `.env` — PDFs still land in `data/reports/` rega
 
 - **MARKET** — watchlist, chart, news (filter chips: ALL/POS/NEG/HIGH IMPACT; headlines click through to the source), chat.
 - **EQUITIES** — cash cockpit. Order ticket is open on the right by default: type a symbol (equities only), qty (or auto-size = 5% of equity), SL/target, confirm. BOOK/PERFORMANCE/SIGNALS tabs.
-- **F&O** — index complex with lot sizes, VIX context, index signals. Execution lands in P2.
+- **F&O** — *COCKPIT* (index complex + lot sizes, VIX context, index signals) and *OPTION CHAIN* (per-strike premiums + greeks by expiry; lot-based paper orders). Premiums are Black-Scholes theoretical from live spot + India VIX (labeled — not traded prices); OI/real-IV are live-only.
 - **AGENTS** — *COMMAND* tab is the decision pipeline (scan table → planner verdicts with reasoning → supervisor breakers). *DECISION LOG* answers "why didn't you take X, and was that right?" (missed-winners filter). *AGENTS* tab has pause/resume/threshold controls per agent.
 - **TRAIN** — smoke test (200 steps) or full LoRA run; run history with loss curves.
+- **BACKTEST** — pick a horizon (1/2/5/10Y) → run; equity curve, per-lens/per-regime attribution, walk-forward-by-year, closed trades. No-lookahead replay over real OHLCV.
 - **LEARN** — curated Varsity / Investopedia / quant tracks.
 
 Toasts (bottom-right, 30s) announce trades, rejections, high-impact news, throttles, and planner approvals while you're on any page.
