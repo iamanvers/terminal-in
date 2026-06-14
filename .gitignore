@@ -46,6 +46,10 @@ terminal_ui/node_modules/
 Thumbs.db
 desktop.ini
 
+# ── Colab GPU training (kept LOCAL — personal infra, not shipped) ─────────────
+colab/
+scripts/export_dataset.py
+
 # ── IDE ───────────────────────────────────────────────────────────────────────
 .idea/
 *.swp

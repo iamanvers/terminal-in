@@ -30,10 +30,7 @@ cd terminal_ui && npm run dev   # http://localhost:3000
 #   smoke: POST /api/training/start {"max_steps": 200} — full: {"max_steps": -1}
 #   LOCAL ceiling: max ~1.5B fp32 (Qwen2.5-1.5B fits 16GB); 3B+ NOT viable
 #   (bf16 emulated on Zen3 → ~90-day ETA; fp32 12.4GB → swaps). iGPU shares RAM.
-
-# Train the 3B on a Colab GPU (T4 = 16GB real VRAM):
-.venv/Scripts/python.exe scripts/export_dataset.py   # → data/training/colab/dataset.jsonl (upload)
-#   then run colab/train_3b_colab.ipynb → download adapter → deploy + eval-gate. See colab/README.md.
+#   3B+ trains on a cloud GPU (kept in the LOCAL-only colab/ dir, gitignored).
 
 # Low-latency mode (HIGH process priority + Python 3.14 experimental JIT)
 .\start.ps1 -LowLatency
