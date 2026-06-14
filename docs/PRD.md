@@ -43,6 +43,7 @@ A single-user, laptop-local, **agentic trading terminal** for Indian markets tha
 | Agent orchestration | `/agents` | ✅ Shipped incl. LLM planner |
 | Recursive training | `/train` | ✅ Shipped (deploy step manual) |
 | Education | `/learn` | ✅ Shipped |
+| Firm intelligence graph | `/firm` | ◯ Planned (P3) — per-stock business map: force-directed relational graph of news · suppliers · customers · peers · financials · live market value · corporate actions. See §4 P3 "Firm Intelligence Graph". |
 | Market-hours + settlement realism | core | ✅ Shipped (MIS/CNC products, SL/target-driven exits, session-gated signals) |
 | Packaging (single process) | — | ✅ Shipped (static UI served by Flask on :5000; headless via background.ps1) |
 | Daily PDF reports + email | — | ✅ Shipped (pre-open 08:55 / EOD 15:45 IST, branded) |
@@ -139,6 +140,47 @@ Cross-cutting requirements for multi-asset: per-segment market calendars and set
 ### P3 — Options strategy engine
 
 Multi-leg positions (spreads, straddles, iron condors) as first-class objects: combined margin, net greeks, payoff curves in UI, leg-level fills, early-exit rules.
+
+### P3 — Firm Intelligence Graph (per-stock business map)
+
+**Owner idea 2026-06-14.** A new module (`/firm`) that renders **one company at a
+time as a force-directed relational graph** — the same node/edge visual language as
+the codebase-memory graph index (see CLAUDE.md "Codebase Memory MCP"), repurposed
+from "how this code ties together" to "how this *business* ties together". Pick a
+symbol; the firm sits at the centre and its world fans out around it.
+
+**Planes (graph + side panels):**
+- **Relational graph (centre)** — nodes: the firm, its **suppliers**, **customers**,
+  **competitors/peers**, subsidiaries/parent, key people, and the sector/index it
+  belongs to. Edges: `supplies → · buys-from · competes-with · owns · part-of`. Node
+  colour = FinBERT news sentiment; node size = relevance/market cap. Click a node to
+  recentre on that firm (graph traversal, same UX as the code graph's `trace_path`).
+- **Financials panel** — P&L / balance-sheet / cash-flow ratios and trends from
+  yfinance fundamentals (the existing `tools/yfinance_tools.py` fundamentals path).
+- **Live market value** — market cap = live price (`yf_live.py`) × shares
+  outstanding, with the day's move and 52-wk context.
+- **News & sentiment feed** — the existing news module (NewsAPI + FinBERT) filtered
+  to this firm and its graph neighbours, so a supplier's bad print is visible on the
+  customer's page.
+- **Corporate actions / firm decisions** — dividends, splits, buybacks, board
+  outcomes, earnings dates (yfinance + `risk/event_calendar.py`).
+
+**DATA HONESTY (hard requirement, same mandate as the rest of the app):** yfinance
+does **not** ship a supplier/customer graph. Relationship edges come from (a) a small
+**curated seed** for the 72-symbol universe and (b) **news/filing-extracted** edges
+produced by the local SLM, every derived edge **labelled with a confidence and a
+source**, shown dimmer, and **never presented as authoritative fact**. Financials,
+price, and corporate actions are real (yfinance/live); nothing is fabricated and
+nothing is written to `ohlcv_*`. Missing data shows as "—", never invented.
+
+**Synergy with M6:** this graph *is* the **relational plane ("how it ties back")** of
+the Module 6 multimodal fusion (see below and `docs/WORLD_MODEL.md`). Building the
+curated firm graph + news-extracted edges here delivers M6's Stage-1 relational/
+textual grounding as a usable product feature first, then feeds the same edges into
+the world-model latent later. Build order: curated seed + financials/news/actions
+panels (no new ML) → force-directed graph UI → SLM edge-extraction (confidence-
+flagged) → wire into M6 fusion. Reuses a force-directed graph renderer; page root
+stays `background: transparent` so the mesh shows through (design-system invariant).
 
 ### P3/P4 — Module 6: World-Model Decisioning Core (forward-looking judge)
 

@@ -172,6 +172,30 @@ docs/PRD.md                         ← product requirements: F&O execution P2, 
 
 **Ollama** — `OLLAMA_HOST` (default localhost:11434), `OLLAMA_MODEL` (default qwen2.5:3b; `financial-analyst` = qwen + system prompt from `Modelfile`). Used by TradePlanner (trade loop) and financial_agent (chat). Planner: `PLANNER_ENABLED=true|false`.
 
+## Codebase Memory MCP (token-saving index)
+
+A **local, non-committed** MCP server (`codebase-memory-mcp`, DeusData) indexes this
+repo into a queryable code graph so the agent can locate symbols/call-chains **without
+reading whole files** — the token-saving path. Prefer it over blind `Read`/`Grep`
+sweeps when navigating unfamiliar code.
+
+- **Install (already done on this machine, 2026-06-14):** Windows installer →
+  `%LOCALAPPDATA%\Programs\codebase-memory-mcp\codebase-memory-mcp.exe` (v0.8.1, single
+  static C binary, no runtime deps; SQLite graph in `~/.cache/codebase-memory-mcp/`).
+  Re-index after large refactors: `codebase-memory-mcp cli index_repository '{"repo_path":"<repo>"}'`
+  (167 files → ~2.4k nodes / ~9.1k edges in ~1s).
+- **Config is intentionally NOT committed.** It lives only in the user's home dir
+  (`~/.claude/.mcp.json` + `~/.claude.json`), never in the repo's `.mcp.json`. Do not
+  add a project `.mcp.json` for it. A teammate cloning the repo just runs the installer.
+- **Key tools:** `search_graph` (by label/name/file), `trace_path` (call chains, BFS
+  depth 1–5), `get_architecture` (overview + routes + clusters), `get_code_snippet`
+  (source by qualified name), `detect_changes` (git diff → affected symbols),
+  `search_code` (grep-like), `query_graph` (Cypher-like). 14 tools total.
+- **Honest limits:** the graph is a *navigation aid*, not ground truth — it can lag the
+  working tree until re-indexed, and it never substitutes for reading code you are about
+  to edit. The same force-directed graph visual is the design seed for the planned
+  Firm Intelligence Graph module (`/firm`, PRD §4 P3).
+
 ## Dependencies
 
 Install: `pip install -r requirements.txt` (inside `.venv`).
