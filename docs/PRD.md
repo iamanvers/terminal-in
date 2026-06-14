@@ -78,7 +78,7 @@ Pipeline per run: dataset rebuild (static corpora + own closed trades + hindsigh
 
 ## 4. Roadmap
 
-### P2 — F&O execution (Stages 1–5 shipped; per-expiry/greek risk caps remain)
+### P2 — F&O execution (Stages 1–5 shipped; portfolio greek + event-day risk caps shipped 2026-06-14)
 
 **Why separate from equities:** derivatives differ in every dimension that matters — lot-based sizing, expiry lifecycle, SPAN margining, non-linear payoff, and the underlyings (indices) are not cash-tradeable at all. Bolting options onto the cash pipeline would corrupt risk checks; F&O gets its own instrument model, broker path, and gate checks.
 
@@ -89,8 +89,8 @@ Pipeline per run: dataset rebuild (static corpora + own closed trades + hindsigh
 | Paper execution | ✅ `execution/fno_paper_broker.py`: lot-based orders, premium P&L, theoretical mark-to-market on underlying ticks, expiry square-off at intrinsic; shares the cash account. UI order ticket + positions panel on `/fno`. |
 | Margin | ✅ `risk/span_margin.py`: scenario-based **SPAN approximation** — worst-case loss over a price (±3.5σ/2-day, VIX-implied) × vol grid + exposure add-on. ATM short > OTM short; futures ~7% notional. Long option = premium. Labeled approx. |
 | Strategies | ✅ `execution/fno_signal_router.py`: S1 ORB + S8 VIX index signals express as ATM options (BUY→CALL, SELL→PUT) on the F&O broker, with market-hours + kill-switch checks. |
-| Risk additions | ☐ Per-expiry concentration, max short-gamma exposure, event-day (expiry/budget/RBI) position limits — next F&O hardening pass. |
-| Greeks (P3 bridge) | ✅ Black-Scholes delta/theta/vega/gamma per contract (`execution/options_pricing.py`); portfolio-level greek caps pending. |
+| Risk additions | ✅ `fno_paper_broker._risk_check`: per-expiry concentration + max short-option legs (shipped earlier) PLUS equity-normalized **portfolio greek caps** (net delta notional ≤ 400%, net short-gamma loss on a 2% gap ≤ 5%, net vega ≤ 2% of equity) and **event-day limits** (full blackout on a 0-mask event; near expiry/RBI/FOMC refuse new short-gamma legs). |
+| Greeks (P3 bridge) | ✅ Black-Scholes delta/theta/vega/gamma per contract (`execution/options_pricing.py`); **portfolio greek caps live** + `portfolio_greeks()` served on `/api/fno/positions` and shown on the F&O BOOK (net delta / θ / vega / Γ@2%, labeled theoretical). |
 
 ### P2 — Portfolio holdings surface
 
@@ -101,7 +101,7 @@ A persistent ledger now exists (`data/portfolio.md`, regenerated on every fill/c
 The packaged app (5b) raises the design bar from "internal terminal" to "product someone installs". Scope:
 - **Fluidity pass**: route-level transitions, skeleton loaders on every panel (no layout jumps), 60fps hover/press interactions, reduced-motion compliance. Current liquid-tile foundation stays; evaluate spring-physics motion (CSS `linear()` easing) over the current cubic-bezier.
 - **Design options review**: structured comparison before the P2 build — (a) keep hand-rolled CSS system, (b) adopt headless primitives (Radix) under our tokens for menus/dialogs/tooltips, (c) full component library (rejected by default: locks the visual identity). Decision recorded here before any code.
-- **Palette consistency audit (PR-blocking)**: zero hex literals outside `lib/theme.ts` + `globals.css`; CI-style grep check added to the test suite; PDF/report colors derive from the same ramp constants.
+- **Palette consistency audit (PR-blocking)** — ◐ SHIPPED as a ratchet (2026-06-14): `tests/test_palette.py` scans `app/` + `components/` for hex literals against the design-system palette (`theme.ts` + `globals.css`) and fails the build if the total count rises above the recorded baseline (833) or a new off-palette colour appears (distinct baseline 37). Full tokenisation of 800+ existing literals is a large, visually-risky migration done by ratcheting the baselines DOWN over time, not a big-bang; new code must use THEME tokens. Three stray-but-real colours (deepest surface `#080808`, regime extremes `#3FD487`/`#A13238`) were promoted to named tokens. NEXT: drive the baselines toward zero; derive PDF/report colours from the same ramp.
 
 ### P2 — Backtest engine — ◐ v1 SHIPPED (2026-06-12)
 
@@ -114,7 +114,7 @@ Replay 2y of real OHLCV through the **full agentic stack** (lenses → filters �
 
 ### P2 — Training eval + deploy automation — ✅ SHIPPED (2026-06-12)
 
-Eval set live (`agents/training/evalset.py`, 42 graded items / 4 categories; results in `data/training/eval/`). **First verdict: qwen2.5:3b 83.3% vs financial-analyst-v2 9.5% — v2 NOT promoted.** The recursive pipeline (train→deploy→eval) is fully proven; the 1.1B base model is the bottleneck (cannot follow instructions). Path: LoRA on a ~3–4B instruct base (qwen2.5:3b itself, or a Release-2 model) — ~19h CPU per full run, or wait for better hardware. Deploy automation shipped earlier (5c).
+Eval set live (`agents/training/evalset.py`, 42 graded items / 4 categories; results in `data/training/eval/`). **First verdict: qwen2.5:3b 83.3% vs financial-analyst-v2 9.5% — v2 NOT promoted.** The recursive pipeline (train→deploy→eval) is fully proven; the 1.1B base model was the bottleneck (cannot follow instructions). **Fix shipped 2026-06-14:** the local LoRA base is now **Qwen/Qwen2.5-1.5B-Instruct** (`LORA_BASE_MODEL` default; 1.5B fp32 fits the 16 GB laptop with gradient checkpointing; the Alpaca-text dataset and q/k/v/o_proj targets need no change). 3B+ stays a cloud-GPU run (colab/). Deploy reads the base from the adapter config, so any base merges→GGUF unchanged. Deploy automation shipped earlier (5c).
 
 **Dual-control execution (owner mandate 2026-06-12):** every trade now requires BOTH a deterministic strategy signal AND LLM-judge concurrence — engine signals route through the planner (`PLANNER_GATES_ENGINE`, settings toggle, default on; degraded mode = stricter deterministic bar, never silent). Planner batches merge rather than drop. Sector gate: small-book floor + cap are hot settings (`SECTOR_SMALL_BOOK_FLOOR`, `SECTOR_CAP_PCT`) after the 2026-06-12 deadlock fix.
 
@@ -281,7 +281,12 @@ Supersedes the earlier single-machine packaging decision: the app must now be **
 - **Hardware maximization runs in-process** (`hw.apply()` at boot) — the shipped app engages all logical cores exactly like dev.
 - Build flags: `console=False` (no console window; logs → `%LOCALAPPDATA%\TerminalIN\data\logs`), `icon` + `version_info.txt` (file properties read `TERMINAL//IN`), pywebview/pythonnet bundled.
 
-**Next:** rebuild the exe to bake in the desktop shell + UI-path fix, then the Inno Setup wrapper (Start-menu/desktop shortcut with the icon, license page = docs/LEGAL.md) and the first-run wizard.
+**Update 2026-06-14 — installer pieces shipped (pending a full build run):**
+- **First-run wizard** (`packaging/first_run.py`): a native pywebview window on the very first launch collects capital, risk tier, mode, and optional Kite/SMTP keys, and persists them through the validated settings path BEFORE the backend builds Config (so they take effect on the first boot). Runs in an isolated subprocess (`TIN_WIZARD=1`) because pywebview's loop starts once per process. Pure mapping unit-tested.
+- **Inno Setup wrapper** (`packaging/installer.iss`): bundles the onedir tree into `TERMINAL-IN-Setup.exe` — Start-menu + desktop shortcuts (icon), optional logon auto-start, license page (`docs/LEGAL.md`), uninstaller that preserves user data in `%LOCALAPPDATA%\TerminalIN`.
+- **One-command pipeline** (`packaging/build_installer.ps1`): static UI export → PyInstaller onedir → `iscc`; degrades to the onedir app if Inno Setup isn't installed.
+
+**Next:** run the full build on the target machine (`.\packaging\build_installer.ps1`) and smoke-test the wizard + shortcuts; then 5b.3 (bundle `llama-server.exe` + GGUF to drop the Ollama dependency) and 5b.5 remote updates.
 
 - **PyInstaller `--onedir`** build of the backend (never `--onefile` — torch/transformers make a 3–5 GB payload; onedir avoids per-launch temp unpacking), bundling Python 3.14 runtime + `terminal_in/` + static `terminal_ui/out`.
 - **Inno Setup** wraps the onedir tree + bundled LLM (5b.3) into `TERMINAL-IN-Setup.exe`: Start-menu entry, desktop shortcut, optional logon auto-start (replaces `background.ps1 -Install`).

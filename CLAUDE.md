@@ -11,7 +11,7 @@ Bloomberg-style **agentic** algorithmic trading terminal for Indian markets (NSE
 # Run via launcher (also creates venv + installs deps)
 .\start.ps1
 
-# Run tests (160 passing)
+# Run tests (191 passing)
 .venv/Scripts/pytest tests/ -v
 
 # Train HMM regime classifier (after accumulating 500+ days of data)
@@ -34,6 +34,12 @@ cd terminal_ui && npm run dev   # http://localhost:3000
 
 # Low-latency mode (HIGH process priority + Python 3.14 experimental JIT)
 .\start.ps1 -LowLatency
+
+# Build the Windows installer (static UI → PyInstaller onedir → Inno Setup)
+.\packaging\build_installer.ps1            # full; -SkipUI / -SkipExe to reuse stages
+#   needs Inno Setup 6 (iscc) for the final TERMINAL-IN-Setup.exe; degrades to
+#   the onedir app at dist\TerminalIN if iscc is absent. First launch runs the
+#   onboarding wizard (packaging/first_run.py).
 ```
 
 ## Architecture
@@ -75,7 +81,9 @@ terminal_in/                        ← Python backend
       prepare_dataset.py            — SFT dataset (sentiment + finance-alpaca + strategy_pairs
                                       + own trades + hindsight-judged agent decisions)
       strategy_pairs.py             — Claude-generated NSE strategy QA pairs
-      train_lora.py                 — TinyLlama-1.1B LoRA (TRL 1.x API, UTF-8 re-exec,
+      train_lora.py                 — LoRA on Qwen2.5-1.5B-Instruct (LORA_BASE_MODEL
+                                      default; 1.5B fp32 fits 16GB w/ grad-checkpoint;
+                                      TRL 1.x API, UTF-8 re-exec, Alpaca-text dataset,
                                       env: LORA_DATASET_DIR/LORA_OUTPUT_DIR/LORA_MAX_STEPS)
       recursive.py                  — TrainingOrchestrator: dataset→LoRA subprocess→metrics
                                       per run dir, training_runs table, 'training.status' topic
@@ -156,7 +164,7 @@ docs/PRD.md                         ← product requirements: F&O execution P2, 
 
 **Backtest (P2)** — `terminal_in/backtest/engine.py` `run_backtest(db, days, symbols)` is v2: replays real `ohlcv_1d` through a deterministic MIRROR of the live pipeline (regime heuristic-parity → lenses S2/S4/S5/MOM with live confidences+regime mult → `EV = avg_conf×R:R×vol×convergence` → persistence ≥2 → planner degraded bar EV≥1.2/conf≥0.45 → gate-lite max-pos/sector → fill at **t+1 open**, SL/target ±1.5/2.5 ATR, stop checked before target). **No lookahead, no synthetic data** (refuses <250 bars/symbol). Long-only cash segment; NEWS lens excluded (no historical headlines). Output includes `equity_curve` (≤300 pts) + `recent_trades` (≤60) + per-lens/per-regime/walk-forward-by-year. Served `/api/backtest/run` (POST, background; GET=status) + `/api/backtest/latest`; BACKTEST UI module. The lens/EV math is hand-kept in formula-parity with the live orchestrator — if you change orchestrator scoring, mirror it here. Keystone eval gate for future strategy/edge-model/M6 changes. Tests: `tests/test_backtest.py`.
 
-**F&O execution (P2, Stages 1–5)** — derivatives get their OWN path (the cash path would corrupt risk checks). `data_ingest/fno_instruments.py` = contract model (synthetic deterministic tokens ≥9e11, expiry calendar, chain builder); `execution/options_pricing.py` = pure-stdlib Black-Scholes (price + greeks). **DATA HONESTY:** option premiums/greeks are Black-Scholes **theoretical** from REAL spot + India VIX (the NIFTY 30d IV) as the IV proxy, labeled `theoretical=True`; **OI/real-IV/volume are live-only and null in paper — never fabricated**, nothing written to `ohlcv_*`. `execution/fno_paper_broker.py` = lot-based paper execution (qty=lots×lot_size, entry_price=premium → (exit−entry)×qty IS premium P&L), marks positions by re-pricing on underlying ticks, expiry square-off at intrinsic, **shares the cash account** via `PaperBroker.reserve_capital/release_capital/apply_external_pnl`. `risk/span_margin.py` = scenario-based SPAN approximation (worst loss over price ±3.5σ/2-day VIX-implied × vol grid + 2% exposure; long option = premium paid). `execution/fno_signal_router.py` = S1/S8 index signals → ATM CE (BUY) / PE (SELL) on the F&O broker (market-hours + kill-switch checked). API `/api/fno/{underlyings,expiries,chain,order,positions,close}`. Only paper mode; live Kite F&O is a later stage. Tests: `tests/test_fno*.py`.
+**F&O execution (P2, Stages 1–5)** — derivatives get their OWN path (the cash path would corrupt risk checks). `data_ingest/fno_instruments.py` = contract model (synthetic deterministic tokens ≥9e11, expiry calendar, chain builder); `execution/options_pricing.py` = pure-stdlib Black-Scholes (price + greeks). **DATA HONESTY:** option premiums/greeks are Black-Scholes **theoretical** from REAL spot + India VIX (the NIFTY 30d IV) as the IV proxy, labeled `theoretical=True`; **OI/real-IV/volume are live-only and null in paper — never fabricated**, nothing written to `ohlcv_*`. `execution/fno_paper_broker.py` = lot-based paper execution (qty=lots×lot_size, entry_price=premium → (exit−entry)×qty IS premium P&L), marks positions by re-pricing on underlying ticks, expiry square-off at intrinsic, **shares the cash account** via `PaperBroker.reserve_capital/release_capital/apply_external_pnl`. `risk/span_margin.py` = scenario-based SPAN approximation (worst loss over price ±3.5σ/2-day VIX-implied × vol grid + 2% exposure; long option = premium paid). `execution/fno_signal_router.py` = S1/S8 index signals → ATM CE (BUY) / PE (SELL) on the F&O broker (market-hours + kill-switch checked). **Risk caps** (`_risk_check`): count caps (max positions/per-expiry/short-legs/margin) PLUS equity-normalized **portfolio greek caps** (net delta notional ≤400%, net short-gamma loss on a 2% gap ≤5%, net vega ≤2% of equity — composed over the prospective book) and **event-day limits** (full blackout on a 0-mask event; near expiry/RBI/FOMC refuse new short-gamma legs). Greek checks gate behind `leg_greeks` so the live order path runs them; the count/margin path is unchanged. `portfolio_greeks()` + per-leg greeks served on `/api/fno/positions`. API `/api/fno/{underlyings,expiries,chain,order,positions,close}`. Only paper mode; live Kite F&O is a later stage. Tests: `tests/test_fno*.py`.
 
 **DB API conventions** — `get_ohlcv_1d/1m` return pandas DataFrames with DatetimeIndex. `insert_trade(dict)` accepts `instrument_id` or `instrument_token`. `agent_decisions` table stores planner verdicts + hindsight (see decision_memory.py).
 
@@ -216,8 +224,8 @@ Python 3.14 on Windows 11. Interpreter: `.venv/Scripts/python.exe`.
 
 **Complete:**
 - Modules: MARKET, EQUITIES (cash cockpit), F&O (view+signals + chain + lot-based paper execution), AGENTS (full agentic layer: planner/supervisor/memory/filters), TRAIN (recursive training pipeline), BACKTEST (walk-forward eval over 10y real OHLCV)
-- F&O execution Stages 1–5 shipped: contract model + Black-Scholes theoretical chain (`data_ingest/fno_instruments.py`, `execution/options_pricing.py`, `/api/fno/*`), OPTION CHAIN UI + order ticket + positions, lot-based paper execution (`execution/fno_paper_broker.py` — premium P&L, expiry square-off, shared account), scenario-based **SPAN-approx margin** (`risk/span_margin.py`), and S1/S8 index→ATM-option routing (`execution/fno_signal_router.py`). Remaining: per-expiry/short-gamma risk caps, live-mode Kite chain ingestion.
-- 72-symbol universe with full sector coverage; real-data-only ingest; degraded-mode surfacing; 160 tests passing
+- F&O execution Stages 1–5 shipped: contract model + Black-Scholes theoretical chain (`data_ingest/fno_instruments.py`, `execution/options_pricing.py`, `/api/fno/*`), OPTION CHAIN UI + order ticket + positions, lot-based paper execution (`execution/fno_paper_broker.py` — premium P&L, expiry square-off, shared account), scenario-based **SPAN-approx margin** (`risk/span_margin.py`), and S1/S8 index→ATM-option routing (`execution/fno_signal_router.py`), plus portfolio greek caps + event-day limits (`_risk_check`). Remaining: live-mode Kite chain ingestion.
+- 72-symbol universe with full sector coverage; real-data-only ingest; degraded-mode surfacing; 191 tests passing
 - Low-latency Tier 1: vectorized indicators (72-symbol pass ≈ 67 ms), LOW_LATENCY priority flag, PYTHON_JIT opt-in (see PRD §5)
 
 **Remaining (see docs/PRD.md for full detail):**

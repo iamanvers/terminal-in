@@ -81,11 +81,13 @@ cd terminal_ui ; $env:BUILD_STATIC='1' ; npx next build ; cd ..
 .venv\Scripts\python.exe -m terminal_in.main          # API :5000
 cd terminal_ui ; npm run dev                          # UI :3000
 
-# Build the shipped desktop app (native window, no browser)
-.venv\Scripts\pyinstaller packaging\terminal_in.spec --noconfirm   # → dist\TerminalIN\TerminalIN.exe
+# Build the shipped desktop app + Windows installer (static UI → onedir → Inno Setup)
+.\packaging\build_installer.ps1                       # → dist\TERMINAL-IN-Setup.exe
+#   (or just the onedir exe: .venv\Scripts\pyinstaller packaging\terminal_in.spec --noconfirm)
+#   first launch runs an onboarding wizard (capital / risk tier / mode / keys)
 
 # Tests
-.venv\Scripts\pytest tests\ -v                        # 160 tests
+.venv\Scripts\pytest tests\ -v                        # 191 tests
 ```
 
 **Dev vs shipped:** in development the backend serves on `localhost:5000` and you use a browser — convenient for iteration. The **packaged `.exe` is a self-serving desktop app**: it runs the backend on a private loopback port and hosts the UI in a native `TERMINAL//IN` window (WebView2), so there is no browser and no visible URL. Hardware maximization (`hw.apply()` — all logical cores) runs in both.
@@ -96,7 +98,7 @@ Operator guide: [docs/USAGE.md](docs/USAGE.md) · Product specification: [docs/P
 
 ## Recursive training (TRAIN module)
 
-Each run: rebuild the SFT dataset (financial corpora **+ the system's own closed trades + hindsight-judged planner decisions**) → LoRA fine-tune the base SLM (Qwen2.5-3B-Instruct; TinyLlama-1.1B for fast smoke runs) in an isolated subprocess → record the real loss curve per run, surfaced live on the `/train` cockpit. Deploy path: merge adapter → GGUF → `ollama create` → **eval-gate** (42-item set; must beat the incumbent) before it replaces the planner/analyst.
+Each run: rebuild the SFT dataset (financial corpora **+ the system's own closed trades + hindsight-judged planner decisions**) → LoRA fine-tune the base SLM (**Qwen2.5-1.5B-Instruct** locally — fits 16 GB fp32 with gradient checkpointing; 3B+ on a cloud GPU) in an isolated subprocess → record the real loss curve per run, surfaced live on the `/train` cockpit. Deploy path: merge adapter → GGUF → `ollama create` → **eval-gate** (42-item set; must beat the incumbent) before it replaces the planner/analyst.
 
 ## Latency posture (and the honest limits)
 
@@ -115,7 +117,7 @@ TERMINAL//IN is a personal analysis and automation tool — **not investment adv
 
 ## Roadmap (detail in [docs/PRD.md](docs/PRD.md))
 
-- **P2** — F&O execution: ✅ option chain + lot-based paper fills + expiry square-off shipped; SPAN margin gate + strategy migration to derivatives remain
+- **P2** — F&O execution: ✅ option chain + lot-based paper fills + expiry square-off + SPAN-approx margin + **portfolio greek caps & event-day limits** shipped; live-mode Kite chain ingestion remains
 - **P2** — Backtest engine: ✅ shipped — walk-forward over 10y real OHLCV through the decision core, equity curve + attribution on `/backtest`
 - **P3** — Multi-asset: NSE CDS currency futures (USDINR), MCX commodities (gold/crude), then global venues
 - **P3** — Options strategies as first-class multi-leg positions (spreads, condors, greeks)
@@ -134,7 +136,7 @@ terminal_in/            Python backend (threads + EventBus)
   news/                 NewsAPI + FinBERT
   api/                  Flask + SocketIO (threading mode), route blueprints
 terminal_ui/            Next.js 14 — MARKET / EQUITIES / F&O / AGENTS / TRAIN / BACKTEST
-tests/                  160 tests (gate, broker, persistence, filters, planner, supervisor, backtest, F&O)
+tests/                  191 tests (gate, broker, persistence, filters, planner, supervisor, backtest, F&O greeks, palette, onboarding)
 docs/PRD.md             Product requirements + multi-asset and low-latency roadmaps
 ```
 
