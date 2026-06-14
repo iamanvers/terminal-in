@@ -53,7 +53,8 @@ def _next_version() -> int:
 def deploy_adapter(adapter_dir: str | Path) -> dict:
     """Run the full chain on a trained adapter dir (the one holding
     adapter_config.json). Returns {model, gguf, size_mb}. Blocking — call
-    from a worker thread; ~10–20 min on CPU for a 1.1B base."""
+    from a worker thread; ~15–25 min on CPU for a 1.5B base (the base is read
+    from the adapter's config, so any base merges without code changes)."""
     adapter_dir = Path(adapter_dir)
     if not (adapter_dir / 'adapter_config.json').exists():
         # training runs nest the adapter one level down

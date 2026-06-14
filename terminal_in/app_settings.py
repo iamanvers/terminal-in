@@ -93,7 +93,8 @@ SCHEMA: list[dict] = [
 
     # ── Training ─────────────────────────────────────────────────────────
     dict(env='LORA_BASE_MODEL', group='Training', label='LoRA base model (HF id)',
-         type='text', default='TinyLlama/TinyLlama-1.1B-Chat-v1.0', hot=False),
+         type='text', default='Qwen/Qwen2.5-1.5B-Instruct', hot=False,
+         help='1.5B fp32 fits 16GB locally; 3B+ trains on a cloud GPU'),
 
     # Deliberately NOT exposed: JWT_SECRET, SQLITE_PATH/DUCKDB_PATH/
     # ARTIFACTS_DIR (moving the DB under a live process corrupts state),

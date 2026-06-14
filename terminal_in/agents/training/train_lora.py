@@ -1,12 +1,19 @@
 """
-LoRA fine-tuning of TinyLlama-1.1B on the financial SFT dataset.
+LoRA fine-tuning of the financial SLM on the SFT dataset.
 
-Requires: pip install transformers peft trl datasets accelerate bitsandbytes
-Note: bitsandbytes on Windows needs the pre-built wheel:
-      pip install bitsandbytes --index-url https://jllllll.github.io/bitsandbytes-windows-webui
+Base model (LORA_BASE_MODEL): default **Qwen/Qwen2.5-1.5B-Instruct** — the local
+upgrade from the original TinyLlama-1.1B, which the eval set proved could not
+follow instructions (9.5% vs qwen2.5:3b 83.3%). 1.5B fp32 fits the 16 GB laptop
+(the hardware ceiling: 3B+ needs bf16 emulation on Zen3 / swaps, so it trains on
+a cloud GPU instead — see colab/). The dataset is plain Alpaca text
+(`### Instruction/Response`), so the base swap needs no template change, and
+Qwen2.5 shares the q/k/v/o_proj target modules.
+
+Requires: pip install transformers peft trl datasets accelerate
 
 Run:
     .venv/Scripts/python -m terminal_in.agents.training.train_lora
+    LORA_BASE_MODEL=... LORA_MAX_STEPS=200 ...   # override base / smoke test
 
 Output: ./data/training/financial_lora_adapter/
 To use with Ollama: convert via llama.cpp then `ollama create financial-analyst -f Modelfile`
@@ -37,7 +44,7 @@ log = logging.getLogger(__name__)
 # isolated per-run directories (data/training/runs/<run_id>/).
 DATASET_DIR  = Path(os.environ.get('LORA_DATASET_DIR', './data/training/financial_sft'))
 OUTPUT_DIR   = Path(os.environ.get('LORA_OUTPUT_DIR',  './data/training/financial_lora_adapter'))
-BASE_MODEL   = os.environ.get('LORA_BASE_MODEL', 'TinyLlama/TinyLlama-1.1B-Chat-v1.0')
+BASE_MODEL   = os.environ.get('LORA_BASE_MODEL', 'Qwen/Qwen2.5-1.5B-Instruct')
 
 # LoRA config — conservative for CPU-trainable run on 16 GB RAM laptop
 LORA_R       = 16
@@ -138,6 +145,9 @@ def train() -> None:
         target_modules=TARGET_MODS,
     )
     model = get_peft_model(model, lora_config)
+    # With gradient checkpointing on a PEFT model, gradients must be allowed to
+    # flow into the (frozen) base inputs so they reach the LoRA adapters.
+    model.enable_input_require_grads()
     model.print_trainable_parameters()
 
     # ── Training args (TRL 1.x uses SFTConfig) ───────────────────────────
@@ -155,6 +165,9 @@ def train() -> None:
         max_steps=MAX_STEPS,
         fp16=torch.cuda.is_available(),
         bf16=False,                 # TRL 1.x defaults bf16 on; CPU-only setup rejects it
+        # 1.5B base needs activation checkpointing to stay inside 16 GB on CPU.
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={'use_reentrant': False},
         use_cpu=not torch.cuda.is_available(),
         report_to='none',
         dataloader_num_workers=0,  # Windows: must be 0
