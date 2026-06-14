@@ -190,6 +190,7 @@ export type AgentState = {
 export type KillSwitchState = {
   global_pause: boolean
   blocked_tokens: number[]
+  auto_trade?: boolean
 }
 
 export type AuditEntry = {
@@ -555,6 +556,11 @@ export const api = {
       body: JSON.stringify({ threshold }),
     }).then(r => r.json()),
   riskState: () => get<KillSwitchState>('/agents/risk/state'),
+  setAutoTrade: (on: boolean) =>
+    fetch(`${BASE}/agents/risk/auto-trade`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ on }),
+    }).then(r => r.json()) as Promise<{ ok: boolean; auto_trade: boolean }>,
   riskGlobalPause: (reason = 'manual') =>
     fetch(`${BASE}/agents/risk/global-pause`, {
       method: 'POST',

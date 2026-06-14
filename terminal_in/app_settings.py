@@ -29,6 +29,9 @@ SCHEMA: list[dict] = [
          type='number', min=0.01, max=0.5, default=0.20, hot=False),
     dict(env='DAILY_LOSS_CAP_PCT', group='Trading', label='Daily loss cap (fraction)',
          type='number', min=0.005, max=0.2, default=0.04, hot=False),
+    dict(env='AUTO_TRADE', group='Trading', label='Auto-trade (execute signals)',
+         type='bool', default=True, hot=True,
+         help='off = advise-only: signals still shown, but the gate blocks fills'),
 
     dict(env='SECTOR_CAP_PCT', group='Trading', label='Sector cap (fraction of book)',
          type='number', min=0.2, max=1.0, default=0.40, hot=True),

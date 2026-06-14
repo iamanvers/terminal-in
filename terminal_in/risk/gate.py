@@ -14,7 +14,7 @@ from typing import Optional
 import numpy as np
 
 from terminal_in.bus import bus
-from terminal_in.agents.control import kill_switch, registry
+from terminal_in.agents.control import kill_switch, registry, trading_mode
 from terminal_in.risk.event_calendar import calendar as event_cal
 
 log = logging.getLogger(__name__)
@@ -167,6 +167,12 @@ class RiskSupervisor:
         checks['kill_switch_ok'] = not kill_switch.global_pause
         if not checks['kill_switch_ok']:
             return GateResult(False, checks, 'global_pause_engaged')
+
+        # 0a'. Auto-trade mode — OFF = advise-only. The signal was already
+        # published (and is shown in the UI); we just don't execute it.
+        checks['auto_trade_on'] = trading_mode.auto_trade
+        if not checks['auto_trade_on']:
+            return GateResult(False, checks, 'auto_trade_off')
 
         # 0b. Symbol block
         instrument_token = int(signal.get('instrument_id', 0))

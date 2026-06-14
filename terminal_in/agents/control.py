@@ -250,6 +250,26 @@ class KillSwitch:
         })
 
 
+class TradingMode:
+    """Desk operating mode. auto_trade=False is ADVISE-ONLY: the engine/planner
+    still scan and surface signals + verdicts, but the gate blocks execution
+    (reason 'auto_trade_off'). Distinct from the kill switch (emergency halt) —
+    this is the normal 'am I letting it trade today?' switch."""
+
+    def __init__(self):
+        self._auto_trade = True
+
+    @property
+    def auto_trade(self) -> bool:
+        return self._auto_trade
+
+    def set_auto_trade(self, on: bool, reason: str = 'manual'):
+        self._auto_trade = bool(on)
+        log.info('TRADING MODE: auto_trade=%s — %s', self._auto_trade, reason)
+        bus.publish('trading_mode.auto_trade', {'auto_trade': self._auto_trade, 'reason': reason})
+
+
 # Module-level singletons
 registry   = AgentRegistry()
+trading_mode = TradingMode()
 kill_switch = KillSwitch()

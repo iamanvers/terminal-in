@@ -216,6 +216,15 @@ def main():
         from terminal_in.execution.fno_signal_router import FnOSignalRouter
         _fno_router = FnOSignalRouter(fno_broker=fno_broker, config=cfg)
 
+    # ── Trading mode (auto-trade persisted across restarts) ───────────────────
+    try:
+        from terminal_in import app_settings as _aset
+        from terminal_in.agents.control import trading_mode as _tmode
+        _auto = str(_aset.current_values(db).get('AUTO_TRADE', 'true')).lower() != 'false'
+        _tmode.set_auto_trade(_auto, reason='boot')
+    except Exception:
+        log.exception('Failed to restore auto_trade mode')
+
     # ── Portfolio ledger (data/portfolio.md — live statement of holdings) ─────
     from terminal_in.reporting.portfolio_ledger import PortfolioLedger
     _ledger = PortfolioLedger(db=db, broker=broker)

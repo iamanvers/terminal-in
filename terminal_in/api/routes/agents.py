@@ -4,7 +4,7 @@ import json
 import logging
 from flask import Blueprint, jsonify, request
 
-from terminal_in.agents.control import registry, kill_switch
+from terminal_in.agents.control import registry, kill_switch, trading_mode
 
 bp  = Blueprint('agents', __name__, url_prefix='/api/agents')
 log = logging.getLogger(__name__)
@@ -82,7 +82,24 @@ def set_threshold(agent_id: str):
 
 @bp.route('/risk/state')
 def risk_state():
-    return jsonify(kill_switch.get_state())
+    return jsonify({**kill_switch.get_state(), 'auto_trade': trading_mode.auto_trade})
+
+
+@bp.route('/risk/auto-trade', methods=['POST'])
+def set_auto_trade():
+    """Toggle auto-execution. OFF = advise-only (signals shown, gate blocks
+    fills with 'auto_trade_off'). Persisted to app_settings so a restart
+    doesn't silently re-enable trading."""
+    body = request.get_json(silent=True) or {}
+    on = bool(body.get('on', True))
+    trading_mode.set_auto_trade(on, body.get('reason', 'manual'))
+    if _db is not None:
+        try:
+            from terminal_in import app_settings
+            app_settings.update(_db, {'AUTO_TRADE': str(on).lower()})
+        except Exception:
+            log.exception('Failed to persist auto_trade setting')
+    return jsonify({'ok': True, 'auto_trade': on})
 
 
 @bp.route('/risk/global-pause', methods=['POST'])

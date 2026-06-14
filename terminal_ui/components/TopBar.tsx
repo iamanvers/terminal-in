@@ -4,8 +4,38 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useTickMap, useConnected } from '@/hooks/useSocket'
 import { api } from '@/lib/api'
+import { getSocket } from '@/lib/socket'
 import StatusDot from '@/components/primitives/StatusDot'
 import SettingsPanel from '@/components/SettingsPanel'
+
+// Auto-trade toggle: ON = execute signals; OFF = advise-only (signals still
+// shown, gate blocks fills). Persisted server-side; synced live over the socket.
+function AutoTradeToggle() {
+  const [on, setOn] = React.useState<boolean | null>(null)
+  React.useEffect(() => {
+    api.riskState().then(s => setOn(s.auto_trade !== false)).catch(() => setOn(true))
+    const sock = getSocket()
+    const h = (m: { auto_trade: boolean }) => setOn(!!m.auto_trade)
+    sock.on('trading_mode.auto_trade', h)
+    return () => { sock.off('trading_mode.auto_trade', h) }
+  }, [])
+  if (on === null) return null
+  const toggle = async () => { const r = await api.setAutoTrade(!on); setOn(r.auto_trade) }
+  return (
+    <button onClick={toggle} title={on ? 'Auto-trade ON — click for advise-only' : 'Advise-only — click to enable execution'}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer',
+        fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', padding: '3px 9px', borderRadius: 999,
+        background: on ? '#2DBD8014' : 'transparent',
+        border: `1px solid ${on ? '#2DBD8055' : '#71767F55'}`,
+        color: on ? '#2DBD80' : '#71767F',
+      }}>
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: on ? '#2DBD80' : '#71767F',
+        boxShadow: on ? '0 0 6px #2DBD80' : 'none' }} />
+      {on ? 'AUTO-TRADE' : 'ADVISE-ONLY'}
+    </button>
+  )
+}
 
 const TICKER_TOKENS = [
   { label: 'NIFTY 50',  token: 256265  },
@@ -183,6 +213,7 @@ function NavHeader() {
       </nav>
 
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+        <AutoTradeToggle />
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label="Settings"

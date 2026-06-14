@@ -22,7 +22,7 @@ FNO_STRATEGIES. Lots default 1, overridable via signal metadata 'fno_lots'.
 import logging
 
 from terminal_in.bus import bus
-from terminal_in.agents.control import kill_switch
+from terminal_in.agents.control import kill_switch, trading_mode
 from terminal_in.market_hours import is_market_open
 from terminal_in.data_ingest import fno_instruments as fno
 
@@ -53,6 +53,9 @@ class FnOSignalRouter:
             return                                  # not a derivative-eligible lens
 
         # Light risk discipline (the cash gate never sees a tradeable order here).
+        if not trading_mode.auto_trade:
+            log.debug('FnO route skipped — auto-trade off (%s %s)', strat, label)
+            return
         if not is_market_open():
             log.debug('FnO route skipped — market closed (%s %s)', strat, label)
             return

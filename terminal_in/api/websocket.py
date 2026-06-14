@@ -41,6 +41,7 @@ FORWARD_TOPICS = [
     'agent.status_changed',
     'agent.threshold_changed',
     'kill_switch.global_pause',
+    'trading_mode.auto_trade',
     'planner.verdict',
     'supervisor.state',
     'supervisor.throttle',

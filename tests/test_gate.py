@@ -504,3 +504,20 @@ def test_market_closed_rejects_everything(monkeypatch):
     assert not result.approved
     assert 'market_closed' in (result.reason or '')
     assert result.checks.get('market_open') is False
+
+
+# ── Auto-trade (advise-only) ────────────────────────────────────────────────────
+
+def test_auto_trade_off_blocks_fills(monkeypatch):
+    """OFF = advise-only: the gate rejects 'auto_trade_off' (signals still shown)."""
+    monkeypatch.setattr('terminal_in.risk.gate._market_open', lambda: True)
+    from terminal_in.agents.control import trading_mode
+    trading_mode.set_auto_trade(False, 'test')
+    try:
+        g = _make_gate()
+        result = g.gate(_signal(instrument_id=2800641, limit_price=100.0))
+        assert not result.approved
+        assert result.reason == 'auto_trade_off'
+        assert result.checks.get('auto_trade_on') is False
+    finally:
+        trading_mode.set_auto_trade(True, 'test')
