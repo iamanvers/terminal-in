@@ -16,6 +16,7 @@ import { THEME } from '@/lib/theme'
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   api, OrchestratorState, OrchestratorResult, RegimeState, SignalRec, Instrument,
+  FnOChain, FnOExpiry, FnOUnderlying,
 } from '@/lib/api'
 import { useTickMap } from '@/hooks/useSocket'
 import HoldingsPanel from '@/components/panels/HoldingsPanel'
@@ -212,7 +213,7 @@ function RoadmapStrip() {
   const [open, setOpen] = useState(false)
   useEffect(() => { setOpen(localStorage.getItem('fno_roadmap_seen') !== '1') }, [])
   const dismiss = () => { localStorage.setItem('fno_roadmap_seen', '1'); setOpen(false) }
-  const items = ['Contract chain', 'Lot-based fills', 'SPAN margin', 'Multi-leg options (P3)']
+  const items = ['Contract chain ✓', 'Lot-based fills', 'SPAN margin', 'Multi-leg options (P3)']
 
   if (!open) {
     return (
@@ -246,11 +247,117 @@ function RoadmapStrip() {
   )
 }
 
+// ── Option chain (Stage 2) ────────────────────────────────────────────────────
+function OptionChain() {
+  const [unders, setUnders]   = useState<FnOUnderlying[]>([])
+  const [under, setUnder]     = useState('NIFTY')
+  const [expiry, setExpiry]   = useState<string | undefined>(undefined)
+  const [chain, setChain]     = useState<FnOChain | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => { api.fnoUnderlyings().then(d => setUnders(d.underlyings)).catch(() => {}) }, [])
+
+  const loadChain = useCallback(async (u: string, exp?: string) => {
+    setLoading(true)
+    try {
+      const c = await api.fnoChain(u, exp, 12)
+      setChain(c)
+      if (!exp && c.expiry) setExpiry(c.expiry)
+    } catch { setChain(null) } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { loadChain(under, expiry) /* eslint-disable-next-line */ }, [under])
+  // refresh premiums every 15s (theoretical, recomputed from live spot)
+  useEffect(() => { const t = setInterval(() => loadChain(under, expiry), 15_000); return () => clearInterval(t) }, [under, expiry, loadChain])
+
+  const exps = chain?.expiries ?? []
+  const greekTone = (v: number) => (v >= 0 ? C.green : C.red)
+
+  return (
+    <div className="panel" style={{ flex: 1, minHeight: 0, borderRadius: 5, display: 'flex', flexDirection: 'column' }}>
+      <div className="panel-header" style={{ flexWrap: 'wrap', gap: 8 }}>
+        OPTION CHAIN
+        {/* underlying tabs */}
+        <span style={{ display: 'inline-flex', gap: 2, marginLeft: 8 }}>
+          {(unders.length ? unders.map(u => u.label) : ['NIFTY', 'BANKNIFTY', 'FINNIFTY']).map(l => (
+            <button key={l} onClick={() => { setExpiry(undefined); setUnder(l) }}
+              style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.04em', padding: '3px 9px', border: 'none', cursor: 'pointer', borderRadius: 3,
+                background: under === l ? C.accent : 'transparent', color: under === l ? '#fff' : C.sub }}>{l}</button>
+          ))}
+        </span>
+        {/* expiry chips */}
+        <span style={{ display: 'inline-flex', gap: 3, marginLeft: 6, flexWrap: 'wrap' }}>
+          {exps.slice(0, 6).map(e => (
+            <button key={e.date} onClick={() => { setExpiry(e.date); loadChain(under, e.date) }}
+              title={e.kind}
+              style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 3, cursor: 'pointer',
+                border: `1px solid ${expiry === e.date ? C.accent : C.border2}`,
+                background: expiry === e.date ? '#0094FB18' : 'transparent',
+                color: expiry === e.date ? C.accentBright : C.muted }}>
+              {new Date(e.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+              {e.kind === 'monthly' && <span style={{ color: C.warn, marginLeft: 3 }}>M</span>}
+            </button>
+          ))}
+        </span>
+        {chain && <span style={{ marginLeft: 'auto', color: C.muted, fontWeight: 400, fontSize: 9.5 }}>
+          spot {chain.spot.toLocaleString('en-IN')} · ATM {chain.atm_strike} · IV {chain.iv_used_pct}% · lot {chain.lot_size}
+        </span>}
+      </div>
+      <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 0 }}>
+        {!chain?.available && !loading ? (
+          <div style={{ padding: 30, textAlign: 'center', fontSize: 10.5, color: C.muted }}>
+            {chain?.error ?? 'No chain — needs a live spot or a stored close for the index.'}
+          </div>
+        ) : (
+          <table style={{ width: '100%', fontVariantNumeric: 'tabular-nums' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'right', color: C.green }}>CE Δ</th>
+                <th style={{ textAlign: 'right', color: C.green }}>CE θ</th>
+                <th style={{ textAlign: 'right', color: C.green }}>CE LTP*</th>
+                <th style={{ textAlign: 'center', color: C.text }}>STRIKE</th>
+                <th style={{ textAlign: 'left', color: C.red }}>PE LTP*</th>
+                <th style={{ textAlign: 'left', color: C.red }}>PE θ</th>
+                <th style={{ textAlign: 'left', color: C.red }}>PE Δ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(chain?.rows ?? []).map(r => {
+                const itmCE = r.strike < (chain?.spot ?? 0)
+                const itmPE = r.strike > (chain?.spot ?? 0)
+                return (
+                  <tr key={r.strike} style={{ background: r.is_atm ? '#0094FB12' : undefined }}>
+                    <td style={{ textAlign: 'right', color: greekTone(r.CE.delta) }}>{r.CE.delta.toFixed(2)}</td>
+                    <td style={{ textAlign: 'right', color: C.muted }}>{r.CE.theta.toFixed(1)}</td>
+                    <td style={{ textAlign: 'right', color: C.text, fontWeight: 600, background: itmCE ? '#2DBD800C' : undefined }}>{r.CE.premium.toFixed(2)}</td>
+                    <td style={{ textAlign: 'center', fontWeight: 700, color: r.is_atm ? C.accentBright : C.sub, borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>
+                      {r.strike}{r.is_atm && <span style={{ fontSize: 8, color: C.accent, marginLeft: 4 }}>ATM</span>}
+                    </td>
+                    <td style={{ textAlign: 'left', color: C.text, fontWeight: 600, background: itmPE ? '#F2495C0C' : undefined }}>{r.PE.premium.toFixed(2)}</td>
+                    <td style={{ textAlign: 'left', color: C.muted }}>{r.PE.theta.toFixed(1)}</td>
+                    <td style={{ textAlign: 'left', color: greekTone(r.PE.delta) }}>{r.PE.delta.toFixed(2)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+      {chain?.theoretical && (
+        <div style={{ fontSize: 9, color: C.dim, padding: '5px 10px', borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+          *LTP = <strong style={{ color: C.muted }}>theoretical</strong> Black-Scholes premium from live spot + India VIX ({chain.iv_used_pct}%) as IV — not a traded price. OI/real-IV are live-only.
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function FnoPage() {
   const [regime, setRegime]   = useState<RegimeState | null>(null)
   const [orch, setOrch]       = useState<OrchestratorState | null>(null)
   const [signals, setSignals] = useState<SignalRec[]>([])
+  const [view, setView]       = useState<'cockpit' | 'chain'>('cockpit')
 
   const load = useCallback(async () => {
     const [r, o, s] = await Promise.allSettled([
@@ -269,20 +376,41 @@ export default function FnoPage() {
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'transparent', overflow: 'hidden' }}>
       <IndexStrip regime={regime} />
-      <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 8, padding: '8px 10px', overflow: 'hidden' }}>
-        <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <IndexSignals results={orch?.results ?? []} />
-          <SignalLog signals={signals} />
-        </div>
-        <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ flex: '0 0 auto', maxHeight: '42%', overflow: 'auto' }}>
-            <HoldingsPanel segment="FNO" />
-          </div>
-          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-            <ContractReference />
-          </div>
-        </div>
+
+      {/* View toggle: cockpit (signals + reference) vs the option chain */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 10px 0', flexShrink: 0 }}>
+        {([['cockpit', 'COCKPIT'], ['chain', 'OPTION CHAIN']] as const).map(([v, label]) => (
+          <button key={v} onClick={() => setView(v)}
+            style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', padding: '5px 13px', cursor: 'pointer', borderRadius: 4,
+              border: `1px solid ${view === v ? C.accent : C.border}`,
+              background: view === v ? '#0094FB14' : 'transparent', color: view === v ? C.accentBright : C.sub }}>
+            {label}
+          </button>
+        ))}
+        <span style={{ marginLeft: 'auto', fontSize: 9, color: C.dim }}>derivatives · theoretical pricing (paper)</span>
       </div>
+
+      {view === 'cockpit' ? (
+        <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 8, padding: '8px 10px', overflow: 'hidden' }}>
+          <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <IndexSignals results={orch?.results ?? []} />
+            <SignalLog signals={signals} />
+          </div>
+          <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ flex: '0 0 auto', maxHeight: '42%', overflow: 'auto' }}>
+              <HoldingsPanel segment="FNO" />
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+              <ContractReference />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', padding: '8px 10px', overflow: 'hidden' }}>
+          <OptionChain />
+        </div>
+      )}
+
       <div style={{ padding: '0 10px 8px', flexShrink: 0 }}>
         <RoadmapStrip />
       </div>

@@ -476,6 +476,30 @@ export type BacktestRunStatus = {
 
 export type BacktestLatest = { available: boolean; error?: string } & Partial<BacktestResult>
 
+// ── F&O (PRD P2) ──────────────────────────────────────────────────────────
+export type FnOLeg = {
+  premium: number; delta: number; gamma: number; theta: number; vega: number
+  theoretical: boolean; token: number
+}
+export type FnOChainRow = {
+  strike: number; is_atm: boolean; moneyness: 'ATM' | 'ITM' | 'OTM'
+  CE: FnOLeg; PE: FnOLeg
+  oi: number | null; iv_real: number | null; volume: number | null
+}
+export type FnOExpiry = { date: string; kind: 'weekly' | 'monthly' }
+export type FnOChain = {
+  available?: boolean; error?: string
+  underlying: string; underlying_symbol: string; spot: number; atm_strike: number
+  expiry: string; t_years: number; iv_used_pct: number; iv_source: string
+  lot_size: number; strike_interval: number; rows: FnOChainRow[]
+  theoretical: boolean; note: string
+  spot_source?: string; vix_source?: string; expiries?: FnOExpiry[]
+}
+export type FnOUnderlying = {
+  label: string; symbol: string; token: number; lot_size: number
+  strike_interval: number; spot: number; spot_source: string; weekly: boolean
+}
+
 export const api = {
   portfolio: ()           => get<PortfolioSummary>('/portfolio/summary'),
   positions: ()           => get<Position[]>('/portfolio/positions'),
@@ -590,6 +614,10 @@ export const api = {
       body: JSON.stringify({ query, history }),
     }).then(r => r.json()) as Promise<AgentQueryResponse>,
   ollamaStatus: () => get<OllamaStatus>('/agents/ollama/status'),
+  fnoUnderlyings: () => get<{ underlyings: FnOUnderlying[]; fut_margin_band: [number, number] }>('/fno/underlyings'),
+  fnoExpiries: (u: string) => get<{ underlying: string; expiries: FnOExpiry[] }>(`/fno/expiries?underlying=${encodeURIComponent(u)}`),
+  fnoChain: (u: string, expiry?: string, strikes = 10) =>
+    get<FnOChain>(`/fno/chain?underlying=${encodeURIComponent(u)}&strikes=${strikes}${expiry ? `&expiry=${expiry}` : ''}`),
   backtestLatest: () => get<BacktestLatest>('/backtest/latest'),
   backtestStatus: () => get<BacktestRunStatus>('/backtest/run'),
   backtestRun: (days = 730, symbols?: string[]) =>
