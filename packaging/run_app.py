@@ -40,14 +40,19 @@ def _free_port() -> int:
     return port
 
 
-def _prepare_frozen_env() -> str:
+def _appdata_dir() -> Path:
+    appdata = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'TerminalIN'
+    for sub in ('data', 'data/logs', 'data/reports', 'data/artifacts'):
+        (appdata / sub).mkdir(parents=True, exist_ok=True)
+    return appdata
+
+
+def _prepare_frozen_env() -> tuple[str, Path]:
     # PyInstaller onedir places bundled `datas` (the UI) under _internal/, which
     # is sys._MEIPASS — NOT next to the exe. Using the exe's own dir left
     # UI_OUT_DIR unset and the app served the API but 404'd the UI.
     bundle = Path(getattr(sys, '_MEIPASS', Path(sys.executable).parent))
-    appdata = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'TerminalIN'
-    for sub in ('data', 'data/logs', 'data/reports', 'data/artifacts'):
-        (appdata / sub).mkdir(parents=True, exist_ok=True)
+    appdata = _appdata_dir()
     os.chdir(appdata)                             # './data/...' → per-user dir
 
     ui = bundle / 'terminal_ui' / 'out'
@@ -59,7 +64,29 @@ def _prepare_frozen_env() -> str:
     host, port = '127.0.0.1', _free_port()
     os.environ['TIN_HOST'] = host
     os.environ['TIN_PORT'] = str(port)
-    return f'http://{host}:{port}'
+    return f'http://{host}:{port}', appdata
+
+
+def _maybe_onboard(appdata: Path) -> None:
+    """First launch only: run the onboarding wizard in an ISOLATED subprocess
+    (pywebview can start its loop once per process), so the collected capital /
+    risk / keys are persisted to the settings DB before the backend boots."""
+    try:
+        import first_run
+    except Exception:
+        return
+    if not first_run.needs_onboarding(appdata):
+        return
+    import subprocess
+    env = {**os.environ, 'TIN_WIZARD': '1'}
+    try:
+        subprocess.run([sys.executable], env=env, check=False)
+    except Exception:
+        pass
+    # If the wizard process didn't write the marker (crash / no webview), don't
+    # block the app forever — mark done so we boot with defaults next time.
+    if first_run.needs_onboarding(appdata):
+        first_run.mark_done(appdata)
 
 
 def _wait_until_up(url: str, timeout_s: float = 60.0) -> bool:
@@ -83,9 +110,21 @@ def _icon_path() -> str | None:
     return None
 
 
+def _run_wizard_only() -> None:
+    """TIN_WIZARD subprocess: just show the onboarding window and exit."""
+    appdata = _appdata_dir()
+    os.chdir(appdata)
+    try:
+        import first_run
+        first_run.run_wizard_window(appdata, icon=_icon_path())
+    except Exception:
+        pass
+
+
 def _run_desktop() -> None:
     """Boot the backend in a thread, then host the UI in a native window."""
-    url = _prepare_frozen_env()
+    url, appdata = _prepare_frozen_env()
+    _maybe_onboard(appdata)               # first launch only, before the backend
 
     from terminal_in.main import main as app_main
     threading.Thread(target=app_main, daemon=True, name='backend').start()
@@ -113,6 +152,9 @@ def _run_desktop() -> None:
 
 
 def main() -> None:
+    if os.environ.get('TIN_WIZARD') == '1':
+        _run_wizard_only()
+        return
     if FROZEN:
         _run_desktop()
     else:

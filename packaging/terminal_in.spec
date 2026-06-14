@@ -20,6 +20,7 @@ sys.path.insert(0, ROOT)
 block_cipher = None
 
 hiddenimports = [
+    'first_run',                          # onboarding wizard (sibling of run_app)
     'engineio.async_drivers.threading',   # flask-socketio threading mode
     'simple_websocket',
     'dotenv',
@@ -43,7 +44,7 @@ datas = [
 
 a = Analysis(
     ['run_app.py'],
-    pathex=[ROOT],
+    pathex=[ROOT, SPECPATH],          # SPECPATH = packaging/, so `import first_run` resolves
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
