@@ -349,6 +349,30 @@ class PaperBroker:
         log.info('PAPER CLOSE: %s reason=%s pnl=%.2f equity=%.2f',
                  trade_id, reason, net_pnl, self._equity)
 
+    # ── Shared-account hooks (used by the F&O paper broker so the whole
+    #    desk runs on ONE equity/daily-P&L/capital pool, not two) ────────────
+    def reserve_capital(self, amount: float) -> bool:
+        """Reserve `amount` against available capital (option debit / F&O margin).
+        Returns False if it would exceed available — caller must reject."""
+        with self._lock:
+            if amount > self.available_capital * 1.05:
+                return False
+            self._capital_in_use += max(0.0, amount)
+            return True
+
+    def release_capital(self, amount: float):
+        with self._lock:
+            self._capital_in_use = max(0.0, self._capital_in_use - max(0.0, amount))
+
+    def apply_external_pnl(self, amount: float):
+        """Apply a realized P&L from another segment (F&O) to the shared account."""
+        with self._lock:
+            self._daily_pnl += amount
+            self._equity += amount
+            if self._equity > self._peak_equity:
+                self._peak_equity = self._equity
+        bus.publish('pnl.update', {'equity': self._equity, 'daily_pnl': self._daily_pnl})
+
     def reset_daily_pnl(self):
         self._daily_pnl = 0.0
 

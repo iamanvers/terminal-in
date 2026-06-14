@@ -16,12 +16,14 @@ bp  = Blueprint('fno', __name__, url_prefix='/api/fno')
 log = logging.getLogger(__name__)
 
 _db = None
+_fno_broker = None
 VIX_TOKEN = 264969
 
 
-def init(db=None):
-    global _db
+def init(db=None, fno_broker=None):
+    global _db, _fno_broker
     _db = db
+    _fno_broker = fno_broker
 
 
 def _spot(token: int) -> tuple[float, str]:
@@ -101,3 +103,40 @@ def chain():
         'expiries': exps,
     })
     return jsonify(data)
+
+
+# ── Paper execution (Stage 3) ──────────────────────────────────────────────────
+
+@bp.route('/order', methods=['POST'])
+def place_order():
+    """Place a lot-based F&O paper order. Body: {underlying, expiry, strike,
+    opt_type, side, lots, sl_premium?, target_premium?}."""
+    if _fno_broker is None:
+        return jsonify({'ok': False, 'error': 'F&O paper broker unavailable (live mode?)'}), 503
+    body = request.get_json(silent=True) or {}
+    result = _fno_broker.place_order(body)
+    return jsonify(result), (200 if result.get('ok') else 400)
+
+
+@bp.route('/positions')
+def positions():
+    if _fno_broker is None:
+        return jsonify({'positions': [], 'available': False})
+    poss = _fno_broker.positions()
+    return jsonify({
+        'positions': poss, 'available': True,
+        'count': len(poss),
+        'unrealized': round(sum(p['unrealized'] for p in poss), 2),
+        'margin_used': round(sum(p['margin'] for p in poss), 2),
+    })
+
+
+@bp.route('/close', methods=['POST'])
+def close():
+    if _fno_broker is None:
+        return jsonify({'ok': False, 'error': 'unavailable'}), 503
+    body = request.get_json(silent=True) or {}
+    trade_id = body.get('trade_id', '')
+    if not trade_id:
+        return jsonify({'ok': False, 'error': 'trade_id required'}), 400
+    return jsonify(_fno_broker.close_position(trade_id, reason='manual'))

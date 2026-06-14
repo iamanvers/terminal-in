@@ -206,6 +206,13 @@ def main():
         from terminal_in.execution.paper_broker import PaperBroker
         broker = PaperBroker(db=db, config=cfg)
 
+    # ── F&O paper broker (derivatives — own path, shared account) ─────────────
+    # Paper mode only for now; live F&O execution via Kite is a later stage.
+    fno_broker = None
+    if not (cfg.use_kite_live and kite is not None):
+        from terminal_in.execution.fno_paper_broker import FnOPaperBroker
+        fno_broker = FnOPaperBroker(db=db, config=cfg, cash_broker=broker)
+
     # ── Portfolio ledger (data/portfolio.md — live statement of holdings) ─────
     from terminal_in.reporting.portfolio_ledger import PortfolioLedger
     _ledger = PortfolioLedger(db=db, broker=broker)
@@ -223,6 +230,7 @@ def main():
         'artifacts': artifacts,
         'supervisor': supervisor,
         'broker': broker,
+        'fno_broker': fno_broker,
         'engine': engine,
         'dsa': engine._dsa,
         'analyst': analyst,
