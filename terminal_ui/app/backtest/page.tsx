@@ -40,34 +40,129 @@ function fmtINR(v: number | undefined) {
   return `${v < 0 ? '-' : ''}₹${a.toFixed(0)}`
 }
 
-// ── Equity curve (area, with drawdown-from-peak shading) ──────────────────────
+// ── Equity curve + underwater drawdown band (standard backtest viz) ───────────
 function EquityCurve({ data, capital }: { data: { date: string; equity: number }[]; capital: number }) {
-  if (data.length < 2) return <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dim, fontSize: 10.5 }}>Run a backtest to see the equity curve.</div>
-  const w = 1000, h = 200, pad = 4
+  if (data.length < 2) return <div style={{ height: 230, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dim, fontSize: 10.5 }}>Run a backtest to see the equity curve.</div>
+  const w = 1000, eqH = 168, ddH = 64, gap = 6, pad = 4
   const eqs = data.map(d => d.equity)
+  // running drawdown from peak (<=0)
+  let peak = -Infinity
+  const dd = eqs.map(v => { peak = Math.max(peak, v); return peak > 0 ? v / peak - 1 : 0 })
+  const minDD = Math.min(...dd, -1e-9)
   const min = Math.min(...eqs, capital), max = Math.max(...eqs, capital)
   const range = max - min || 1
   const x = (i: number) => (i / (data.length - 1)) * w
-  const y = (v: number) => h - pad - ((v - min) / range) * (h - 2 * pad)
-  const line = data.map((d, i) => `${x(i)},${y(d.equity)}`)
-  const area = `0,${h} ${line.join(' ')} ${w},${h}`
-  const baseY = y(capital)
-  const last = eqs[eqs.length - 1]
-  const up = last >= capital
+  const yE = (v: number) => pad + (1 - (v - min) / range) * (eqH - 2 * pad)
+  const yD = (v: number) => eqH + gap + (v / (minDD || -1)) * (ddH - pad)
+  const line = data.map((d, i) => `${x(i)},${yE(d.equity)}`).join(' ')
+  const area = `0,${yE(min)} ${line} ${w},${yE(min)}`
+  const ddArea = `0,${eqH + gap} ${dd.map((v, i) => `${x(i)},${yD(v)}`).join(' ')} ${w},${eqH + gap}`
+  const baseY = yE(capital)
+  const up = eqs[eqs.length - 1] >= capital
   const col = up ? C.green : C.red
+  const H = eqH + gap + ddH
   return (
-    <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+    <svg width="100%" height={H} viewBox={`0 0 ${w} ${H}`} preserveAspectRatio="none" style={{ display: 'block' }}>
       <defs>
         <linearGradient id="eqfill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={col} stopOpacity="0.22" />
+          <stop offset="0%" stopColor={col} stopOpacity="0.20" />
           <stop offset="100%" stopColor={col} stopOpacity="0" />
         </linearGradient>
       </defs>
-      {/* starting-capital baseline */}
-      <line x1="0" y1={baseY} x2={w} y2={baseY} stroke={C.border} strokeWidth={1} strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
+      <line x1="0" y1={baseY} x2={w} y2={baseY} stroke={C.border2} strokeWidth={1} strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
       <polygon points={area} fill="url(#eqfill)" />
-      <polyline points={line.join(' ')} fill="none" stroke={col} strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
+      <polyline points={line} fill="none" stroke={col} strokeWidth={1.8} vectorEffect="non-scaling-stroke" />
+      {/* underwater drawdown */}
+      <polygon points={ddArea} fill="#F2495C26" />
+      <polyline points={dd.map((v, i) => `${x(i)},${yD(v)}`).join(' ')} fill="none" stroke={C.red} strokeWidth={1} vectorEffect="non-scaling-stroke" />
     </svg>
+  )
+}
+
+// ── Diverging horizontal-bar attribution (losses left, profits right) ─────────
+function HBarAttribution({ title, rows, colorFor }: {
+  title: string; rows: [string, BacktestStat][]; colorFor?: (k: string) => string
+}) {
+  const ordered = rows.filter(([, s]) => s.n > 0).sort((a, b) => (b[1].total_pnl ?? 0) - (a[1].total_pnl ?? 0))
+  const maxAbs = Math.max(1, ...ordered.map(([, s]) => Math.abs(s.total_pnl ?? 0)))
+  return (
+    <div className="panel" style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div className="panel-header">{title}</div>
+      <div className="panel-body" style={{ overflow: 'auto', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+        {ordered.length === 0 ? <div style={{ padding: 16, textAlign: 'center', fontSize: 10, color: C.muted }}>No closed trades.</div> :
+          ordered.map(([k, s]) => {
+            const pnl = s.total_pnl ?? 0
+            const frac = Math.abs(pnl) / maxAbs
+            const col = colorFor ? colorFor(k) : (pnl >= 0 ? C.green : C.red)
+            return (
+              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10 }}>
+                <span style={{ width: 78, flexShrink: 0, color: colorFor ? col : C.text, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k}</span>
+                {/* diverging bar: center line, profit right / loss left */}
+                <div style={{ flex: 1, position: 'relative', height: 14, background: C.card, borderRadius: 2 }}>
+                  <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: C.border2 }} />
+                  <div style={{ position: 'absolute', top: 2, bottom: 2, borderRadius: 2,
+                    background: pnl >= 0 ? C.green : C.red,
+                    left: pnl >= 0 ? '50%' : `${50 - frac * 50}%`, width: `${frac * 50}%` }} />
+                </div>
+                <span style={{ width: 56, flexShrink: 0, textAlign: 'right', color: pnlColor(pnl), fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtINR(pnl)}</span>
+                <span style={{ width: 56, flexShrink: 0, textAlign: 'right', color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{s.n}t·{((s.win_rate ?? 0) * 100).toFixed(0)}%</span>
+              </div>
+            )
+          })}
+      </div>
+    </div>
+  )
+}
+
+// ── Walk-forward by year (vertical green/red bars) ────────────────────────────
+function YearBars({ rows }: { rows: [string, BacktestStat][] }) {
+  const maxAbs = Math.max(1, ...rows.map(([, s]) => Math.abs(s.total_pnl ?? 0)))
+  return (
+    <div className="panel" style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div className="panel-header">WALK-FORWARD · BY YEAR</div>
+      <div className="panel-body" style={{ padding: '10px 12px', display: 'flex', alignItems: 'flex-end', gap: 8, overflow: 'auto', minHeight: 120 }}>
+        {rows.length === 0 ? <div style={{ margin: 'auto', fontSize: 10, color: C.muted }}>No closed trades.</div> :
+          rows.map(([y, s]) => {
+            const pnl = s.total_pnl ?? 0
+            const frac = Math.abs(pnl) / maxAbs
+            return (
+              <div key={y} style={{ flex: 1, minWidth: 34, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                <span style={{ fontSize: 8.5, color: pnlColor(pnl), fontWeight: 600 }}>{fmtINR(pnl)}</span>
+                <div style={{ height: 70, width: '70%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                  <div style={{ height: `${Math.max(3, frac * 100)}%`, background: pnl >= 0 ? C.green : C.red, borderRadius: '2px 2px 0 0', opacity: 0.85 }} />
+                </div>
+                <span style={{ fontSize: 9, color: C.text, fontWeight: 600 }}>{y}</span>
+                <span style={{ fontSize: 8, color: C.muted }}>{s.n}t·{((s.win_rate ?? 0) * 100).toFixed(0)}%</span>
+              </div>
+            )
+          })}
+      </div>
+    </div>
+  )
+}
+
+// ── Regime exposure (how much of the window was spent in each regime) ─────────
+function RegimeExposure({ regimeDays, colorFor }: { regimeDays: Record<string, number>; colorFor: (k: string) => string }) {
+  const entries = Object.entries(regimeDays).sort((a, b) => b[1] - a[1])
+  const total = entries.reduce((s, [, n]) => s + n, 0) || 1
+  return (
+    <div className="panel" style={{ flexShrink: 0 }}>
+      <div className="panel-header">REGIME EXPOSURE <span style={{ marginLeft: 'auto', color: C.dim, fontWeight: 400, fontSize: 9.5 }}>{total} trading days</span></div>
+      <div className="panel-body" style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', height: 16, borderRadius: 3, overflow: 'hidden', border: `1px solid ${C.border}` }}>
+          {entries.map(([k, n]) => <div key={k} title={`${k}: ${n}d (${(n / total * 100).toFixed(0)}%)`} style={{ width: `${n / total * 100}%`, background: colorFor(k) }} />)}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px' }}>
+          {entries.map(([k, n]) => (
+            <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 9.5 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: colorFor(k) }} />
+              <span style={{ color: C.sub }}>{k}</span>
+              <span style={{ color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{(n / total * 100).toFixed(0)}%</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -77,43 +172,6 @@ function Metric({ label, value, color, sub }: { label: string; value: string; co
       <span style={{ fontSize: 9, color: C.dim, letterSpacing: '.07em' }}>{label}</span>
       <span style={{ fontSize: 18, fontWeight: 700, color, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
       {sub && <span style={{ fontSize: 9, color: C.muted }}>{sub}</span>}
-    </div>
-  )
-}
-
-// ── Attribution table (per-lens or per-regime) ───────────────────────────────
-function StatTable({ title, rows, colorFor }: {
-  title: string
-  rows: [string, BacktestStat][]
-  colorFor?: (k: string) => string
-}) {
-  const ordered = rows.filter(([, s]) => s.n > 0).sort((a, b) => (b[1].total_pnl ?? 0) - (a[1].total_pnl ?? 0))
-  return (
-    <div className="panel" style={{ minHeight: 0 }}>
-      <div className="panel-header">{title}</div>
-      <div className="panel-body" style={{ overflow: 'auto' }}>
-        {ordered.length === 0 ? (
-          <div style={{ padding: 18, textAlign: 'center', fontSize: 10, color: C.muted }}>No closed trades.</div>
-        ) : (
-          <table>
-            <thead><tr><th>{title.includes('LENS') ? 'LENS' : 'REGIME'}</th><th>N</th><th>WIN%</th><th>AVG</th><th>TOTAL</th></tr></thead>
-            <tbody>
-              {ordered.map(([k, s]) => (
-                <tr key={k}>
-                  <td style={{ color: colorFor ? colorFor(k) : C.text, fontWeight: 600 }}>
-                    {colorFor && <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 2, background: colorFor(k), marginRight: 6 }} />}
-                    {k}
-                  </td>
-                  <td style={{ color: C.sub }}>{s.n}</td>
-                  <td style={{ color: (s.win_rate ?? 0) >= 0.5 ? C.green : C.sub }}>{((s.win_rate ?? 0) * 100).toFixed(0)}%</td>
-                  <td style={{ color: pnlColor(s.avg_pnl), fontVariantNumeric: 'tabular-nums' }}>{fmtINR(s.avg_pnl)}</td>
-                  <td style={{ color: pnlColor(s.total_pnl), fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{fmtINR(s.total_pnl)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
     </div>
   )
 }
@@ -217,38 +275,26 @@ export default function BacktestPage() {
             </div>
           </div>
 
-          {/* Equity curve */}
+          {/* Equity curve + underwater drawdown */}
           <div className="panel" style={{ flexShrink: 0 }}>
-            <div className="panel-header">EQUITY CURVE <span style={{ marginLeft: 'auto', color: C.dim, fontWeight: 400, fontSize: 9.5 }}>dashed = starting capital</span></div>
+            <div className="panel-header">EQUITY CURVE
+              <span style={{ marginLeft: 'auto', color: C.dim, fontWeight: 400, fontSize: 9.5 }}>
+                <span style={{ color: C.green }}>━</span> equity · <span style={{ color: C.border2 }}>┈</span> start capital · <span style={{ color: C.red }}>▔</span> drawdown
+              </span>
+            </div>
             <div className="panel-body" style={{ padding: '10px 12px' }}>
               <EquityCurve data={r.equity_curve ?? []} capital={r.capital} />
             </div>
           </div>
 
-          {/* Attribution: lens | regime | walk-forward */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, flexShrink: 0 }}>
-            <StatTable title="PER-LENS ATTRIBUTION" rows={lensRows} />
-            <StatTable title="PER-REGIME" rows={regimeRows} colorFor={(k) => REGIME_C[k] ?? C.steel} />
-            <div className="panel" style={{ minHeight: 0 }}>
-              <div className="panel-header">WALK-FORWARD (BY YEAR)</div>
-              <div className="panel-body" style={{ overflow: 'auto' }}>
-                {wfRows.length === 0 ? <div style={{ padding: 18, textAlign: 'center', fontSize: 10, color: C.muted }}>No closed trades.</div> : (
-                  <table>
-                    <thead><tr><th>YEAR</th><th>N</th><th>WIN%</th><th>TOTAL P&L</th></tr></thead>
-                    <tbody>
-                      {wfRows.map(([y, s]) => (
-                        <tr key={y}>
-                          <td style={{ color: C.text, fontWeight: 600 }}>{y}</td>
-                          <td style={{ color: C.sub }}>{s.n}</td>
-                          <td style={{ color: (s.win_rate ?? 0) >= 0.5 ? C.green : C.sub }}>{((s.win_rate ?? 0) * 100).toFixed(0)}%</td>
-                          <td style={{ color: pnlColor(s.total_pnl), fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{fmtINR(s.total_pnl)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
+          {/* Regime exposure */}
+          <RegimeExposure regimeDays={r.regime_days ?? {}} colorFor={(k) => REGIME_C[k] ?? C.steel} />
+
+          {/* Attribution: lens | regime | walk-forward (all visual) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr 1.1fr', gap: 8, flexShrink: 0 }}>
+            <HBarAttribution title="PER-LENS ATTRIBUTION" rows={lensRows} />
+            <HBarAttribution title="PER-REGIME" rows={regimeRows} colorFor={(k) => REGIME_C[k] ?? C.steel} />
+            <YearBars rows={wfRows} />
           </div>
 
           {/* Recent trades */}

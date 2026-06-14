@@ -13,7 +13,7 @@ import { THEME } from '@/lib/theme'
  * Phase 2 (scaffolded below): contract chain, lot-based paper execution,
  * SPAN margin estimation — tracked in the PRD.
  */
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   api, OrchestratorState, OrchestratorResult, RegimeState, SignalRec, Instrument,
   FnOChain, FnOExpiry, FnOUnderlying, FnOPosition,
@@ -248,7 +248,7 @@ function RoadmapStrip() {
 }
 
 // ── Option chain + order ticket + positions (Stages 2 + 3b) ───────────────────
-type SelectedLeg = { strike: number; opt_type: 'CE' | 'PE'; premium: number } | null
+type SelectedLeg = { strike: number; opt_type: 'CE' | 'PE'; premium: number; delta: number; theta: number } | null
 
 function OptionChain() {
   const [unders, setUnders]   = useState<FnOUnderlying[]>([])
@@ -285,8 +285,10 @@ function OptionChain() {
 
   const exps = chain?.expiries ?? []
   const greekTone = (v: number) => (v >= 0 ? C.green : C.red)
-  const selectCell = (r: FnOChain['rows'][number], side: 'CE' | 'PE') =>
-    setLeg({ strike: r.strike, opt_type: side, premium: side === 'CE' ? r.CE.premium : r.PE.premium })
+  const selectCell = (r: FnOChain['rows'][number], side: 'CE' | 'PE') => {
+    const leg = side === 'CE' ? r.CE : r.PE
+    setLeg({ strike: r.strike, opt_type: side, premium: leg.premium, delta: leg.delta, theta: leg.theta })
+  }
 
   const placeOrder = useCallback(async (side: 'BUY' | 'SELL', lots: number, sl?: number, tgt?: number) => {
     if (!chain || !leg) return
@@ -418,7 +420,46 @@ function OptionChain() {
   )
 }
 
-// ── Order ticket ──────────────────────────────────────────────────────────────
+// ── Payoff-at-expiry diagram for the working order ────────────────────────────
+function PayoffChart({ strike, optType, premium, side, qty, spot, breakeven }: {
+  strike: number; optType: 'CE' | 'PE'; premium: number; side: 'BUY' | 'SELL'
+  qty: number; spot: number; breakeven: number
+}) {
+  const w = 300, h = 96, pad = 6
+  const lo = Math.min(spot, strike, breakeven) * 0.92
+  const hi = Math.max(spot, strike, breakeven) * 1.08
+  const N = 80
+  const pnl = (s: number) => {
+    const intrinsic = optType === 'CE' ? Math.max(0, s - strike) : Math.max(0, strike - s)
+    const per = side === 'BUY' ? intrinsic - premium : premium - intrinsic
+    return per * qty
+  }
+  const xs = Array.from({ length: N + 1 }, (_, i) => lo + (i / N) * (hi - lo))
+  const ys = xs.map(pnl)
+  const maxA = Math.max(...ys.map(Math.abs), 1)
+  const X = (s: number) => pad + ((s - lo) / (hi - lo)) * (w - 2 * pad)
+  const Y = (p: number) => h / 2 - (p / maxA) * (h / 2 - pad)
+  const zeroY = Y(0)
+  const line = xs.map((s, i) => `${X(s)},${Y(ys[i])}`).join(' ')
+  // shade profit (green above 0) and loss (red below) using two clipped polys
+  const area = (sign: 1 | -1) => {
+    const pts = xs.map((s, i) => `${X(s)},${Y(sign > 0 ? Math.max(0, ys[i]) : Math.min(0, ys[i]))}`)
+    return `${X(lo)},${zeroY} ${pts.join(' ')} ${X(hi)},${zeroY}`
+  }
+  return (
+    <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+      <polygon points={area(1)} fill="#2DBD8022" />
+      <polygon points={area(-1)} fill="#F2495C22" />
+      <line x1={pad} y1={zeroY} x2={w - pad} y2={zeroY} stroke={C.border2} strokeWidth={1} vectorEffect="non-scaling-stroke" />
+      <polyline points={line} fill="none" stroke={C.accentBright} strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
+      {/* spot (white) + breakeven (gold dashed) markers */}
+      <line x1={X(spot)} y1={pad} x2={X(spot)} y2={h - pad} stroke={C.text} strokeWidth={1} strokeDasharray="2 2" vectorEffect="non-scaling-stroke" />
+      <line x1={X(breakeven)} y1={pad} x2={X(breakeven)} y2={h - pad} stroke={C.warn} strokeWidth={1} strokeDasharray="3 2" vectorEffect="non-scaling-stroke" />
+    </svg>
+  )
+}
+
+// ── Order ticket (decision-support: greeks, breakeven, max P/L, payoff) ───────
 function OrderTicket({ leg, chain, onPlace, onClear, msg }: {
   leg: SelectedLeg; chain: FnOChain | null
   onPlace: (side: 'BUY' | 'SELL', lots: number, sl?: number, tgt?: number) => void
@@ -430,15 +471,40 @@ function OrderTicket({ leg, chain, onPlace, onClear, msg }: {
   const [tgt, setTgt]   = useState('')
   const lotSize = chain?.lot_size ?? 0
   const qty = lots * lotSize
-  const cost = leg ? leg.premium * qty : 0
+
+  const metrics = useMemo(() => {
+    if (!leg || !chain) return null
+    const prem = leg.premium, K = leg.strike, isCall = leg.opt_type === 'CE'
+    const breakeven = isCall ? K + prem : K - prem
+    const debit = prem * qty
+    const credit = prem * qty
+    // long: max loss = debit, max profit = uncapped (call) / (K-prem)*qty (put)
+    // short: max profit = credit, max loss = uncapped (call) / (K-prem)*qty (put)
+    let maxLoss: number | null, maxProfit: number | null
+    if (side === 'BUY') {
+      maxLoss = debit
+      maxProfit = isCall ? null : (K - prem) * qty
+    } else {
+      maxProfit = credit
+      maxLoss = isCall ? null : (K - prem) * qty
+    }
+    const posDelta = leg.delta * qty * (side === 'BUY' ? 1 : -1)
+    const posTheta = leg.theta * qty * (side === 'BUY' ? 1 : -1)
+    const intrinsic = isCall ? Math.max(0, chain.spot - K) : Math.max(0, K - chain.spot)
+    const timeVal = Math.max(0, prem - intrinsic)
+    const margin = side === 'BUY' ? debit : Math.max(K * qty * 0.12, credit)  // pre-trade estimate
+    return { breakeven, maxLoss, maxProfit, posDelta, posTheta, intrinsic, timeVal, margin, debit, credit }
+  }, [leg, chain, side, qty])
+
+  const fmt = (v: number | null) => v == null ? '∞' : `₹${Math.abs(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
 
   return (
     <div className="panel" style={{ flexShrink: 0, borderRadius: 5 }}>
       <div className="panel-header">ORDER TICKET <span style={{ color: '#4A4F57', fontSize: 9 }}>PAPER</span></div>
       <div className="panel-body" style={{ padding: 12 }}>
-        {!leg || !chain ? (
+        {!leg || !chain || !metrics ? (
           <div style={{ fontSize: 10.5, color: C.muted, padding: '14px 4px', textAlign: 'center' }}>
-            Click a CE/PE premium in the chain to build an order.
+            Click a CE/PE premium in the chain to build an order — you&apos;ll see the payoff, breakeven and max risk before placing.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -447,7 +513,6 @@ function OrderTicket({ leg, chain, onPlace, onClear, msg }: {
               <span style={{ fontSize: 10, color: C.muted }}>{new Date(chain.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
               <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: C.accentBright }}>₹{leg.premium.toFixed(2)}</span>
             </div>
-            {/* side toggle */}
             <div style={{ display: 'flex', gap: 4 }}>
               {(['BUY', 'SELL'] as const).map(s => (
                 <button key={s} onClick={() => setSide(s)}
@@ -458,26 +523,39 @@ function OrderTicket({ leg, chain, onPlace, onClear, msg }: {
               ))}
             </div>
             <label style={{ fontSize: 10, color: C.dim }}>LOTS <span style={{ color: C.muted }}>(× {lotSize} = {qty} qty)</span>
-              <input type="number" min={1} value={lots} onChange={e => setLots(Math.max(1, parseInt(e.target.value) || 1))}
-                style={inputStyle} />
+              <input type="number" min={1} value={lots} onChange={e => setLots(Math.max(1, parseInt(e.target.value) || 1))} style={inputStyle} />
             </label>
+
+            {/* Payoff at expiry */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 8.5, color: C.dim, letterSpacing: '.06em', marginBottom: 2 }}>
+                <span>PAYOFF AT EXPIRY</span>
+                <span><span style={{ color: C.text }}>┊</span> spot &nbsp; <span style={{ color: C.warn }}>┊</span> breakeven</span>
+              </div>
+              <PayoffChart strike={leg.strike} optType={leg.opt_type} premium={leg.premium} side={side} qty={qty} spot={chain.spot} breakeven={metrics.breakeven} />
+            </div>
+
+            {/* Trade metrics */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px 10px', fontSize: 10 }}>
+              <Metric2 label="Breakeven" value={`₹${metrics.breakeven.toFixed(0)}`} />
+              <Metric2 label={side === 'BUY' ? 'Debit' : 'Credit'} value={fmt(side === 'BUY' ? metrics.debit : metrics.credit)} tone={side === 'BUY' ? C.red : C.green} />
+              <Metric2 label="Max profit" value={fmt(metrics.maxProfit)} tone={C.green} />
+              <Metric2 label="Max loss" value={fmt(metrics.maxLoss)} tone={C.red} />
+              <Metric2 label="Pos. delta" value={metrics.posDelta.toFixed(1)} tone={metrics.posDelta >= 0 ? C.green : C.red} />
+              <Metric2 label="Theta/day" value={`₹${metrics.posTheta.toFixed(0)}`} tone={metrics.posTheta >= 0 ? C.green : C.red} />
+              <Metric2 label="Time value" value={`₹${metrics.timeVal.toFixed(1)}`} />
+              <Metric2 label="≈ Margin" value={fmt(metrics.margin)} />
+            </div>
+
             <div style={{ display: 'flex', gap: 8 }}>
               <label style={{ flex: 1, fontSize: 10, color: C.dim }}>SL prem
                 <input type="number" value={sl} onChange={e => setSl(e.target.value)} placeholder="opt." style={inputStyle} /></label>
               <label style={{ flex: 1, fontSize: 10, color: C.dim }}>Target prem
                 <input type="number" value={tgt} onChange={e => setTgt(e.target.value)} placeholder="opt." style={inputStyle} /></label>
             </div>
-            <div style={{ fontSize: 10, color: C.muted, display: 'flex', justifyContent: 'space-between' }}>
-              <span>{side === 'BUY' ? 'Debit' : '≈ SPAN margin'}</span>
-              <span style={{ color: C.text, fontWeight: 600 }}>
-                ₹{(side === 'BUY' ? cost : Math.max(leg.strike * qty * 0.12, cost)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-              </span>
-            </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={() => onPlace(side, lots, sl ? parseFloat(sl) : undefined, tgt ? parseFloat(tgt) : undefined)}
-                className="btn btn--primary" style={{ flex: 1, fontSize: 11, padding: '7px 0' }}>
-                PLACE {side}
-              </button>
+                className="btn btn--primary" style={{ flex: 1, fontSize: 11, padding: '7px 0' }}>PLACE {side}</button>
               <button onClick={onClear} className="btn" style={{ fontSize: 11, padding: '7px 10px' }}>✕</button>
             </div>
           </div>
@@ -486,6 +564,14 @@ function OrderTicket({ leg, chain, onPlace, onClear, msg }: {
           background: msg.ok ? '#2DBD8014' : '#F2495C14', color: msg.ok ? C.green : C.red,
           border: `1px solid ${msg.ok ? '#2DBD8033' : '#F2495C33'}` }}>{msg.ok ? '✓ ' : '⚠ '}{msg.t}</div>}
       </div>
+    </div>
+  )
+}
+function Metric2({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+      <span style={{ color: C.dim }}>{label}</span>
+      <span style={{ color: tone ?? C.text, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
     </div>
   )
 }
@@ -553,16 +639,19 @@ export default function FnoPage() {
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'transparent', overflow: 'hidden' }}>
       <IndexStrip regime={regime} />
 
-      {/* View toggle: cockpit (signals + reference) vs the option chain */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 10px 0', flexShrink: 0 }}>
-        {([['cockpit', 'COCKPIT'], ['chain', 'OPTION CHAIN']] as const).map(([v, label]) => (
-          <button key={v} onClick={() => setView(v)}
-            style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', padding: '5px 13px', cursor: 'pointer', borderRadius: 4,
-              border: `1px solid ${view === v ? C.accent : C.border}`,
-              background: view === v ? '#0094FB14' : 'transparent', color: view === v ? C.accentBright : C.sub }}>
-            {label}
-          </button>
-        ))}
+      {/* View toggle: cockpit (signals + reference) vs the option chain.
+          Solid segmented control on a panel surface — opaque so the mesh never
+          shows through (was a translucent strip over the dot-matrix). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px 0', flexShrink: 0 }}>
+        <div style={{ display: 'inline-flex', padding: 2, gap: 2, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6 }}>
+          {([['cockpit', 'COCKPIT'], ['chain', 'OPTION CHAIN']] as const).map(([v, label]) => (
+            <button key={v} onClick={() => setView(v)}
+              style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', padding: '5px 15px', cursor: 'pointer', borderRadius: 4, border: 'none',
+                background: view === v ? C.accent : 'transparent', color: view === v ? '#fff' : C.sub, transition: 'background .15s' }}>
+              {label}
+            </button>
+          ))}
+        </div>
         <span style={{ marginLeft: 'auto', fontSize: 9, color: C.dim }}>derivatives · theoretical pricing (paper)</span>
       </div>
 
