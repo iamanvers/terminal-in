@@ -149,3 +149,68 @@ def test_total_margin_cap():
                             'opt_type': 'CE', 'margin': half - 1000}}
     ok, reason = b._risk_check('2030-01-31', 'CE', 'SELL', 5000)  # pushes over 50%
     assert not ok and 'margin cap' in reason.lower()
+
+
+# ── Portfolio greek caps + event-day limits (live-order path) ────────────────────
+
+from terminal_in.execution import fno_paper_broker as fpb
+
+
+def _leg(side='BUY', opt='CE', delta=0.5, gamma=0.0, vega=0.0, theta=0.0,
+         qty=75, spot=22000.0):
+    sign = 1 if side == 'BUY' else -1
+    return {
+        'delta_units': sign * delta * qty,
+        'delta_notional': sign * delta * qty * spot,
+        'gamma_pnl': sign * 0.5 * gamma * (fpb.GAMMA_SHOCK * spot) ** 2 * qty,
+        'vega_rupees': sign * vega * qty,
+        'theta_rupees': sign * theta * qty,
+    }
+
+
+def test_event_blackout_blocks_all_entries(monkeypatch):
+    b = _broker()
+    monkeypatch.setattr(fpb.event_cal, 'mask', lambda *a, **k: 0.0)  # Budget-style
+    ok, reason = b._risk_check('2030-01-31', 'CE', 'BUY', 100.0,
+                               leg_greeks=_leg(), equity=1_000_000)
+    assert not ok and 'blackout' in reason.lower()
+
+
+def test_event_proximity_blocks_new_shorts_only(monkeypatch):
+    b = _broker()
+    monkeypatch.setattr(fpb.event_cal, 'mask', lambda *a, **k: 0.5)  # expiry/RBI day
+    # a new short-gamma leg is refused
+    ok, _ = b._risk_check('2030-01-31', 'CE', 'SELL', 100.0,
+                          leg_greeks=_leg('SELL'), equity=1_000_000)
+    assert not ok
+    # a long (defined-risk) leg is still allowed
+    assert b._risk_check('2030-01-31', 'CE', 'BUY', 100.0,
+                         leg_greeks=_leg('BUY'), equity=1_000_000)[0]
+
+
+def test_net_delta_cap(monkeypatch):
+    b = _broker()
+    monkeypatch.setattr(fpb.event_cal, 'mask', lambda *a, **k: 1.0)
+    # one huge directional leg: delta notional = 1 * 7500 qty * 22000 spot ≈ 165M
+    ok, reason = b._risk_check('2030-01-31', 'FUT', 'BUY', 100.0,
+                               leg_greeks=_leg('BUY', delta=1.0, qty=7500),
+                               equity=1_000_000)
+    assert not ok and 'delta' in reason.lower()
+
+
+def test_short_gamma_loss_cap(monkeypatch):
+    b = _broker()
+    monkeypatch.setattr(fpb.event_cal, 'mask', lambda *a, **k: 1.0)
+    # short gamma leg whose 2% gap loss blows past 5% of equity
+    # (delta=0 so the delta cap doesn't pre-empt the gamma check)
+    ok, reason = b._risk_check('2030-01-31', 'CE', 'SELL', 100.0,
+                               leg_greeks=_leg('SELL', delta=0.0, gamma=0.01, qty=7500),
+                               equity=1_000_000)
+    assert not ok and 'gamma' in reason.lower()
+
+
+def test_portfolio_greeks_shape():
+    b = _broker()
+    g = b.portfolio_greeks()
+    assert set(g) >= {'net_delta', 'net_vega', 'net_theta', 'net_gamma_2pct'}
+    assert g['theoretical'] is True

@@ -132,6 +132,7 @@ def positions():
         'count': len(poss),
         'unrealized': round(sum(p['unrealized'] for p in poss), 2),
         'margin_used': round(sum(p['margin'] for p in poss), 2),
+        'greeks': _fno_broker.portfolio_greeks(),
     })
 
 

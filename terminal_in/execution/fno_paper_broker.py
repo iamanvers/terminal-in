@@ -30,8 +30,9 @@ from threading import Lock
 
 from terminal_in.bus import bus
 from terminal_in.agents.control import registry
-from terminal_in.execution.options_pricing import bs_price
+from terminal_in.execution.options_pricing import bs_price, bs_greeks
 from terminal_in.risk.span_margin import span_margin
+from terminal_in.risk.event_calendar import calendar as event_cal
 from terminal_in.data_ingest import fno_instruments as fno
 from terminal_in.data_ingest.iv_estimator import iv_for_underlying
 
@@ -47,6 +48,17 @@ MAX_FNO_POSITIONS  = 15     # total open derivative legs
 MAX_PER_EXPIRY     = 8      # concentration in one expiry
 MAX_SHORT_OPTIONS  = 6      # short-gamma exposure (short legs lose on big moves)
 MAX_FNO_MARGIN_PCT = 0.50   # total F&O margin ≤ 50% of account equity
+
+# Portfolio-level greek caps — equity-normalized so they compose across
+# underlyings (a NIFTY delta and a RELIANCE delta are not in the same units, but
+# their ₹-notionals are). Checked on the prospective book = open legs + new leg.
+# Index lot notionals are large vs a ₹10L retail book, so the delta cap is a
+# runaway-concentration backstop (directional leverage), not a per-lot limit —
+# the real F&O tail risks (short-gamma, vega) are capped tightly below.
+MAX_NET_DELTA_PCT   = 4.00  # |net delta notional| ≤ 400% of equity (directional)
+MAX_SHORT_GAMMA_PCT = 0.05  # net short-gamma loss on a GAMMA_SHOCK gap ≤ 5% equity
+MAX_NET_VEGA_PCT    = 0.02  # |net vega| (₹ per 1 vol point) ≤ 2% of equity
+GAMMA_SHOCK         = 0.02  # 2% underlying gap used to price short-gamma risk
 
 
 class FnOPaperBroker:
@@ -172,7 +184,10 @@ class FnOPaperBroker:
             span = span_margin(spot, strike, t, iv, opt_type, side, qty)
             margin = span['margin']      # reserve and release the SAME value
 
-        risk_ok, risk_reason = self._risk_check(expiry, opt_type, side, margin)
+        equity = getattr(self._cash, 'equity', 0) or 0
+        leg_greeks = self._greeks_of(spot, strike, t, iv, opt_type, side, qty)
+        risk_ok, risk_reason = self._risk_check(expiry, opt_type, side, margin,
+                                                leg_greeks=leg_greeks, equity=equity)
         if not risk_ok:
             return {'ok': False, 'error': risk_reason}
 
@@ -211,25 +226,112 @@ class FnOPaperBroker:
                 'margin_approx': True,
                 'tradingsymbol': inst.tradingsymbol, 'theoretical': True}
 
-    def _risk_check(self, expiry: str, opt_type: str, side: str, margin: float):
-        """F&O-specific pre-trade caps (per-expiry concentration, short-gamma,
-        total margin). Returns (ok, reason)."""
+    def _risk_check(self, expiry: str, opt_type: str, side: str, margin: float,
+                    leg_greeks: dict | None = None, equity: float | None = None):
+        """F&O-specific pre-trade caps. Returns (ok, reason).
+
+        Count/margin caps always run. The event-day limit and portfolio greek
+        caps run only when ``leg_greeks`` is supplied (the live order path) — the
+        prospective book is the open legs plus this new leg.
+        """
+        if equity is None:
+            equity = getattr(self._cash, 'equity', 0) or 0
+        is_short = side == 'SELL' and opt_type in ('CE', 'PE')
+
+        # Event-day limits: full blackout on a 0-mask event (e.g. Budget); near
+        # any event (expiry Thursday / RBI / FOMC) refuse NEW short-gamma legs —
+        # selling premium into a known vol event is the classic blow-up.
+        if leg_greeks is not None:
+            mask = event_cal.mask()
+            if mask <= 0.0:
+                return False, 'event blackout — no new F&O entries today'
+            if mask < 1.0 and is_short:
+                return False, f'event-day risk (mask {mask:.2f}) — no new short-gamma legs'
+
         with self._lock:
             poss = list(self._positions.values())
         if len(poss) >= MAX_FNO_POSITIONS:
             return False, f'max F&O positions ({MAX_FNO_POSITIONS}) reached'
         if sum(1 for p in poss if p['expiry'] == expiry) >= MAX_PER_EXPIRY:
             return False, f'max positions per expiry ({MAX_PER_EXPIRY}) for {expiry}'
-        is_short = side == 'SELL' and opt_type in ('CE', 'PE')
         if is_short and sum(1 for p in poss
                             if p['side'] == 'SELL' and p['opt_type'] in ('CE', 'PE')) >= MAX_SHORT_OPTIONS:
             return False, f'max short-option (short-gamma) legs ({MAX_SHORT_OPTIONS}) reached'
-        equity = getattr(self._cash, 'equity', 0) or 0
         used = sum(p['margin'] for p in poss)
         if equity > 0 and (used + margin) > equity * MAX_FNO_MARGIN_PCT:
             return False, (f'F&O margin cap — would use ₹{used + margin:,.0f} '
                            f'> {MAX_FNO_MARGIN_PCT:.0%} of equity')
+
+        # Portfolio greek caps (prospective book) — equity-normalized.
+        if leg_greeks is not None and equity > 0:
+            agg = self._aggregate_greeks(poss)
+            net_delta = agg['delta_notional'] + leg_greeks['delta_notional']
+            net_gamma = agg['gamma_pnl']      + leg_greeks['gamma_pnl']
+            net_vega  = agg['vega_rupees']    + leg_greeks['vega_rupees']
+            if abs(net_delta) > equity * MAX_NET_DELTA_PCT:
+                return False, (f'net delta notional ₹{net_delta:,.0f} '
+                               f'> {MAX_NET_DELTA_PCT:.0%} of equity')
+            if net_gamma < 0 and abs(net_gamma) > equity * MAX_SHORT_GAMMA_PCT:
+                return False, (f'net short-gamma loss ₹{abs(net_gamma):,.0f} on a '
+                               f'{GAMMA_SHOCK:.0%} gap > {MAX_SHORT_GAMMA_PCT:.0%} of equity')
+            if abs(net_vega) > equity * MAX_NET_VEGA_PCT:
+                return False, (f'net vega ₹{net_vega:,.0f}/vol-pt '
+                               f'> {MAX_NET_VEGA_PCT:.0%} of equity')
         return True, ''
+
+    # ── Greeks (portfolio risk) ────────────────────────────────────────────────
+
+    def _greeks_of(self, spot: float, strike: float, t: float, iv: float,
+                   opt_type: str, side: str, qty: int) -> dict:
+        """Position-level, sign-adjusted, qty-weighted greek contributions.
+        delta/vega/theta are in ₹ terms; gamma is expressed as the (signed) P&L
+        from a GAMMA_SHOCK underlying gap (negative = short-gamma loss)."""
+        g = bs_greeks(spot, strike, t, iv, opt_type)
+        sign = 1 if side == 'BUY' else -1
+        return {
+            'delta_units':    sign * g['delta'] * qty,
+            'delta_notional': sign * g['delta'] * qty * spot,
+            'gamma_pnl':      sign * 0.5 * g['gamma'] * (GAMMA_SHOCK * spot) ** 2 * qty,
+            'vega_rupees':    sign * g['vega'] * qty,
+            'theta_rupees':   sign * g['theta'] * qty,
+        }
+
+    def _leg_greeks(self, pos: dict, spot: float) -> dict:
+        t = fno._t_years(pos['expiry'])
+        iv = self._iv(pos['underlying'], pos['underlying_token'])
+        return self._greeks_of(spot, pos['strike'], t, iv,
+                               pos['opt_type'], pos['side'], pos['quantity'])
+
+    def _aggregate_greeks(self, poss: list[dict]) -> dict:
+        agg = {'delta_units': 0.0, 'delta_notional': 0.0, 'gamma_pnl': 0.0,
+               'vega_rupees': 0.0, 'theta_rupees': 0.0}
+        for p in poss:
+            spot = self._current_spot(int(p.get('underlying_token', 0) or 0))
+            if spot <= 0:
+                continue
+            try:
+                g = self._leg_greeks(p, spot)
+            except Exception:
+                continue
+            for k in agg:
+                agg[k] += g[k]
+        return agg
+
+    def portfolio_greeks(self) -> dict:
+        """Net book greeks for the UI / risk strip (theoretical, labeled)."""
+        with self._lock:
+            poss = list(self._positions.values())
+        agg = self._aggregate_greeks(poss)
+        equity = getattr(self._cash, 'equity', 0) or 0
+        return {
+            'net_delta':         round(agg['delta_units'], 1),
+            'net_delta_notional': round(agg['delta_notional'], 0),
+            'net_gamma_2pct':    round(agg['gamma_pnl'], 0),
+            'net_vega':          round(agg['vega_rupees'], 0),
+            'net_theta':         round(agg['theta_rupees'], 0),
+            'delta_pct_equity':  round(agg['delta_notional'] / equity, 3) if equity > 0 else None,
+            'theoretical': True,
+        }
 
     def _persist_open(self, pos: dict):
         meta = {k: pos[k] for k in ('underlying', 'underlying_token', 'opt_type',
@@ -361,8 +463,14 @@ class FnOPaperBroker:
             mark = self._price(pos, spot) if spot > 0 else pos['entry_price']
             sign = 1 if pos['side'] == 'BUY' else -1
             upnl = sign * (mark - pos['entry_price']) * pos['quantity']
+            g = self._leg_greeks(pos, spot) if spot > 0 else {
+                'delta_units': 0.0, 'theta_rupees': 0.0, 'vega_rupees': 0.0, 'gamma_pnl': 0.0}
             out.append({**pos, 'mark': round(mark, 2),
                         'unrealized': round(upnl, 2), 'spot': round(spot, 2),
+                        'delta': round(g['delta_units'], 1),
+                        'theta': round(g['theta_rupees'], 0),
+                        'vega': round(g['vega_rupees'], 0),
+                        'gamma_2pct': round(g['gamma_pnl'], 0),
                         'theoretical': True})
         return out
 

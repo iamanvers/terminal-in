@@ -16,7 +16,7 @@ import { THEME } from '@/lib/theme'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   api, OrchestratorState, OrchestratorResult, RegimeState, SignalRec, Instrument,
-  FnOChain, FnOExpiry, FnOUnderlying, FnOPosition,
+  FnOChain, FnOExpiry, FnOUnderlying, FnOPosition, FnOGreeks,
 } from '@/lib/api'
 import { useTickMap } from '@/hooks/useSocket'
 import { getSocket } from '@/lib/socket'
@@ -97,9 +97,9 @@ function IndexStrip({ regime }: { regime: RegimeState | null }) {
 // ── F&O book: account summary + live open positions (self-fetching) ──────────
 function FnOBook() {
   const [positions, setPositions] = useState<FnOPosition[]>([])
-  const [meta, setMeta] = useState<{ unrealized: number; margin_used: number } | null>(null)
+  const [meta, setMeta] = useState<{ unrealized: number; margin_used: number; greeks?: FnOGreeks } | null>(null)
   const load = useCallback(() => {
-    api.fnoPositions().then(d => { setPositions(d.positions ?? []); setMeta({ unrealized: d.unrealized, margin_used: d.margin_used }) }).catch(() => {})
+    api.fnoPositions().then(d => { setPositions(d.positions ?? []); setMeta({ unrealized: d.unrealized, margin_used: d.margin_used, greeks: d.greeks }) }).catch(() => {})
   }, [])
   useEffect(() => { load() }, [load])
   useEffect(() => {
@@ -112,7 +112,9 @@ function FnOBook() {
   const close = (tid: string) => api.fnoClosePosition(tid).then(load)
 
   const totUpnl = meta?.unrealized ?? 0
-  const posDelta = positions.reduce((s, p) => s + (p.opt_type === 'CE' ? 1 : p.opt_type === 'PE' ? -1 : 1) * (p.side === 'BUY' ? 1 : -1) * p.lots * p.lot_size * 0.5, 0)
+  const gk = meta?.greeks
+  // real Black-Scholes book greeks from the server; crude fallback only if absent
+  const posDelta = gk ? gk.net_delta : positions.reduce((s, p) => s + (p.opt_type === 'CE' ? 1 : p.opt_type === 'PE' ? -1 : 1) * (p.side === 'BUY' ? 1 : -1) * p.lots * p.lot_size * 0.5, 0)
 
   return (
     <div className="panel" style={{ flex: 1, minHeight: 0, borderRadius: 5, display: 'flex', flexDirection: 'column' }}>
@@ -127,6 +129,15 @@ function FnOBook() {
         <Stat label="MARGIN USED" value={`₹${((meta?.margin_used ?? 0) / 1e5).toFixed(2)}L`} color={C.warn} />
         <Stat label="NET DELTA" value={posDelta.toFixed(0)} color={posDelta >= 0 ? C.green : C.red} />
       </div>
+      {gk && positions.length > 0 && (
+        <div style={{ display: 'flex', gap: 14, padding: '5px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0,
+          fontSize: 9.5, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>
+          <span>θ <span style={{ color: gk.net_theta >= 0 ? C.green : C.red }}>{gk.net_theta >= 0 ? '+' : ''}₹{Math.abs(gk.net_theta).toLocaleString('en-IN', { maximumFractionDigits: 0 })}/d</span></span>
+          <span>vega <span style={{ color: C.sub }}>₹{Math.abs(gk.net_vega).toLocaleString('en-IN', { maximumFractionDigits: 0 })}/vol</span></span>
+          <span title="P&L from a 2% underlying gap (negative = short-gamma risk)">Γ@2% <span style={{ color: gk.net_gamma_2pct >= 0 ? C.green : C.red }}>{gk.net_gamma_2pct >= 0 ? '+' : ''}₹{Math.abs(gk.net_gamma_2pct).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span></span>
+          <span style={{ marginLeft: 'auto', color: C.dim }}>theoretical</span>
+        </div>
+      )}
       <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 8 }}>
         {positions.length === 0 ? (
           <div style={{ fontSize: 10.5, color: C.muted, textAlign: 'center', padding: 24 }}>

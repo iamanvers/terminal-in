@@ -506,6 +506,11 @@ export type FnOPosition = {
   opt_type: string; strike: number; expiry: string; lot_size: number; lots: number
   side: string; quantity: number; entry_price: number; margin: number
   mark: number; unrealized: number; spot: number; theoretical: boolean
+  delta?: number; theta?: number; vega?: number; gamma_2pct?: number
+}
+export type FnOGreeks = {
+  net_delta: number; net_delta_notional: number; net_gamma_2pct: number
+  net_vega: number; net_theta: number; delta_pct_equity: number | null
 }
 
 // ── Trade execution → settlement pipeline ─────────────────────────────────
@@ -649,7 +654,7 @@ export const api = {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(order),
     }).then(r => r.json()) as Promise<{ ok: boolean; error?: string; trade_id?: string; premium?: number; qty?: number; margin?: number; tradingsymbol?: string }>,
-  fnoPositions: () => get<{ positions: FnOPosition[]; available: boolean; count: number; unrealized: number; margin_used: number }>('/fno/positions'),
+  fnoPositions: () => get<{ positions: FnOPosition[]; available: boolean; count: number; unrealized: number; margin_used: number; greeks?: FnOGreeks }>('/fno/positions'),
   fnoClosePosition: (tradeId: string) =>
     fetch(`${BASE}/fno/close`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
