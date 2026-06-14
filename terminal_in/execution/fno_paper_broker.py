@@ -42,6 +42,12 @@ VIX_TOKEN = 264969
 COMMISSION = 20.0           # flat ₹20/order (entry + exit charged)
 SLIPPAGE_PCT = 0.0010       # options are wider — 0.10% on the premium
 
+# F&O-specific risk caps (the cash 30%-rule doesn't apply to derivatives).
+MAX_FNO_POSITIONS  = 15     # total open derivative legs
+MAX_PER_EXPIRY     = 8      # concentration in one expiry
+MAX_SHORT_OPTIONS  = 6      # short-gamma exposure (short legs lose on big moves)
+MAX_FNO_MARGIN_PCT = 0.50   # total F&O margin ≤ 50% of account equity
+
 
 class FnOPaperBroker:
     def __init__(self, db, config, cash_broker):
@@ -166,6 +172,10 @@ class FnOPaperBroker:
             span = span_margin(spot, strike, t, iv, opt_type, side, qty)
             margin = span['margin']      # reserve and release the SAME value
 
+        risk_ok, risk_reason = self._risk_check(expiry, opt_type, side, margin)
+        if not risk_ok:
+            return {'ok': False, 'error': risk_reason}
+
         if not self._cash.reserve_capital(margin):
             return {'ok': False, 'error': f'insufficient capital for margin ₹{margin:,.0f}'}
 
@@ -200,6 +210,26 @@ class FnOPaperBroker:
                 'scan_loss': span['scan_loss'], 'exposure': span['exposure'],
                 'margin_approx': True,
                 'tradingsymbol': inst.tradingsymbol, 'theoretical': True}
+
+    def _risk_check(self, expiry: str, opt_type: str, side: str, margin: float):
+        """F&O-specific pre-trade caps (per-expiry concentration, short-gamma,
+        total margin). Returns (ok, reason)."""
+        with self._lock:
+            poss = list(self._positions.values())
+        if len(poss) >= MAX_FNO_POSITIONS:
+            return False, f'max F&O positions ({MAX_FNO_POSITIONS}) reached'
+        if sum(1 for p in poss if p['expiry'] == expiry) >= MAX_PER_EXPIRY:
+            return False, f'max positions per expiry ({MAX_PER_EXPIRY}) for {expiry}'
+        is_short = side == 'SELL' and opt_type in ('CE', 'PE')
+        if is_short and sum(1 for p in poss
+                            if p['side'] == 'SELL' and p['opt_type'] in ('CE', 'PE')) >= MAX_SHORT_OPTIONS:
+            return False, f'max short-option (short-gamma) legs ({MAX_SHORT_OPTIONS}) reached'
+        equity = getattr(self._cash, 'equity', 0) or 0
+        used = sum(p['margin'] for p in poss)
+        if equity > 0 and (used + margin) > equity * MAX_FNO_MARGIN_PCT:
+            return False, (f'F&O margin cap — would use ₹{used + margin:,.0f} '
+                           f'> {MAX_FNO_MARGIN_PCT:.0%} of equity')
+        return True, ''
 
     def _persist_open(self, pos: dict):
         meta = {k: pos[k] for k in ('underlying', 'underlying_token', 'opt_type',

@@ -9,6 +9,7 @@ from terminal_in.risk.span_margin import span_margin
 class FakeCash:
     def __init__(self, equity=1_000_000.0):
         self.available = equity
+        self.equity = equity
         self.reserved = 0.0
         self.pnl = 0.0
     def reserve_capital(self, amt):
@@ -46,12 +47,12 @@ def _broker():
 def test_place_long_call_reserves_premium_debit():
     b = _broker()
     b._spot[256265] = 22000.0
-    r = b.place_order({'underlying': 'NIFTY', 'expiry': '2030-01-31',
+    r = b.place_order({'underlying': 'NIFTY', 'expiry': '2026-08-27',
                        'strike': 22000, 'opt_type': 'CE', 'side': 'BUY', 'lots': 2})
     assert r['ok'] and r['premium'] > 0
     assert r['qty'] == 2 * 75
-    # long-option margin == premium debit == premium × qty
-    assert r['margin'] == pytest.approx(r['premium'] * r['qty'], rel=1e-6)
+    # long-option margin == premium debit == premium × qty (to rounding)
+    assert r['margin'] == pytest.approx(r['premium'] * r['qty'], abs=r['qty'] * 0.01)
     assert b._cash.reserved == pytest.approx(r['margin'])
     assert len(b.positions()) == 1
 
@@ -59,7 +60,7 @@ def test_place_long_call_reserves_premium_debit():
 def test_long_call_profit_on_spot_rise():
     b = _broker()
     b._spot[256265] = 22000.0
-    r = b.place_order({'underlying': 'NIFTY', 'expiry': '2030-01-31',
+    r = b.place_order({'underlying': 'NIFTY', 'expiry': '2026-08-27',
                        'strike': 22000, 'opt_type': 'CE', 'side': 'BUY', 'lots': 1})
     tid = r['trade_id']
     # spot jumps → call premium rises → close in profit
@@ -101,12 +102,50 @@ def test_insufficient_capital_rejected():
     b = FnOPaperBroker(db=FakeDB(), config=None, cash_broker=FakeCash(equity=100.0))
     b._vix = 14.0
     b._spot[260105] = 56000.0
-    r = b.place_order({'underlying': 'BANKNIFTY', 'expiry': '2030-01-31',
+    r = b.place_order({'underlying': 'BANKNIFTY', 'expiry': '2026-08-27',
                        'strike': 56000, 'opt_type': 'PE', 'side': 'SELL', 'lots': 5})
-    assert not r['ok'] and 'capital' in r['error'].lower()
+    # rejected for affordability — either the margin cap or the capital reserve
+    assert not r['ok'] and ('capital' in r['error'].lower() or 'margin' in r['error'].lower())
 
 
 def test_vix_tick_updates_iv_not_a_position():
     b = _broker()
     b._on_tick({'instrument_token': 264969, 'last_price': 22.5})
     assert b._vix == 22.5
+
+
+# ── F&O risk caps ───────────────────────────────────────────────────────────────
+
+from terminal_in.execution.fno_paper_broker import (
+    MAX_PER_EXPIRY, MAX_SHORT_OPTIONS, MAX_FNO_MARGIN_PCT)
+
+
+def test_per_expiry_concentration_cap():
+    b = _broker()
+    b._positions = {f't{i}': {'expiry': '2030-01-31', 'side': 'BUY',
+                              'opt_type': 'CE', 'margin': 100.0}
+                    for i in range(MAX_PER_EXPIRY)}
+    ok, reason = b._risk_check('2030-01-31', 'CE', 'BUY', 100.0)
+    assert not ok and 'per expiry' in reason
+    # a different expiry is fine
+    assert b._risk_check('2030-02-27', 'CE', 'BUY', 100.0)[0]
+
+
+def test_short_gamma_cap():
+    b = _broker()
+    b._positions = {f's{i}': {'expiry': f'2030-{i+1:02d}-01', 'side': 'SELL',
+                              'opt_type': 'CE', 'margin': 100.0}
+                    for i in range(MAX_SHORT_OPTIONS)}
+    ok, reason = b._risk_check('2031-01-01', 'CE', 'SELL', 100.0)
+    assert not ok and 'short' in reason.lower()
+    # a long leg is unaffected by the short cap
+    assert b._risk_check('2031-01-01', 'CE', 'BUY', 100.0)[0]
+
+
+def test_total_margin_cap():
+    b = _broker()  # FakeCash equity = 1,000,000
+    half = 1_000_000 * MAX_FNO_MARGIN_PCT
+    b._positions = {'big': {'expiry': '2030-01-31', 'side': 'SELL',
+                            'opt_type': 'CE', 'margin': half - 1000}}
+    ok, reason = b._risk_check('2030-01-31', 'CE', 'SELL', 5000)  # pushes over 50%
+    assert not ok and 'margin cap' in reason.lower()
