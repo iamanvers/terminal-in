@@ -212,6 +212,9 @@ def main():
     if not (cfg.use_kite_live and kite is not None):
         from terminal_in.execution.fno_paper_broker import FnOPaperBroker
         fno_broker = FnOPaperBroker(db=db, config=cfg, cash_broker=broker)
+        # Stage 5: express S1/S8 index signals as ATM options on the F&O broker.
+        from terminal_in.execution.fno_signal_router import FnOSignalRouter
+        _fno_router = FnOSignalRouter(fno_broker=fno_broker, config=cfg)
 
     # ── Portfolio ledger (data/portfolio.md — live statement of holdings) ─────
     from terminal_in.reporting.portfolio_ledger import PortfolioLedger
