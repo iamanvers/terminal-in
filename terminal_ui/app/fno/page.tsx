@@ -19,7 +19,7 @@ import {
   FnOChain, FnOExpiry, FnOUnderlying, FnOPosition,
 } from '@/lib/api'
 import { useTickMap } from '@/hooks/useSocket'
-import HoldingsPanel from '@/components/panels/HoldingsPanel'
+import { getSocket } from '@/lib/socket'
 import TradePipelinePanel from '@/components/panels/TradePipelinePanel'
 
 const C = THEME
@@ -90,6 +90,73 @@ function IndexStrip({ regime }: { regime: RegimeState | null }) {
         </span>
         <span style={{ fontSize: 9.5, color: C.muted }}>drives derivative position sizing</span>
       </div>
+    </div>
+  )
+}
+
+// ── F&O book: account summary + live open positions (self-fetching) ──────────
+function FnOBook() {
+  const [positions, setPositions] = useState<FnOPosition[]>([])
+  const [meta, setMeta] = useState<{ unrealized: number; margin_used: number } | null>(null)
+  const load = useCallback(() => {
+    api.fnoPositions().then(d => { setPositions(d.positions ?? []); setMeta({ unrealized: d.unrealized, margin_used: d.margin_used }) }).catch(() => {})
+  }, [])
+  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    const s = getSocket()
+    const h = () => load()
+    for (const ev of ['fno.trade.opened', 'fno.trade.closed', 'fno.signal.routed']) s.on(ev, h)
+    const t = setInterval(load, 8000)
+    return () => { for (const ev of ['fno.trade.opened', 'fno.trade.closed', 'fno.signal.routed']) s.off(ev, h); clearInterval(t) }
+  }, [load])
+  const close = (tid: string) => api.fnoClosePosition(tid).then(load)
+
+  const totUpnl = meta?.unrealized ?? 0
+  const posDelta = positions.reduce((s, p) => s + (p.opt_type === 'CE' ? 1 : p.opt_type === 'PE' ? -1 : 1) * (p.side === 'BUY' ? 1 : -1) * p.lots * p.lot_size * 0.5, 0)
+
+  return (
+    <div className="panel" style={{ flex: 1, minHeight: 0, borderRadius: 5, display: 'flex', flexDirection: 'column' }}>
+      <div className="panel-header">F&amp;O BOOK <span style={{ color: '#4A4F57' }}>{positions.length} open</span>
+        <span style={{ marginLeft: 'auto', color: totUpnl >= 0 ? C.green : C.red, fontWeight: 700 }}>
+          {totUpnl >= 0 ? '+' : ''}₹{totUpnl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+        </span>
+      </div>
+      {/* account summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, padding: '9px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        <Stat label="UNREALISED" value={`${totUpnl >= 0 ? '+' : ''}₹${Math.abs(totUpnl).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} color={totUpnl >= 0 ? C.green : C.red} />
+        <Stat label="MARGIN USED" value={`₹${((meta?.margin_used ?? 0) / 1e5).toFixed(2)}L`} color={C.warn} />
+        <Stat label="NET DELTA" value={posDelta.toFixed(0)} color={posDelta >= 0 ? C.green : C.red} />
+      </div>
+      <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 8 }}>
+        {positions.length === 0 ? (
+          <div style={{ fontSize: 10.5, color: C.muted, textAlign: 'center', padding: 24 }}>
+            No open F&amp;O positions. Switch to <strong style={{ color: C.accentBright }}>OPTION CHAIN</strong> to trade.
+          </div>
+        ) : positions.map(p => (
+          <div key={p.trade_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', marginBottom: 5,
+            background: C.card, border: `1px solid ${C.border}`, borderRadius: 4, borderLeft: `2px solid ${p.side === 'BUY' ? C.green : C.red}` }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.tradingsymbol}</div>
+              <div style={{ fontSize: 9, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{p.side} {p.lots}×{p.lot_size} · entry {p.entry_price} · mark {p.mark}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: p.unrealized >= 0 ? C.green : C.red, fontVariantNumeric: 'tabular-nums' }}>
+                {p.unrealized >= 0 ? '+' : ''}₹{Math.abs(p.unrealized).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+              </div>
+              <div style={{ fontSize: 8.5, color: C.dim }}>margin ₹{(p.margin / 1e3).toFixed(0)}k</div>
+            </div>
+            <button onClick={() => close(p.trade_id)} className="btn" style={{ fontSize: 9, padding: '3px 7px' }} title="square off">✕</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+function Stat({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <span style={{ fontSize: 8.5, color: C.dim, letterSpacing: '.06em' }}>{label}</span>
+      <span style={{ fontSize: 14, fontWeight: 700, color, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
     </div>
   )
 }
@@ -657,17 +724,21 @@ export default function FnoPage() {
       </div>
 
       {view === 'cockpit' ? (
-        <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 8, padding: '8px 10px', overflow: 'hidden' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '1.25fr 1fr', gap: 8, padding: '8px 10px', overflow: 'hidden' }}>
+          {/* Left: your derivatives book (hero) + index signals */}
           <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <IndexSignals results={orch?.results ?? []} />
-            <SignalLog signals={signals} />
+            <FnOBook />
+            <div style={{ flex: '0 0 auto', maxHeight: '40%', overflow: 'auto' }}>
+              <IndexSignals results={orch?.results ?? []} />
+            </div>
           </div>
+          {/* Right: futures contract reference + recent index signal log */}
           <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ flex: '0 0 auto', maxHeight: '42%', overflow: 'auto' }}>
-              <HoldingsPanel segment="FNO" />
+            <div style={{ flexShrink: 0 }}>
+              <ContractReference />
             </div>
             <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-              <ContractReference />
+              <SignalLog signals={signals} />
             </div>
           </div>
         </div>

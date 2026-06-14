@@ -37,17 +37,18 @@ function ago(ms: number | null) {
 // One funnel stage box
 function FunnelBox({ label, n, color, drop }: { label: string; n: number; color: string; drop?: number }) {
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, position: 'relative' }}>
-      <span style={{ fontSize: 18, fontWeight: 700, color, fontVariantNumeric: 'tabular-nums' }}>{n}</span>
-      <span style={{ fontSize: 8.5, color: C.dim, letterSpacing: '.06em' }}>{label}</span>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, position: 'relative',
+      padding: '8px 4px', background: C.card, border: `1px solid ${C.border}`, borderRadius: 5 }}>
+      <span style={{ fontSize: 22, fontWeight: 700, color, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{n}</span>
+      <span style={{ fontSize: 9.5, color: C.sub, letterSpacing: '.07em', fontWeight: 600 }}>{label}</span>
       {drop != null && drop > 0 && (
-        <span style={{ position: 'absolute', top: -2, right: 2, fontSize: 8, color: C.red }}>−{drop}</span>
+        <span style={{ position: 'absolute', top: 4, right: 6, fontSize: 9, fontWeight: 700, color: C.red }}>−{drop} rej</span>
       )}
     </div>
   )
 }
 
-export default function TradePipelinePanel({ defaultSegment = 'ALL', compact = false }:
+export default function TradePipelinePanel({ defaultSegment = 'ALL' }:
   { defaultSegment?: 'ALL' | 'EQ' | 'FNO'; compact?: boolean }) {
   const [data, setData] = useState<TradePipeline | null>(null)
   const [seg, setSeg]   = useState<'ALL' | 'EQ' | 'FNO'>(defaultSegment)
@@ -69,62 +70,86 @@ export default function TradePipelinePanel({ defaultSegment = 'ALL', compact = f
   return (
     <div className="panel" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <div className="panel-header">
-        TRADE PIPELINE <span style={{ color: '#4A4F57', fontSize: 9 }}>SIGNAL → GATE → OPEN → SETTLED</span>
+        TRADE PIPELINE
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 2 }}>
           {(['ALL', 'EQ', 'FNO'] as const).map(s => (
             <button key={s} onClick={() => setSeg(s)}
-              style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 3, cursor: 'pointer', border: 'none',
+              style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 10px', borderRadius: 3, cursor: 'pointer', border: 'none',
                 background: seg === s ? C.accent : 'transparent', color: seg === s ? '#fff' : C.muted }}>{s}</button>
           ))}
         </span>
       </div>
 
-      {/* Funnel */}
+      {/* Funnel — boxed stages with legible arrows */}
       {f && (
-        <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
           <FunnelBox label="SIGNALED" n={f.signaled} color={C.text} />
           <Arrow />
           <FunnelBox label="APPROVED" n={f.approved} color={C.blue} drop={f.rejected} />
           <Arrow />
           <FunnelBox label="OPEN" n={f.open} color={C.accentBright} />
           <Arrow />
-          <FunnelBox label="CLOSED" n={f.closed} color={C.teal} />
+          <FunnelBox label="SETTLED" n={f.closed} color={C.teal} />
         </div>
       )}
 
-      {/* Lifecycle list */}
-      <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 6 }}>
+      {/* Lifecycle table — proper headers + aligned columns */}
+      <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 0 }}>
         {items.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', fontSize: 10.5, color: C.muted }}>
+          <div style={{ padding: 28, textAlign: 'center', fontSize: 11, color: C.muted }}>
             No recent trade activity{seg !== 'ALL' ? ` for ${seg}` : ''}.
           </div>
-        ) : items.map((it, i) => <Row key={it.trade_id ?? `r${i}`} it={it} compact={compact} />)}
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums' }}>
+            <thead>
+              <tr style={{ position: 'sticky', top: 0, background: C.panel, zIndex: 1 }}>
+                <Th>SEG</Th><Th>SYMBOL</Th><Th>SIDE</Th><Th>STRATEGY</Th><Th>STAGE</Th>
+                <Th>DETAIL</Th><Th right>QTY</Th><Th right>ENTRY</Th><Th right>EXIT</Th>
+                <Th right>P&amp;L</Th><Th right>AGE</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it, i) => <Row key={it.trade_id ?? `r${i}`} it={it} />)}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )
 }
 
-function Arrow() {
-  return <span style={{ color: C.dim, fontSize: 13, padding: '0 2px', flexShrink: 0 }}>→</span>
+function Th({ children, right }: { children: React.ReactNode; right?: boolean }) {
+  return (
+    <th style={{ textAlign: right ? 'right' : 'left', fontSize: 9, fontWeight: 700, letterSpacing: '.06em',
+      color: C.dim, padding: '7px 10px', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{children}</th>
+  )
 }
 
-function Row({ it, compact }: { it: PipelineItem; compact: boolean }) {
+function Arrow() {
+  return <span style={{ color: C.accentBright, fontSize: 18, lineHeight: 1, flexShrink: 0, opacity: 0.7 }}>→</span>
+}
+
+function Row({ it }: { it: PipelineItem }) {
   const st = STAGE[it.stage] ?? STAGE.closed
   const pnlCol = it.pnl == null ? C.muted : it.pnl >= 0 ? C.green : C.red
   const when = it.stage === 'rejected' || it.stage === 'open' ? it.opened_at : it.closed_at
+  const td: React.CSSProperties = { padding: '7px 10px', fontSize: 11, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }
+  const tdR: React.CSSProperties = { ...td, textAlign: 'right' }
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', marginBottom: 4,
-      background: C.card, border: `1px solid ${C.border}`, borderRadius: 4, borderLeft: `2px solid ${st.color}` }}>
-      <span style={{ fontSize: 8, fontWeight: 700, color: it.segment === 'FNO' ? C.warn : C.steel, width: 26, flexShrink: 0 }}>{it.segment}</span>
-      <span style={{ fontSize: 10.5, fontWeight: 600, color: C.text, minWidth: 0, flex: compact ? 1 : 0, width: compact ? undefined : 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.symbol}</span>
-      <span style={{ fontSize: 9, color: it.side === 'BUY' ? C.green : it.side === 'SELL' ? C.red : C.muted, width: 30, flexShrink: 0 }}>{it.side}</span>
-      {!compact && <span style={{ fontSize: 9, color: C.muted, width: 44, flexShrink: 0 }}>{it.strategy}</span>}
-      <span style={{ fontSize: 8.5, fontWeight: 700, color: st.color, background: `${st.color}14`, border: `1px solid ${st.color}33`, borderRadius: 3, padding: '1px 6px', flexShrink: 0 }}>{st.label}</span>
-      {it.exit_reason && it.stage !== 'open' && <span style={{ fontSize: 8.5, color: C.dim, flexShrink: 0 }}>{it.exit_reason}</span>}
-      <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 600, color: pnlCol, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
-        {it.pnl != null ? fmtINR(it.pnl) : ''}
-      </span>
-      <span style={{ fontSize: 8.5, color: C.dim, width: 26, textAlign: 'right', flexShrink: 0 }}>{ago(when)}</span>
-    </div>
+    <tr style={{ borderLeft: `2px solid ${st.color}` }}>
+      <td style={{ ...td, paddingLeft: 12 }}><span style={{ fontSize: 9, fontWeight: 700, color: it.segment === 'FNO' ? C.warn : C.steel }}>{it.segment}</span></td>
+      <td style={{ ...td, color: C.text, fontWeight: 600, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.symbol}</td>
+      <td style={{ ...td, color: it.side === 'BUY' ? C.green : it.side === 'SELL' ? C.red : C.muted, fontWeight: 600 }}>{it.side || '—'}</td>
+      <td style={{ ...td, color: C.sub }}>{it.strategy || '—'}</td>
+      <td style={td}>
+        <span style={{ fontSize: 9, fontWeight: 700, color: st.color, background: `${st.color}1A`, border: `1px solid ${st.color}40`, borderRadius: 3, padding: '2px 7px' }}>{st.label}</span>
+      </td>
+      <td style={{ ...td, color: C.muted, fontSize: 10, maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.exit_reason ?? ''}</td>
+      <td style={{ ...tdR, color: C.sub }}>{it.qty ?? '—'}</td>
+      <td style={{ ...tdR, color: C.sub }}>{it.entry != null ? it.entry.toFixed(2) : '—'}</td>
+      <td style={{ ...tdR, color: C.sub }}>{it.exit != null ? it.exit.toFixed(2) : '—'}</td>
+      <td style={{ ...tdR, color: pnlCol, fontWeight: 700 }}>{it.pnl != null ? fmtINR(it.pnl) : '—'}</td>
+      <td style={{ ...tdR, color: C.dim, fontSize: 10 }}>{ago(when)}</td>
+    </tr>
   )
 }

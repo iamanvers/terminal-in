@@ -4,6 +4,7 @@
 // hot vs restart) and this panel renders it. Secrets arrive masked and are
 // only sent back if the operator types a new value.
 import React from 'react'
+import { createPortal } from 'react-dom'
 
 type Setting = {
   env: string; group: string; label: string
@@ -62,21 +63,23 @@ export default function SettingsPanel({ open, onClose }: { open: boolean; onClos
     }
   }
 
-  if (!open) return null
+  if (!open || typeof document === 'undefined') return null
 
   const groups = GROUP_ORDER.filter(g => settings.some(s => s.group === g))
 
-  return (
+  // Portal to <body> so the overlay escapes the TopBar's backdrop-filter
+  // stacking context (which otherwise traps this fixed panel behind the page).
+  return createPortal(
     <>
       {/* scrim */}
       <div
         onClick={onClose}
-        style={{ position: 'fixed', inset: 0, background: 'rgba(6,7,9,0.55)', zIndex: 80, backdropFilter: 'blur(2px)' }}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(6,7,9,0.55)', zIndex: 9000, backdropFilter: 'blur(2px)' }}
       />
       {/* slide-over */}
       <aside
         style={{
-          position: 'fixed', top: 0, right: 0, bottom: 0, width: 380, zIndex: 81,
+          position: 'fixed', top: 0, right: 0, bottom: 0, width: 380, zIndex: 9001,
           background: '#121419', borderLeft: '1px solid #333841',
           display: 'flex', flexDirection: 'column',
           boxShadow: '-18px 0 48px rgba(0,0,0,0.45)',
@@ -170,6 +173,7 @@ export default function SettingsPanel({ open, onClose }: { open: boolean; onClos
           </button>
         </div>
       </aside>
-    </>
+    </>,
+    document.body,
   )
 }
