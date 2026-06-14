@@ -77,7 +77,7 @@ Pipeline per run: dataset rebuild (static corpora + own closed trades + hindsigh
 
 ## 4. Roadmap
 
-### P2 — F&O execution (in progress — Stages 1–3 shipped)
+### P2 — F&O execution (Stages 1–5 shipped; per-expiry/greek risk caps remain)
 
 **Why separate from equities:** derivatives differ in every dimension that matters — lot-based sizing, expiry lifecycle, SPAN margining, non-linear payoff, and the underlyings (indices) are not cash-tradeable at all. Bolting options onto the cash pipeline would corrupt risk checks; F&O gets its own instrument model, broker path, and gate checks.
 
@@ -85,10 +85,10 @@ Pipeline per run: dataset rebuild (static corpora + own closed trades + hindsigh
 |---|---|
 | Contract model | ✅ `data_ingest/fno_instruments.py`: synthetic deterministic tokens, expiry calendar (weekly NIFTY / monthly per index), strike chain. Live Kite-dump ingestion deferred to live mode. |
 | Chain UI | ✅ OPTION CHAIN view on `/fno`: CE/PE premiums + greeks per strike, ATM highlight, expiry chips. **OI/real-IV are live-only (null in paper, never fabricated)** — premiums are Black-Scholes theoretical from real spot + India VIX (labeled). |
-| Paper execution | ✅ `execution/fno_paper_broker.py`: lot-based orders, premium P&L, theoretical mark-to-market on underlying ticks, expiry square-off at intrinsic; shares the cash account. |
-| Margin | ◐ short legs reserve a **SPAN-approx** (notional × 12% band) placeholder; the rigorous per-contract SPAN model in the gate is **Stage 4**. |
-| Strategies | ☐ **Stage 5** — S1 ORB and S8 VIX migrate to actual derivative expressions (buy ATM option / futures) instead of NIFTYBEES proxy. |
-| Risk additions | ☐ Per-expiry concentration, max short-gamma exposure, event-day (expiry/budget/RBI) position limits (with Stage 4). |
+| Paper execution | ✅ `execution/fno_paper_broker.py`: lot-based orders, premium P&L, theoretical mark-to-market on underlying ticks, expiry square-off at intrinsic; shares the cash account. UI order ticket + positions panel on `/fno`. |
+| Margin | ✅ `risk/span_margin.py`: scenario-based **SPAN approximation** — worst-case loss over a price (±3.5σ/2-day, VIX-implied) × vol grid + exposure add-on. ATM short > OTM short; futures ~7% notional. Long option = premium. Labeled approx. |
+| Strategies | ✅ `execution/fno_signal_router.py`: S1 ORB + S8 VIX index signals express as ATM options (BUY→CALL, SELL→PUT) on the F&O broker, with market-hours + kill-switch checks. |
+| Risk additions | ☐ Per-expiry concentration, max short-gamma exposure, event-day (expiry/budget/RBI) position limits — next F&O hardening pass. |
 | Greeks (P3 bridge) | ✅ Black-Scholes delta/theta/vega/gamma per contract (`execution/options_pricing.py`); portfolio-level greek caps pending. |
 
 ### P2 — Portfolio holdings surface
