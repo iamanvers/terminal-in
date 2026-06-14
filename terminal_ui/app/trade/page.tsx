@@ -8,6 +8,7 @@ import {
 } from '@/lib/api'
 import { useSocketEvent, useTickMap } from '@/hooks/useSocket'
 import HoldingsPanel from '@/components/panels/HoldingsPanel'
+import TradePipelinePanel from '@/components/panels/TradePipelinePanel'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const C = THEME
@@ -1034,7 +1035,7 @@ function InlineOrderTicket({
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-type Tab  = 'book' | 'performance' | 'signals'
+type Tab  = 'book' | 'performance' | 'signals' | 'pipeline'
 type Sel  = { kind: 'position' | 'trade'; id: string } | { kind: 'order' } | null
 
 export default function TradePage() {
@@ -1100,7 +1101,7 @@ export default function TradePage() {
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {/* Tab bar */}
             <div style={{ display: 'flex', alignItems: 'center', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden', flexShrink: 0, height: 34 }}>
-              {(['book', 'performance', 'signals'] as Tab[]).map(t => (
+              {(['book', 'performance', 'signals', 'pipeline'] as Tab[]).map(t => (
                 <button key={t} onClick={() => setTab(t)} style={{
                   padding: '0 18px', height: '100%', fontSize: 10, fontWeight: tab === t ? 700 : 400,
                   letterSpacing: '.08em', background: 'transparent', border: 'none',
@@ -1126,6 +1127,7 @@ export default function TradePage() {
               )}
               {tab === 'performance' && <PerformanceView stats={stats} scorecards={scorecards} snapshots={snapshots} />}
               {tab === 'signals' && <SignalsView tokenMap={tokenMap} />}
+              {tab === 'pipeline' && <TradePipelinePanel defaultSegment="ALL" />}
             </div>
           </div>
 

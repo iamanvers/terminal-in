@@ -508,6 +508,18 @@ export type FnOPosition = {
   mark: number; unrealized: number; spot: number; theoretical: boolean
 }
 
+// ── Trade execution → settlement pipeline ─────────────────────────────────
+export type PipelineItem = {
+  segment: 'EQ' | 'FNO'; symbol: string; strategy: string; side: string
+  qty: number | null; entry: number | null; exit: number | null; pnl: number | null
+  stage: 'rejected' | 'open' | 'closed' | 'settled'; exit_reason: string | null
+  opened_at: number | null; closed_at: number | null; trade_id: string | null
+}
+export type TradePipeline = {
+  funnel: { signaled: number; approved: number; rejected: number; open: number; closed: number }
+  items: PipelineItem[]
+}
+
 export const api = {
   portfolio: ()           => get<PortfolioSummary>('/portfolio/summary'),
   positions: ()           => get<Position[]>('/portfolio/positions'),
@@ -520,6 +532,7 @@ export const api = {
   events: ()              => get<CalendarEvent[]>('/risk/events'),
   trades: (limit = 100)   => get<Trade[]>(`/trades/?limit=${limit}`),
   tradesClosed: (limit = 50) => get<Trade[]>(`/trades/closed?limit=${limit}`),
+  tradePipeline: (limit = 40) => get<TradePipeline>(`/trades/pipeline?limit=${limit}`),
   tradeStats: ()          => get<TradeStats>('/trades/stats'),
   instruments: ()         => get<Instrument[]>('/market/instruments'),
   manualOrder: (order: { symbol: string; side: 'BUY' | 'SELL'; quantity: number; stop_loss?: number; target?: number; limit_price?: number }) =>

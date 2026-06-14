@@ -102,6 +102,7 @@ class TradeAnalyst:
         self._scorecards: dict[str, Scorecard] = {}
         self._load_scorecards()
         bus.subscribe('trade.closed', self._on_trade_closed)
+        bus.subscribe('fno.trade.closed', self._on_trade_closed)   # score F&O too
         log.info('TradeAnalyst initialised')
 
     def _load_scorecards(self):

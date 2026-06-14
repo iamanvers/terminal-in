@@ -45,6 +45,87 @@ def trade_stats():
     return jsonify(_db.get_trade_stats_sql())
 
 
+# ── Trade execution → settlement pipeline (EQ + F&O) ────────────────────────────
+
+_SETTLE_REASONS = {'eod_settlement', 'mis_square_off', 'expiry', 'time_exit'}
+
+
+def _resolve(trade: dict) -> tuple[str, str]:
+    """(segment, display_symbol) for a trade row — F&O uses its tradingsymbol."""
+    import json as _json
+    meta = trade.get('metadata') or {}
+    if not meta and trade.get('metadata_json'):
+        try:
+            meta = _json.loads(trade['metadata_json'])
+        except Exception:
+            meta = {}
+    if meta.get('segment') == 'FNO':
+        return 'FNO', meta.get('tradingsymbol') or 'F&O'
+    tok = int(trade.get('instrument_token') or trade.get('instrument_id') or 0)
+    try:
+        from terminal_in.data_ingest.instruments import KNOWN_TOKENS
+        sym = {v: k for k, v in KNOWN_TOKENS.items()}.get(tok)
+    except Exception:
+        sym = None
+    return 'EQ', sym or str(tok)
+
+
+def _trade_item(t: dict, stage: str) -> dict:
+    seg, sym = _resolve(t)
+    exit_reason = t.get('exit_reason')
+    return {
+        'segment': seg, 'symbol': sym, 'strategy': t.get('strategy_id', ''),
+        'side': t.get('side', ''), 'qty': t.get('quantity', 0),
+        'entry': t.get('entry_price'), 'exit': t.get('exit_price'),
+        'pnl': t.get('net_pnl'),
+        'stage': ('settled' if (stage == 'closed' and exit_reason in _SETTLE_REASONS) else stage),
+        'exit_reason': exit_reason,
+        'opened_at': t.get('entry_time'), 'closed_at': t.get('exit_time'),
+        'trade_id': t.get('trade_id'),
+    }
+
+
+@bp.route('/pipeline')
+def pipeline():
+    """The execution → settlement funnel for BOTH equities and F&O: signal counts,
+    rejected/open/closed items with stage, segment, and P&L. Powers the pipeline UI."""
+    if _db is None:
+        return jsonify({'funnel': {}, 'items': []})
+    limit = int(request.args.get('limit', 40))
+
+    signals = _db.get_recent_signals(limit=limit)
+    open_tr = _db.get_open_trades()
+    closed  = _db.get_closed_trades(limit=limit)
+
+    approved = sum(1 for s in signals if s.get('approved'))
+    rejected = [s for s in signals if not s.get('approved')]
+
+    funnel = {
+        'signaled': len(signals),
+        'approved': approved,
+        'rejected': len(rejected),
+        'open':     len(open_tr),
+        'closed':   len(closed),
+    }
+
+    items: list[dict] = []
+    # rejected signals (upstream — never became trades)
+    for s in rejected[:limit]:
+        seg, sym = _resolve(s)
+        items.append({
+            'segment': seg, 'symbol': sym, 'strategy': s.get('strategy_id', ''),
+            'side': s.get('side', ''), 'qty': None, 'entry': None, 'exit': None,
+            'pnl': None, 'stage': 'rejected', 'exit_reason': s.get('reason'),
+            'opened_at': s.get('decided_at'), 'closed_at': None, 'trade_id': None,
+        })
+    items += [_trade_item(t, 'open') for t in open_tr]
+    items += [_trade_item(t, 'closed') for t in closed]
+
+    # newest first by whichever timestamp the item has
+    items.sort(key=lambda x: (x.get('closed_at') or x.get('opened_at') or 0), reverse=True)
+    return jsonify({'funnel': funnel, 'items': items[:limit * 2]})
+
+
 @bp.route('/manual', methods=['POST'])
 def manual_order():
     data = request.get_json(silent=True) or {}

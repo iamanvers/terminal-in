@@ -20,6 +20,7 @@ import {
 } from '@/lib/api'
 import { useTickMap } from '@/hooks/useSocket'
 import HoldingsPanel from '@/components/panels/HoldingsPanel'
+import TradePipelinePanel from '@/components/panels/TradePipelinePanel'
 
 const C = THEME
 
@@ -619,7 +620,7 @@ export default function FnoPage() {
   const [regime, setRegime]   = useState<RegimeState | null>(null)
   const [orch, setOrch]       = useState<OrchestratorState | null>(null)
   const [signals, setSignals] = useState<SignalRec[]>([])
-  const [view, setView]       = useState<'cockpit' | 'chain'>('cockpit')
+  const [view, setView]       = useState<'cockpit' | 'chain' | 'pipeline'>('cockpit')
 
   const load = useCallback(async () => {
     const [r, o, s] = await Promise.allSettled([
@@ -644,7 +645,7 @@ export default function FnoPage() {
           shows through (was a translucent strip over the dot-matrix). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px 0', flexShrink: 0 }}>
         <div style={{ display: 'inline-flex', padding: 2, gap: 2, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6 }}>
-          {([['cockpit', 'COCKPIT'], ['chain', 'OPTION CHAIN']] as const).map(([v, label]) => (
+          {([['cockpit', 'COCKPIT'], ['chain', 'OPTION CHAIN'], ['pipeline', 'PIPELINE']] as const).map(([v, label]) => (
             <button key={v} onClick={() => setView(v)}
               style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', padding: '5px 15px', cursor: 'pointer', borderRadius: 4, border: 'none',
                 background: view === v ? C.accent : 'transparent', color: view === v ? '#fff' : C.sub, transition: 'background .15s' }}>
@@ -670,9 +671,13 @@ export default function FnoPage() {
             </div>
           </div>
         </div>
-      ) : (
+      ) : view === 'chain' ? (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', padding: '8px 10px', overflow: 'hidden' }}>
           <OptionChain />
+        </div>
+      ) : (
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', padding: '8px 10px', overflow: 'hidden' }}>
+          <TradePipelinePanel defaultSegment="ALL" />
         </div>
       )}
 
