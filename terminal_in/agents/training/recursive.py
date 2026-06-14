@@ -47,7 +47,32 @@ class TrainingOrchestrator:
         self._proc: subprocess.Popen | None = None
 
         registry.register('TRAINER', 'system', 'Recursive Model Training')
+        self._reconcile_orphans()
         log.info('TrainingOrchestrator initialised')
+
+    def _reconcile_orphans(self):
+        """A run left in a non-terminal status by a killed/crashed process (or a
+        detached run that died) is a zombie. Detect it by a STALE train.log
+        (covers both in-process crashes and detached `launch_3b_training.py` runs)
+        and mark it failed, so the TRAIN page doesn't show a phantom live run."""
+        import time as _t
+        from pathlib import Path as _P
+        STALE_S = 600
+        try:
+            rows = self._db.get_training_runs(limit=50)
+        except Exception:
+            return
+        for r in rows:
+            if r.get('status') not in ('training', 'building_dataset', 'collecting'):
+                continue
+            logp = _P('./data/training/runs') / str(r['run_id']) / 'train.log'
+            fresh = logp.exists() and (_t.time() - logp.stat().st_mtime) < STALE_S
+            if not fresh:
+                self._db.update_training_run(
+                    r['run_id'], status='failed',
+                    finished_at=int(_t.time() * 1000),
+                    error='interrupted (process ended without finishing)')
+                log.info('Reconciled orphan training run %s -> failed', r['run_id'])
 
     # ── Public API ───────────────────────────────────────────────────────────
 

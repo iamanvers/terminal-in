@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 
 from flask import Blueprint, jsonify, request
 
@@ -69,9 +70,12 @@ def progress():
         steps = re.findall(r'(\d+)/(\d+)\s*\[([\d:]+)<([^,]+),\s*([\d.]+)s/it\]', seg)
         losses = re.findall(r"'loss':\s*([\d.]+)", seg)
         done = 'DONE' in txt or 'training complete' in txt.lower()
+        # A run whose log hasn't been written in >10 min is dead (killed/crashed),
+        # not actively training — don't report a phantom live run on the TRAIN page.
+        stale = (time.time() - logp.stat().st_mtime) > 600
         last = steps[-1] if steps else None
         return jsonify({
-            'active': not done,
+            'active': not done and not stale,
             'run_id': d.name,
             'global_step': int(last[0]) if last else 0,
             'max_steps':   int(last[1]) if last else None,

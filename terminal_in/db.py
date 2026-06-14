@@ -847,6 +847,19 @@ class DB:
                 ),
             )
 
+    def update_training_run(self, run_id: str, **fields) -> None:
+        """Patch specific columns of an existing run (e.g. status/finished_at/error)."""
+        allowed = {'started_at', 'finished_at', 'status', 'max_steps',
+                   'dataset_samples', 'initial_loss', 'final_loss', 'trained_steps',
+                   'epochs', 'dataset_dir', 'adapter_dir', 'train_log', 'error'}
+        cols = {k: v for k, v in fields.items() if k in allowed}
+        if not cols:
+            return
+        sets = ', '.join(f'{k}=?' for k in cols)
+        with self.conn() as c:
+            c.execute(f'UPDATE training_runs SET {sets} WHERE run_id=?',
+                      (*cols.values(), run_id))
+
     def get_training_runs(self, limit: int = 20) -> list:
         with self.conn() as c:
             rows = c.execute(
