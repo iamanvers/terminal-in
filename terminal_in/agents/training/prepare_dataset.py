@@ -6,6 +6,9 @@ Sources:
   2. gbharti/finance-alpaca — 68,912 general financial QA pairs in Alpaca format (sample 800)
   3. NSE strategy pairs — Claude-generated high-quality Indian market strategy pairs
   4. Local SQLite trades — signal → outcome pairs from your own paper trades
+  5. Agent decisions — planner verdicts judged in hindsight (recursive loop)
+  6. Reasoning traces — Claude-distilled planner-format verdicts + chain-of-thought
+     judgment ("how it ties back"); aligns the model with the production judge task
 
 Output: HuggingFace Dataset saved to ./data/training/financial_sft
 
@@ -270,6 +273,23 @@ def _load_agent_decisions() -> list[dict]:
     return samples
 
 
+# ── Source 6: Claude reasoning traces (planner-format + chain-of-thought) ─────
+
+def _load_reasoning_traces() -> list[dict]:
+    """Claude-distilled reasoning: planner-format verdict JSON (the exact
+    production task) + prose chain-of-thought ('how it ties back'). This is the
+    teacher signal the public corpora can't provide — it trains *judgment*, not
+    facts. Pure authored data, so always available (no DB, no network)."""
+    try:
+        from terminal_in.agents.training.reasoning_traces import all_samples
+        samples = all_samples()
+    except Exception as e:
+        log.warning(f'Could not load reasoning_traces: {e}')
+        return []
+    log.info(f'Reasoning traces (Claude-distilled): {len(samples)} samples')
+    return samples
+
+
 # ── Main ──────────────────────────────────────────────────────────────────
 
 def prepare(output_dir: Path = OUTPUT_DIR) -> dict:
@@ -286,6 +306,7 @@ def prepare(output_dir: Path = OUTPUT_DIR) -> dict:
         ('nse_pairs',       _load_nse_pairs),
         ('local_trades',    _load_local_trades),
         ('agent_decisions', _load_agent_decisions),
+        ('reasoning_traces', _load_reasoning_traces),
     ]:
         samples = loader()
         counts[name] = len(samples)
