@@ -33,6 +33,7 @@ from terminal_in.agents.control import registry
 from terminal_in.execution.options_pricing import bs_price
 from terminal_in.risk.span_margin import span_margin
 from terminal_in.data_ingest import fno_instruments as fno
+from terminal_in.data_ingest.iv_estimator import iv_for_underlying
 
 log = logging.getLogger(__name__)
 
@@ -97,9 +98,15 @@ class FnOPaperBroker:
 
     # ── Pricing helpers ───────────────────────────────────────────────────────
 
+    def _iv(self, label: str, underlying_token: int) -> float:
+        """IV proxy in DECIMAL: India VIX for indices, realized vol for stocks."""
+        iv_pct, _ = iv_for_underlying(label, self._db, self._vix, underlying_token)
+        return max(iv_pct, 1.0) / 100.0
+
     def _price(self, pos: dict, spot: float) -> float:
         t = fno._t_years(pos['expiry'])
-        return bs_price(spot, pos['strike'], t, max(self._vix, 1.0) / 100.0, pos['opt_type'])
+        iv = self._iv(pos['underlying'], pos['underlying_token'])
+        return bs_price(spot, pos['strike'], t, iv, pos['opt_type'])
 
     def _current_spot(self, underlying_token: int) -> float:
         if underlying_token in self._spot:
@@ -143,7 +150,8 @@ class FnOPaperBroker:
             return {'ok': False, 'error': 'no underlying spot — cannot price'}
 
         t = fno._t_years(expiry)
-        raw_premium = bs_price(spot, strike, t, max(self._vix, 1.0) / 100.0, opt_type)
+        iv = self._iv(label, inst.underlying_token)
+        raw_premium = bs_price(spot, strike, t, iv, opt_type)
         # slippage against the taker
         premium = raw_premium * (1 + SLIPPAGE_PCT * (1 if side == 'BUY' else -1))
         premium = max(premium, 0.05)
@@ -155,8 +163,7 @@ class FnOPaperBroker:
             margin = round(premium * qty, 2)
             span = {'margin': margin, 'scan_loss': margin, 'exposure': 0.0}
         else:
-            span = span_margin(spot, strike, t, max(self._vix, 1.0) / 100.0,
-                               opt_type, side, qty)
+            span = span_margin(spot, strike, t, iv, opt_type, side, qty)
             margin = span['margin']      # reserve and release the SAME value
 
         if not self._cash.reserve_capital(margin):

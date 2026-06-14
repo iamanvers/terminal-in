@@ -3,6 +3,8 @@
 import math
 from datetime import date
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from terminal_in.execution.options_pricing import bs_price, bs_greeks, RISK_FREE
@@ -90,7 +92,7 @@ def test_monthly_expiry_is_last_target_weekday():
 # ── Chain + instrument model ───────────────────────────────────────────────────
 
 def test_chain_structure_and_atm():
-    chain = fno.build_chain('NIFTY', spot=22037.0, vix=14.0,
+    chain = fno.build_chain('NIFTY', spot=22037.0, iv_pct=14.0,
                             expiry_iso='2026-01-29', n_strikes=5)
     assert chain['theoretical'] is True
     assert chain['atm_strike'] == 22050              # nearest 50
@@ -161,3 +163,49 @@ def test_scan_range_floored_and_capped():
     spot = 22000.0
     assert scan_range(spot, 0.01) == pytest.approx(spot * 0.05)   # tiny vol -> floor 5%
     assert scan_range(spot, 2.0) == pytest.approx(spot * 0.15)    # huge vol -> cap 15%
+
+
+# ── Stock F&O (single-stock contracts + per-stock IV) ───────────────────────────
+
+from terminal_in.data_ingest.iv_estimator import realized_vol_pct, iv_for_underlying
+
+
+def test_stock_underlyings_present_and_not_index():
+    labels = {c['label'] for c in fno.CONTRACTS}
+    assert 'RELIANCE' in labels and 'NIFTY' in labels        # stocks + indices both
+    assert fno._BY_LABEL['RELIANCE']['lot_size'] == 500
+    assert not fno.is_index('RELIANCE') and fno.is_index('NIFTY')
+
+
+def test_strike_interval_index_fixed_stock_scales():
+    assert fno.strike_interval('NIFTY', 22000) == 50            # fixed for index
+    assert fno.strike_interval('RELIANCE', 1400) == 20          # stock: spot-scaled
+    assert fno.strike_interval('SBIN', 420) == 10
+    assert fno.strike_interval('MARUTI', 12000) == 100
+
+
+def test_stock_only_monthly_expiry():
+    exps = fno.expiries('RELIANCE', today=date(2026, 1, 5))
+    assert exps and all(e['kind'] == 'monthly' for e in exps)   # no stock weeklies
+    assert date.fromisoformat(exps[0]['date']).weekday() == 3   # last Thursday
+
+
+class _FakeDB:
+    def __init__(self, df): self._df = df
+    def get_ohlcv_1d(self, token, limit=40): return self._df
+
+
+def test_iv_index_uses_vix_stock_uses_realized():
+    # build a frame whose realized vol is well above index VIX
+    n = 60
+    idx = pd.date_range(end=pd.Timestamp('2024-01-01'), periods=n, freq='D')
+    rng = np.random.default_rng(0)
+    close = 1400 * np.exp(np.cumsum(rng.normal(0, 0.03, n)))     # ~3%/day -> high vol
+    df = pd.DataFrame({'open': close, 'high': close, 'low': close,
+                       'close': close, 'volume': 1.0}, index=idx)
+    db = _FakeDB(df)
+    iv_idx, src_idx = iv_for_underlying('NIFTY', db, 14.0, 256265)
+    iv_stk, src_stk = iv_for_underlying('RELIANCE', db, 14.0, 738561)
+    assert iv_idx == 14.0 and 'VIX' in src_idx
+    assert iv_stk > 20.0 and 'realized' in src_stk              # stock vol >> VIX
+    assert realized_vol_pct(df) is not None

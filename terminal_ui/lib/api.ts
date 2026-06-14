@@ -489,7 +489,7 @@ export type FnOChainRow = {
 }
 export type FnOExpiry = { date: string; kind: 'weekly' | 'monthly' }
 export type FnOChain = {
-  available?: boolean; error?: string
+  available?: boolean; error?: string; kind?: 'index' | 'stock'
   underlying: string; underlying_symbol: string; spot: number; atm_strike: number
   expiry: string; t_years: number; iv_used_pct: number; iv_source: string
   lot_size: number; strike_interval: number; rows: FnOChainRow[]
@@ -498,6 +498,7 @@ export type FnOChain = {
 }
 export type FnOUnderlying = {
   label: string; symbol: string; token: number; lot_size: number
+  kind: 'index' | 'stock'
   strike_interval: number; spot: number; spot_source: string; weekly: boolean
 }
 export type FnOPosition = {

@@ -315,13 +315,26 @@ function OptionChain() {
       <div className="panel" style={{ flex: 1.7, minHeight: 0, borderRadius: 5, display: 'flex', flexDirection: 'column' }}>
         <div className="panel-header" style={{ flexWrap: 'wrap', gap: 8 }}>
           OPTION CHAIN
+          {/* index tabs */}
           <span style={{ display: 'inline-flex', gap: 2, marginLeft: 8 }}>
-            {(unders.length ? unders.map(u => u.label) : ['NIFTY', 'BANKNIFTY', 'FINNIFTY']).map(l => (
+            {(unders.filter(u => u.kind === 'index').map(u => u.label).concat(unders.length ? [] : ['NIFTY', 'BANKNIFTY', 'FINNIFTY'])).map(l => (
               <button key={l} onClick={() => { setExpiry(undefined); setLeg(null); setUnder(l) }}
                 style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.04em', padding: '3px 9px', border: 'none', cursor: 'pointer', borderRadius: 3,
                   background: under === l ? C.accent : 'transparent', color: under === l ? '#fff' : C.sub }}>{l}</button>
             ))}
           </span>
+          {/* stock dropdown (single-stock F&O) */}
+          {unders.some(u => u.kind === 'stock') && (
+            <select value={unders.find(u => u.label === under)?.kind === 'stock' ? under : ''}
+              onChange={e => { if (e.target.value) { setExpiry(undefined); setLeg(null); setUnder(e.target.value) } }}
+              style={{ fontSize: 9.5, fontWeight: 600, padding: '3px 6px', borderRadius: 3, cursor: 'pointer',
+                background: unders.find(u => u.label === under)?.kind === 'stock' ? C.accent : C.card,
+                color: unders.find(u => u.label === under)?.kind === 'stock' ? '#fff' : C.sub,
+                border: `1px solid ${C.border2}` }}>
+              <option value="">STOCKS ▾</option>
+              {unders.filter(u => u.kind === 'stock').map(u => <option key={u.label} value={u.label}>{u.label}</option>)}
+            </select>
+          )}
           <span style={{ display: 'inline-flex', gap: 3, marginLeft: 6, flexWrap: 'wrap' }}>
             {exps.slice(0, 6).map(e => (
               <button key={e.date} onClick={() => { setExpiry(e.date); setLeg(null); loadChain(under, e.date) }} title={e.kind}
@@ -335,7 +348,10 @@ function OptionChain() {
             ))}
           </span>
           {chain && <span style={{ marginLeft: 'auto', color: C.muted, fontWeight: 400, fontSize: 9.5 }}>
-            spot {chain.spot.toLocaleString('en-IN')} · ATM {chain.atm_strike} · IV {chain.iv_used_pct}% · lot {chain.lot_size}
+            spot {chain.spot.toLocaleString('en-IN')} · ATM {chain.atm_strike} · IV {chain.iv_used_pct}%
+            <span title={chain.iv_source} style={{ color: chain.kind === 'stock' ? C.teal : C.accentBright, marginLeft: 4 }}>
+              ({chain.kind === 'stock' ? 'realized vol' : 'India VIX'})
+            </span> · lot {chain.lot_size}
           </span>}
         </div>
         <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 0 }}>
@@ -388,7 +404,7 @@ function OptionChain() {
         </div>
         {chain?.theoretical && (
           <div style={{ fontSize: 9, color: C.dim, padding: '5px 10px', borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
-            *LTP = <strong style={{ color: C.muted }}>theoretical</strong> Black-Scholes premium from live spot + India VIX ({chain.iv_used_pct}%) as IV — not a traded price. OI/real-IV are live-only. Click a premium to trade.
+            *LTP = <strong style={{ color: C.muted }}>theoretical</strong> Black-Scholes premium from live spot + {chain.iv_source} ({chain.iv_used_pct}%) as IV — not a traded price. OI/real-IV are live-only. Click a premium to trade.
           </div>
         )}
       </div>

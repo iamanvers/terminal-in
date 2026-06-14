@@ -9,8 +9,9 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from terminal_in.bus import bus
-from terminal_in.data_ingest.contract_specs import INDEX_CONTRACTS, FUT_MARGIN_BAND
+from terminal_in.data_ingest.contract_specs import FUT_MARGIN_BAND
 from terminal_in.data_ingest import fno_instruments as fno
+from terminal_in.data_ingest.iv_estimator import iv_for_underlying
 
 bp  = Blueprint('fno', __name__, url_prefix='/api/fno')
 log = logging.getLogger(__name__)
@@ -47,14 +48,15 @@ def _vix() -> tuple[float, str]:
 
 @bp.route('/underlyings')
 def underlyings():
-    """Tradeable F&O underlyings with live spot, lot size, strike interval."""
+    """Tradeable F&O underlyings (indices + single stocks) with live spot."""
     out = []
-    for c in INDEX_CONTRACTS:
+    for c in fno.CONTRACTS:
         spot, src = _spot(c['token'])
         out.append({
             'label': c['label'], 'symbol': c['symbol'], 'token': c['token'],
             'lot_size': c['lot_size'],
-            'strike_interval': fno.STRIKE_INTERVAL.get(c['label'], 50),
+            'kind': 'index' if fno.is_index(c['label']) else 'stock',
+            'strike_interval': fno.strike_interval(c['label'], spot or 1000),
             'spot': round(spot, 2), 'spot_source': src,
             'weekly': bool(c.get('weekly_expiry')),
         })
@@ -75,18 +77,20 @@ def chain():
     except (TypeError, ValueError):
         n = 10
 
-    if label not in {c['label'] for c in INDEX_CONTRACTS}:
+    if label not in fno._BY_LABEL:
         return jsonify({'error': f'unknown underlying {label}'}), 404
 
-    token = next(c['token'] for c in INDEX_CONTRACTS if c['label'] == label)
+    token = fno._BY_LABEL[label]['token']
     spot, spot_src = _spot(token)
     if spot <= 0:
         return jsonify({'available': False,
                         'error': 'no spot (no live tick and no stored close)',
                         'underlying': label}), 503
-    vix, vix_src = _vix()
+    vix, _ = _vix()
     if vix <= 0:
-        vix = 14.0  # labeled assumption when VIX feed is cold; flagged below
+        vix = 14.0  # labeled assumption when VIX feed is cold
+    # IV proxy: India VIX for indices; the stock's own realized vol for stocks.
+    iv_pct, iv_src = iv_for_underlying(label, _db, vix, token)
 
     exps = fno.expiries(label)
     expiry = request.args.get('expiry')
@@ -95,11 +99,11 @@ def chain():
     if not expiry:
         return jsonify({'available': False, 'error': 'no expiries', 'underlying': label}), 503
 
-    data = fno.build_chain(label, spot, vix, expiry, n_strikes=n)
+    data = fno.build_chain(label, spot, iv_pct, expiry, n_strikes=n, iv_source=iv_src)
     data.update({
         'available': True,
+        'kind': 'index' if fno.is_index(label) else 'stock',
         'spot_source': spot_src,
-        'vix_source': vix_src if vix_src != 'unavailable' else 'default_14',
         'expiries': exps,
     })
     return jsonify(data)

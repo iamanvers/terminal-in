@@ -34,6 +34,18 @@ INDEX_CONTRACTS = [
     },
 ]
 
+# Single-stock F&O lot sizes (symbol → lot size). NSE revises these by circular;
+# values below are sourced from the NSE F&O lot-size file (rev. 2024-12 cycle) for
+# the liquid names in this app's universe. ESTIMATE — verify on revision circulars.
+# Stock F&O is MONTHLY-only (last-Thursday expiry; stock weeklies discontinued).
+STOCK_FNO_LOTS = {
+    'RELIANCE': 500, 'HDFCBANK': 550, 'ICICIBANK': 700, 'INFY': 400, 'TCS': 175,
+    'SBIN': 750, 'AXISBANK': 625, 'KOTAKBANK': 400, 'ITC': 1600, 'LT': 575,
+    'BHARTIARTL': 475, 'HINDUNILVR': 300, 'BAJFINANCE': 125, 'MARUTI': 50,
+    'SUNPHARMA': 350, 'TATAMOTORS': 1425, 'WIPRO': 3000, 'ONGC': 3850,
+    'HCLTECH': 350, 'ASIANPAINT': 200, 'TITAN': 175, 'TATASTEEL': 5500,
+}
+
 # Initial margin band for index futures as a fraction of notional
 # (SPAN + exposure). Source: NSE risk-management framework; broker margin
 # calculators (Zerodha/Kite) quote within this band. ESTIMATE — see header.

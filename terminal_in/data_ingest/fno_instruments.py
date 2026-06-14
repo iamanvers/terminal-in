@@ -20,16 +20,52 @@ import hashlib
 from dataclasses import dataclass, asdict
 from datetime import date, datetime, timedelta, timezone
 
-from terminal_in.data_ingest.contract_specs import INDEX_CONTRACTS
+from terminal_in.data_ingest.contract_specs import INDEX_CONTRACTS, STOCK_FNO_LOTS
 from terminal_in.execution.options_pricing import price_and_greeks
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-# Strike spacing per underlying (NSE conventions).
+# Strike spacing for INDICES (fixed, NSE conventions). Stocks derive it from spot.
 STRIKE_INTERVAL = {'NIFTY': 50, 'BANKNIFTY': 100, 'FINNIFTY': 50}
 
-# label → spec (lot_size, tokens, expiry rules) from the sourced contract specs.
-_BY_LABEL = {c['label']: c for c in INDEX_CONTRACTS}
+INDEX_LABELS = {c['label'] for c in INDEX_CONTRACTS}
+
+
+def _stock_contracts() -> list[dict]:
+    """Single-stock F&O contracts for the liquid names in this app's universe,
+    resolving tokens from the instrument registry. Stocks are MONTHLY-only
+    (last-Thursday expiry)."""
+    try:
+        from terminal_in.data_ingest.instruments import KNOWN_TOKENS
+    except Exception:
+        return []
+    out = []
+    for sym, lot in STOCK_FNO_LOTS.items():
+        tok = KNOWN_TOKENS.get(sym)
+        if tok:
+            out.append({'symbol': sym, 'token': tok, 'label': sym, 'lot_size': lot,
+                        'weekly_expiry': None, 'monthly_expiry': 'last Thursday'})
+    return out
+
+
+# All F&O underlyings (indices + stocks); label → spec.
+CONTRACTS = list(INDEX_CONTRACTS) + _stock_contracts()
+_BY_LABEL = {c['label']: c for c in CONTRACTS}
+
+
+def is_index(label: str) -> bool:
+    return label.upper() in INDEX_LABELS
+
+
+def strike_interval(label: str, spot: float) -> int:
+    """Index intervals are fixed; stock intervals scale with the spot (NSE-like)."""
+    if label in STRIKE_INTERVAL:
+        return STRIKE_INTERVAL[label]
+    for ceiling, step in ((250, 5), (500, 10), (1000, 10), (2000, 20),
+                          (5000, 50), (float('inf'), 100)):
+        if spot < ceiling:
+            return step
+    return 100
 
 # Expiry weekday by name (Mon=0 … Sun=6).
 _WD = {'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
@@ -163,19 +199,21 @@ def make_instrument(label: str, expiry_iso: str, strike: float, opt_type: str) -
 # ── Chain builder ─────────────────────────────────────────────────────────────
 
 def atm_strike(label: str, spot: float) -> float:
-    iv_step = STRIKE_INTERVAL.get(label, 50)
-    return round(spot / iv_step) * iv_step
+    step = strike_interval(label, spot)
+    return round(spot / step) * step
 
 
-def build_chain(label: str, spot: float, vix: float, expiry_iso: str,
-                n_strikes: int = 10, now: datetime | None = None) -> dict:
-    """Theoretical option chain around ATM. `vix` is India VIX in PERCENT
-    (the IV proxy); premiums/greeks are Black-Scholes, labeled theoretical."""
+def build_chain(label: str, spot: float, iv_pct: float, expiry_iso: str,
+                n_strikes: int = 10, now: datetime | None = None,
+                iv_source: str = 'INDIA VIX') -> dict:
+    """Theoretical option chain around ATM. `iv_pct` is the IV proxy in PERCENT
+    (India VIX for indices, realized-vol proxy for stocks); premiums/greeks are
+    Black-Scholes, labeled theoretical."""
     if label not in _BY_LABEL:
         raise ValueError(f'unknown underlying {label}')
     spec = _BY_LABEL[label]
-    step = STRIKE_INTERVAL.get(label, 50)
-    iv = max(vix, 1.0) / 100.0
+    step = strike_interval(label, spot)
+    iv = max(iv_pct, 1.0) / 100.0
     t = _t_years(expiry_iso, now)
     atm = atm_strike(label, spot)
 
@@ -205,14 +243,14 @@ def build_chain(label: str, spot: float, vix: float, expiry_iso: str,
         'atm_strike': atm,
         'expiry': expiry_iso,
         't_years': round(t, 5),
-        'iv_used_pct': round(vix, 2),
-        'iv_source': 'INDIA VIX (theoretical IV proxy)',
+        'iv_used_pct': round(iv_pct, 2),
+        'iv_source': iv_source,
         'lot_size': int(spec['lot_size']),
         'strike_interval': step,
         'rows': rows,
         'theoretical': True,
-        'note': 'Premiums/greeks are Black-Scholes theoretical (real spot + India '
-                'VIX as IV). Not traded prices; OI/real-IV are live-only.',
+        'note': f'Premiums/greeks are Black-Scholes theoretical (real spot + '
+                f'{iv_source} as IV). Not traded prices; OI/real-IV are live-only.',
     }
 
 
