@@ -13,6 +13,7 @@
 
 export const THEME = {
   // Surfaces (darkest → lightest)
+  surfaceDeep: '#080808',   // deepest inset (table headers, sunken rows)
   bg:      '#0A0B0D',
   panel:   '#121419',
   card:    '#1C1F25',
@@ -44,6 +45,10 @@ export const THEME = {
   blue:    '#3B8CFF',
   purple:  '#B07CC6',
   teal:    '#2FB8C6',
+
+  // Regime extremes (market-state legend) — sanctioned palette members.
+  strongBull: '#3FD487',
+  strongBear: '#A13238',
 
   // Status aliases (agents page)
   run:     '#2DBD80',
