@@ -16,7 +16,7 @@ import { THEME } from '@/lib/theme'
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   api, OrchestratorState, OrchestratorResult, RegimeState, SignalRec, Instrument,
-  FnOChain, FnOExpiry, FnOUnderlying,
+  FnOChain, FnOExpiry, FnOUnderlying, FnOPosition,
 } from '@/lib/api'
 import { useTickMap } from '@/hooks/useSocket'
 import HoldingsPanel from '@/components/panels/HoldingsPanel'
@@ -247,13 +247,18 @@ function RoadmapStrip() {
   )
 }
 
-// ── Option chain (Stage 2) ────────────────────────────────────────────────────
+// ── Option chain + order ticket + positions (Stages 2 + 3b) ───────────────────
+type SelectedLeg = { strike: number; opt_type: 'CE' | 'PE'; premium: number } | null
+
 function OptionChain() {
   const [unders, setUnders]   = useState<FnOUnderlying[]>([])
   const [under, setUnder]     = useState('NIFTY')
   const [expiry, setExpiry]   = useState<string | undefined>(undefined)
   const [chain, setChain]     = useState<FnOChain | null>(null)
   const [loading, setLoading] = useState(false)
+  const [leg, setLeg]         = useState<SelectedLeg>(null)
+  const [positions, setPositions] = useState<FnOPosition[]>([])
+  const [msg, setMsg]         = useState<{ t: string; ok: boolean } | null>(null)
 
   useEffect(() => { api.fnoUnderlyings().then(d => setUnders(d.underlyings)).catch(() => {}) }, [])
 
@@ -266,88 +271,243 @@ function OptionChain() {
     } catch { setChain(null) } finally { setLoading(false) }
   }, [])
 
+  const loadPositions = useCallback(() => {
+    api.fnoPositions().then(d => setPositions(d.positions ?? [])).catch(() => {})
+  }, [])
+
   useEffect(() => { loadChain(under, expiry) /* eslint-disable-next-line */ }, [under])
-  // refresh premiums every 15s (theoretical, recomputed from live spot)
-  useEffect(() => { const t = setInterval(() => loadChain(under, expiry), 15_000); return () => clearInterval(t) }, [under, expiry, loadChain])
+  useEffect(() => { loadPositions() }, [loadPositions])
+  // refresh premiums + marks every 15s (theoretical, recomputed from live spot)
+  useEffect(() => {
+    const t = setInterval(() => { loadChain(under, expiry); loadPositions() }, 15_000)
+    return () => clearInterval(t)
+  }, [under, expiry, loadChain, loadPositions])
 
   const exps = chain?.expiries ?? []
   const greekTone = (v: number) => (v >= 0 ? C.green : C.red)
+  const selectCell = (r: FnOChain['rows'][number], side: 'CE' | 'PE') =>
+    setLeg({ strike: r.strike, opt_type: side, premium: side === 'CE' ? r.CE.premium : r.PE.premium })
+
+  const placeOrder = useCallback(async (side: 'BUY' | 'SELL', lots: number, sl?: number, tgt?: number) => {
+    if (!chain || !leg) return
+    const res = await api.fnoOrder({
+      underlying: chain.underlying, expiry: chain.expiry, strike: leg.strike,
+      opt_type: leg.opt_type, side, lots, sl_premium: sl, target_premium: tgt,
+    })
+    if (res.ok) {
+      setMsg({ t: `${side} ${lots} lot${lots > 1 ? 's' : ''} ${res.tradingsymbol} @ ${res.premium} · margin ₹${(res.margin ?? 0).toLocaleString('en-IN')}`, ok: true })
+      setLeg(null); loadPositions()
+    } else {
+      setMsg({ t: res.error ?? 'order rejected', ok: false })
+    }
+    setTimeout(() => setMsg(null), 5000)
+  }, [chain, leg, loadPositions])
+
+  const closePosition = useCallback(async (tid: string) => {
+    const res = await api.fnoClosePosition(tid)
+    if (!res.ok) setMsg({ t: res.error ?? 'close failed', ok: false })
+    loadPositions(); if (!res.ok) setTimeout(() => setMsg(null), 4000)
+  }, [loadPositions])
 
   return (
-    <div className="panel" style={{ flex: 1, minHeight: 0, borderRadius: 5, display: 'flex', flexDirection: 'column' }}>
-      <div className="panel-header" style={{ flexWrap: 'wrap', gap: 8 }}>
-        OPTION CHAIN
-        {/* underlying tabs */}
-        <span style={{ display: 'inline-flex', gap: 2, marginLeft: 8 }}>
-          {(unders.length ? unders.map(u => u.label) : ['NIFTY', 'BANKNIFTY', 'FINNIFTY']).map(l => (
-            <button key={l} onClick={() => { setExpiry(undefined); setUnder(l) }}
-              style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.04em', padding: '3px 9px', border: 'none', cursor: 'pointer', borderRadius: 3,
-                background: under === l ? C.accent : 'transparent', color: under === l ? '#fff' : C.sub }}>{l}</button>
-          ))}
-        </span>
-        {/* expiry chips */}
-        <span style={{ display: 'inline-flex', gap: 3, marginLeft: 6, flexWrap: 'wrap' }}>
-          {exps.slice(0, 6).map(e => (
-            <button key={e.date} onClick={() => { setExpiry(e.date); loadChain(under, e.date) }}
-              title={e.kind}
-              style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 3, cursor: 'pointer',
-                border: `1px solid ${expiry === e.date ? C.accent : C.border2}`,
-                background: expiry === e.date ? '#0094FB18' : 'transparent',
-                color: expiry === e.date ? C.accentBright : C.muted }}>
-              {new Date(e.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-              {e.kind === 'monthly' && <span style={{ color: C.warn, marginLeft: 3 }}>M</span>}
-            </button>
-          ))}
-        </span>
-        {chain && <span style={{ marginLeft: 'auto', color: C.muted, fontWeight: 400, fontSize: 9.5 }}>
-          spot {chain.spot.toLocaleString('en-IN')} · ATM {chain.atm_strike} · IV {chain.iv_used_pct}% · lot {chain.lot_size}
-        </span>}
-      </div>
-      <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 0 }}>
-        {!chain?.available && !loading ? (
-          <div style={{ padding: 30, textAlign: 'center', fontSize: 10.5, color: C.muted }}>
-            {chain?.error ?? 'No chain — needs a live spot or a stored close for the index.'}
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 8 }}>
+      {/* LEFT — chain table */}
+      <div className="panel" style={{ flex: 1.7, minHeight: 0, borderRadius: 5, display: 'flex', flexDirection: 'column' }}>
+        <div className="panel-header" style={{ flexWrap: 'wrap', gap: 8 }}>
+          OPTION CHAIN
+          <span style={{ display: 'inline-flex', gap: 2, marginLeft: 8 }}>
+            {(unders.length ? unders.map(u => u.label) : ['NIFTY', 'BANKNIFTY', 'FINNIFTY']).map(l => (
+              <button key={l} onClick={() => { setExpiry(undefined); setLeg(null); setUnder(l) }}
+                style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.04em', padding: '3px 9px', border: 'none', cursor: 'pointer', borderRadius: 3,
+                  background: under === l ? C.accent : 'transparent', color: under === l ? '#fff' : C.sub }}>{l}</button>
+            ))}
+          </span>
+          <span style={{ display: 'inline-flex', gap: 3, marginLeft: 6, flexWrap: 'wrap' }}>
+            {exps.slice(0, 6).map(e => (
+              <button key={e.date} onClick={() => { setExpiry(e.date); setLeg(null); loadChain(under, e.date) }} title={e.kind}
+                style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 3, cursor: 'pointer',
+                  border: `1px solid ${expiry === e.date ? C.accent : C.border2}`,
+                  background: expiry === e.date ? '#0094FB18' : 'transparent',
+                  color: expiry === e.date ? C.accentBright : C.muted }}>
+                {new Date(e.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                {e.kind === 'monthly' && <span style={{ color: C.warn, marginLeft: 3 }}>M</span>}
+              </button>
+            ))}
+          </span>
+          {chain && <span style={{ marginLeft: 'auto', color: C.muted, fontWeight: 400, fontSize: 9.5 }}>
+            spot {chain.spot.toLocaleString('en-IN')} · ATM {chain.atm_strike} · IV {chain.iv_used_pct}% · lot {chain.lot_size}
+          </span>}
+        </div>
+        <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 0 }}>
+          {!chain?.available && !loading ? (
+            <div style={{ padding: 30, textAlign: 'center', fontSize: 10.5, color: C.muted }}>
+              {chain?.error ?? 'No chain — needs a live spot or a stored close for the index.'}
+            </div>
+          ) : (
+            <table style={{ width: '100%', fontVariantNumeric: 'tabular-nums' }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'right', color: C.green }}>CE Δ</th>
+                  <th style={{ textAlign: 'right', color: C.green }}>CE θ</th>
+                  <th style={{ textAlign: 'right', color: C.green }}>CE LTP*</th>
+                  <th style={{ textAlign: 'center', color: C.text }}>STRIKE</th>
+                  <th style={{ textAlign: 'left', color: C.red }}>PE LTP*</th>
+                  <th style={{ textAlign: 'left', color: C.red }}>PE θ</th>
+                  <th style={{ textAlign: 'left', color: C.red }}>PE Δ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(chain?.rows ?? []).map(r => {
+                  const itmCE = r.strike < (chain?.spot ?? 0)
+                  const itmPE = r.strike > (chain?.spot ?? 0)
+                  const selCE = leg?.strike === r.strike && leg?.opt_type === 'CE'
+                  const selPE = leg?.strike === r.strike && leg?.opt_type === 'PE'
+                  const cell = (sel: boolean, itm: string) => ({
+                    textAlign: 'right' as const, color: C.text, fontWeight: 600, cursor: 'pointer',
+                    background: sel ? '#0094FB33' : itm, outline: sel ? `1px solid ${C.accent}` : undefined,
+                  })
+                  return (
+                    <tr key={r.strike} style={{ background: r.is_atm ? '#0094FB12' : undefined }}>
+                      <td style={{ textAlign: 'right', color: greekTone(r.CE.delta) }}>{r.CE.delta.toFixed(2)}</td>
+                      <td style={{ textAlign: 'right', color: C.muted }}>{r.CE.theta.toFixed(1)}</td>
+                      <td onClick={() => selectCell(r, 'CE')} title="click to trade this call"
+                        style={cell(selCE, itmCE ? '#2DBD800C' : '')}>{r.CE.premium.toFixed(2)}</td>
+                      <td style={{ textAlign: 'center', fontWeight: 700, color: r.is_atm ? C.accentBright : C.sub, borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>
+                        {r.strike}{r.is_atm && <span style={{ fontSize: 8, color: C.accent, marginLeft: 4 }}>ATM</span>}
+                      </td>
+                      <td onClick={() => selectCell(r, 'PE')} title="click to trade this put"
+                        style={{ ...cell(selPE, itmPE ? '#F2495C0C' : ''), textAlign: 'left' }}>{r.PE.premium.toFixed(2)}</td>
+                      <td style={{ textAlign: 'left', color: C.muted }}>{r.PE.theta.toFixed(1)}</td>
+                      <td style={{ textAlign: 'left', color: greekTone(r.PE.delta) }}>{r.PE.delta.toFixed(2)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+        {chain?.theoretical && (
+          <div style={{ fontSize: 9, color: C.dim, padding: '5px 10px', borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+            *LTP = <strong style={{ color: C.muted }}>theoretical</strong> Black-Scholes premium from live spot + India VIX ({chain.iv_used_pct}%) as IV — not a traded price. OI/real-IV are live-only. Click a premium to trade.
           </div>
-        ) : (
-          <table style={{ width: '100%', fontVariantNumeric: 'tabular-nums' }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'right', color: C.green }}>CE Δ</th>
-                <th style={{ textAlign: 'right', color: C.green }}>CE θ</th>
-                <th style={{ textAlign: 'right', color: C.green }}>CE LTP*</th>
-                <th style={{ textAlign: 'center', color: C.text }}>STRIKE</th>
-                <th style={{ textAlign: 'left', color: C.red }}>PE LTP*</th>
-                <th style={{ textAlign: 'left', color: C.red }}>PE θ</th>
-                <th style={{ textAlign: 'left', color: C.red }}>PE Δ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(chain?.rows ?? []).map(r => {
-                const itmCE = r.strike < (chain?.spot ?? 0)
-                const itmPE = r.strike > (chain?.spot ?? 0)
-                return (
-                  <tr key={r.strike} style={{ background: r.is_atm ? '#0094FB12' : undefined }}>
-                    <td style={{ textAlign: 'right', color: greekTone(r.CE.delta) }}>{r.CE.delta.toFixed(2)}</td>
-                    <td style={{ textAlign: 'right', color: C.muted }}>{r.CE.theta.toFixed(1)}</td>
-                    <td style={{ textAlign: 'right', color: C.text, fontWeight: 600, background: itmCE ? '#2DBD800C' : undefined }}>{r.CE.premium.toFixed(2)}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 700, color: r.is_atm ? C.accentBright : C.sub, borderLeft: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}` }}>
-                      {r.strike}{r.is_atm && <span style={{ fontSize: 8, color: C.accent, marginLeft: 4 }}>ATM</span>}
-                    </td>
-                    <td style={{ textAlign: 'left', color: C.text, fontWeight: 600, background: itmPE ? '#F2495C0C' : undefined }}>{r.PE.premium.toFixed(2)}</td>
-                    <td style={{ textAlign: 'left', color: C.muted }}>{r.PE.theta.toFixed(1)}</td>
-                    <td style={{ textAlign: 'left', color: greekTone(r.PE.delta) }}>{r.PE.delta.toFixed(2)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
         )}
       </div>
-      {chain?.theoretical && (
-        <div style={{ fontSize: 9, color: C.dim, padding: '5px 10px', borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
-          *LTP = <strong style={{ color: C.muted }}>theoretical</strong> Black-Scholes premium from live spot + India VIX ({chain.iv_used_pct}%) as IV — not a traded price. OI/real-IV are live-only.
-        </div>
-      )}
+
+      {/* RIGHT — order ticket + positions */}
+      <div style={{ flex: '0 0 320px', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <OrderTicket leg={leg} chain={chain} onPlace={placeOrder} onClear={() => setLeg(null)} msg={msg} />
+        <FnOPositionsPanel positions={positions} onClose={closePosition} />
+      </div>
+    </div>
+  )
+}
+
+// ── Order ticket ──────────────────────────────────────────────────────────────
+function OrderTicket({ leg, chain, onPlace, onClear, msg }: {
+  leg: SelectedLeg; chain: FnOChain | null
+  onPlace: (side: 'BUY' | 'SELL', lots: number, sl?: number, tgt?: number) => void
+  onClear: () => void; msg: { t: string; ok: boolean } | null
+}) {
+  const [side, setSide] = useState<'BUY' | 'SELL'>('BUY')
+  const [lots, setLots] = useState(1)
+  const [sl, setSl]     = useState('')
+  const [tgt, setTgt]   = useState('')
+  const lotSize = chain?.lot_size ?? 0
+  const qty = lots * lotSize
+  const cost = leg ? leg.premium * qty : 0
+
+  return (
+    <div className="panel" style={{ flexShrink: 0, borderRadius: 5 }}>
+      <div className="panel-header">ORDER TICKET <span style={{ color: '#4A4F57', fontSize: 9 }}>PAPER</span></div>
+      <div className="panel-body" style={{ padding: 12 }}>
+        {!leg || !chain ? (
+          <div style={{ fontSize: 10.5, color: C.muted, padding: '14px 4px', textAlign: 'center' }}>
+            Click a CE/PE premium in the chain to build an order.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{chain.underlying} {leg.strike} {leg.opt_type}</span>
+              <span style={{ fontSize: 10, color: C.muted }}>{new Date(chain.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
+              <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: C.accentBright }}>₹{leg.premium.toFixed(2)}</span>
+            </div>
+            {/* side toggle */}
+            <div style={{ display: 'flex', gap: 4 }}>
+              {(['BUY', 'SELL'] as const).map(s => (
+                <button key={s} onClick={() => setSide(s)}
+                  style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: '6px 0', borderRadius: 4, cursor: 'pointer',
+                    border: `1px solid ${side === s ? (s === 'BUY' ? C.green : C.red) : C.border}`,
+                    background: side === s ? (s === 'BUY' ? '#2DBD8018' : '#F2495C18') : 'transparent',
+                    color: side === s ? (s === 'BUY' ? C.green : C.red) : C.sub }}>{s}</button>
+              ))}
+            </div>
+            <label style={{ fontSize: 10, color: C.dim }}>LOTS <span style={{ color: C.muted }}>(× {lotSize} = {qty} qty)</span>
+              <input type="number" min={1} value={lots} onChange={e => setLots(Math.max(1, parseInt(e.target.value) || 1))}
+                style={inputStyle} />
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <label style={{ flex: 1, fontSize: 10, color: C.dim }}>SL prem
+                <input type="number" value={sl} onChange={e => setSl(e.target.value)} placeholder="opt." style={inputStyle} /></label>
+              <label style={{ flex: 1, fontSize: 10, color: C.dim }}>Target prem
+                <input type="number" value={tgt} onChange={e => setTgt(e.target.value)} placeholder="opt." style={inputStyle} /></label>
+            </div>
+            <div style={{ fontSize: 10, color: C.muted, display: 'flex', justifyContent: 'space-between' }}>
+              <span>{side === 'BUY' ? 'Debit' : '≈ SPAN margin'}</span>
+              <span style={{ color: C.text, fontWeight: 600 }}>
+                ₹{(side === 'BUY' ? cost : Math.max(leg.strike * qty * 0.12, cost)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => onPlace(side, lots, sl ? parseFloat(sl) : undefined, tgt ? parseFloat(tgt) : undefined)}
+                className="btn btn--primary" style={{ flex: 1, fontSize: 11, padding: '7px 0' }}>
+                PLACE {side}
+              </button>
+              <button onClick={onClear} className="btn" style={{ fontSize: 11, padding: '7px 10px' }}>✕</button>
+            </div>
+          </div>
+        )}
+        {msg && <div style={{ marginTop: 9, fontSize: 10, padding: '6px 8px', borderRadius: 4,
+          background: msg.ok ? '#2DBD8014' : '#F2495C14', color: msg.ok ? C.green : C.red,
+          border: `1px solid ${msg.ok ? '#2DBD8033' : '#F2495C33'}` }}>{msg.ok ? '✓ ' : '⚠ '}{msg.t}</div>}
+      </div>
+    </div>
+  )
+}
+const inputStyle: React.CSSProperties = {
+  width: '100%', marginTop: 3, padding: '6px 8px', fontSize: 12, fontVariantNumeric: 'tabular-nums',
+  background: C.card, border: `1px solid ${C.border2}`, borderRadius: 4, color: C.text, outline: 'none',
+}
+
+// ── F&O positions ─────────────────────────────────────────────────────────────
+function FnOPositionsPanel({ positions, onClose }: { positions: FnOPosition[]; onClose: (tid: string) => void }) {
+  const totUpnl = positions.reduce((s, p) => s + p.unrealized, 0)
+  return (
+    <div className="panel" style={{ flex: 1, minHeight: 0, borderRadius: 5, display: 'flex', flexDirection: 'column' }}>
+      <div className="panel-header">F&amp;O POSITIONS <span style={{ color: '#4A4F57' }}>{positions.length}</span>
+        {positions.length > 0 && <span style={{ marginLeft: 'auto', color: totUpnl >= 0 ? C.green : C.red, fontWeight: 700 }}>
+          {totUpnl >= 0 ? '+' : ''}₹{totUpnl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+        </span>}
+      </div>
+      <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 8 }}>
+        {positions.length === 0 ? (
+          <div style={{ fontSize: 10, color: C.muted, textAlign: 'center', padding: 18 }}>No open F&amp;O positions.</div>
+        ) : positions.map(p => (
+          <div key={p.trade_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', marginBottom: 5,
+            background: C.card, border: `1px solid ${C.border}`, borderRadius: 4,
+            borderLeft: `2px solid ${p.side === 'BUY' ? C.green : C.red}` }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.tradingsymbol}</div>
+              <div style={{ fontSize: 9, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>
+                {p.side} {p.lots}×{p.lot_size} · entry {p.entry_price} · mark {p.mark}
+              </div>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: p.unrealized >= 0 ? C.green : C.red, fontVariantNumeric: 'tabular-nums' }}>
+              {p.unrealized >= 0 ? '+' : ''}{p.unrealized.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            </div>
+            <button onClick={() => onClose(p.trade_id)} className="btn" style={{ fontSize: 9, padding: '3px 7px' }} title="square off">✕</button>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

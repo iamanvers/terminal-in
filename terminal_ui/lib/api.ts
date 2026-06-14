@@ -499,6 +499,12 @@ export type FnOUnderlying = {
   label: string; symbol: string; token: number; lot_size: number
   strike_interval: number; spot: number; spot_source: string; weekly: boolean
 }
+export type FnOPosition = {
+  trade_id: string; tradingsymbol: string; underlying: string
+  opt_type: string; strike: number; expiry: string; lot_size: number; lots: number
+  side: string; quantity: number; entry_price: number; margin: number
+  mark: number; unrealized: number; spot: number; theoretical: boolean
+}
 
 export const api = {
   portfolio: ()           => get<PortfolioSummary>('/portfolio/summary'),
@@ -618,6 +624,17 @@ export const api = {
   fnoExpiries: (u: string) => get<{ underlying: string; expiries: FnOExpiry[] }>(`/fno/expiries?underlying=${encodeURIComponent(u)}`),
   fnoChain: (u: string, expiry?: string, strikes = 10) =>
     get<FnOChain>(`/fno/chain?underlying=${encodeURIComponent(u)}&strikes=${strikes}${expiry ? `&expiry=${expiry}` : ''}`),
+  fnoOrder: (order: { underlying: string; expiry: string; strike: number; opt_type: string; side: string; lots: number; sl_premium?: number; target_premium?: number }) =>
+    fetch(`${BASE}/fno/order`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(order),
+    }).then(r => r.json()) as Promise<{ ok: boolean; error?: string; trade_id?: string; premium?: number; qty?: number; margin?: number; tradingsymbol?: string }>,
+  fnoPositions: () => get<{ positions: FnOPosition[]; available: boolean; count: number; unrealized: number; margin_used: number }>('/fno/positions'),
+  fnoClosePosition: (tradeId: string) =>
+    fetch(`${BASE}/fno/close`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trade_id: tradeId }),
+    }).then(r => r.json()) as Promise<{ ok: boolean; error?: string }>,
   backtestLatest: () => get<BacktestLatest>('/backtest/latest'),
   backtestStatus: () => get<BacktestRunStatus>('/backtest/run'),
   backtestRun: (days = 730, symbols?: string[]) =>
