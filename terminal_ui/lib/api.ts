@@ -425,6 +425,57 @@ export type NSESymbol = {
   yf_symbol: string
 }
 
+// ── Backtest (PRD P2) ─────────────────────────────────────────────────────
+export type BacktestStat = {
+  n: number
+  win_rate?: number
+  total_pnl?: number
+  avg_pnl?: number
+}
+
+export type BacktestTrade = {
+  symbol: string
+  lens: string
+  side: string
+  regime: string
+  entry_date: string
+  exit_date: string
+  entry: number
+  exit: number
+  ev: number
+  exit_reason: string
+  pnl: number
+}
+
+export type BacktestResult = {
+  ts: number
+  days: number
+  engine: string
+  capital: number
+  final_equity: number
+  return_pct: number
+  max_drawdown_pct: number
+  sharpe: number
+  trades: BacktestStat
+  per_lens: Record<string, BacktestStat>
+  per_regime: Record<string, BacktestStat>
+  regime_days: Record<string, number>
+  walk_forward_years: Record<string, BacktestStat>
+  equity_curve: { date: string; equity: number }[]
+  recent_trades: BacktestTrade[]
+  symbols_tested: number
+}
+
+export type BacktestRunStatus = {
+  active: boolean
+  error: string | null
+  started_ms: number | null
+  params: { days: number; symbols: string[] | null } | null
+  result: BacktestResult | null
+}
+
+export type BacktestLatest = { available: boolean; error?: string } & Partial<BacktestResult>
+
 export const api = {
   portfolio: ()           => get<PortfolioSummary>('/portfolio/summary'),
   positions: ()           => get<Position[]>('/portfolio/positions'),
@@ -539,6 +590,13 @@ export const api = {
       body: JSON.stringify({ query, history }),
     }).then(r => r.json()) as Promise<AgentQueryResponse>,
   ollamaStatus: () => get<OllamaStatus>('/agents/ollama/status'),
+  backtestLatest: () => get<BacktestLatest>('/backtest/latest'),
+  backtestStatus: () => get<BacktestRunStatus>('/backtest/run'),
+  backtestRun: (days = 730, symbols?: string[]) =>
+    fetch(`${BASE}/backtest/run`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days, symbols }),
+    }).then(r => r.json()),
   symbolSearch: (q: string, limit = 15) =>
     get<NSESymbol[]>(`/agents/symbols/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 }

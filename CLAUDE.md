@@ -97,7 +97,7 @@ terminal_in/                        ← Python backend
     routes/                         — market, portfolio, strategies, trades, risk, chat,
                                       agents (planner/supervisor), agent_query, training
 
-terminal_ui/                        ← Next.js 14 frontend (modules: MARKET·EQUITIES·F&O·AGENTS·TRAIN)
+terminal_ui/                        ← Next.js 14 frontend (modules: MARKET·EQUITIES·F&O·AGENTS·TRAIN·BACKTEST)
   app/page.tsx                      — MARKET: boot gate w/ retry+backoff, 3-col grid
   app/trade/page.tsx                — EQUITIES: cash cockpit (order ticket = EQ instruments only)
   app/fno/page.tsx                  — F&O: index complex + lot sizes, index signals, VIX context,
@@ -105,6 +105,8 @@ terminal_ui/                        ← Next.js 14 frontend (modules: MARKET·EQ
   app/agents/page.tsx               — AGENTS: matrix, OrchestratorPanel, PlannerPanel,
                                       SupervisorPanel, DECISION LOG tab (hindsight), AI ANALYST
   app/train/page.tsx                — TRAIN: recursive training pipeline UI + run history
+  app/backtest/page.tsx             — BACKTEST: horizon picker, equity curve, per-lens/regime
+                                      attribution, walk-forward-by-year, closed trades (P2)
   components/panels/                — market data, chart, positions, signals, risk strip
   styles/globals.css                — design tokens (layered surfaces, type scale, chips, btns)
   lib/api.ts                        — typed API client (PlannerState, TrainingRun, …)
@@ -151,6 +153,8 @@ docs/PRD.md                         ← product requirements: F&O execution P2, 
 
 **OHLCV data** — `yf_fetcher.backfill()` is gap-aware FORWARD (checks `db.get_ohlcv_last_dates()`, fetches only missing recent days); `backfill_history()` is gap-aware BACKWARD (checks `db.get_ohlcv_first_dates()`, fetches the missing [target_start, earliest) window — default 10y, idempotent once at depth). Both run in the 24h refresh thread; deep history feeds HMM training + walk-forward backtests. All 72 symbols reach back to 2016 (~2,470 daily bars). `YF_MAP`: NIFTY 50→^NSEI, BANKNIFTY→^NSEBANK, VIX→^INDIAVIX, **TATAMOTORS→TMPV.NS** (2025 demerger delisted TATAMOTORS.NS on Yahoo), equities→SYMBOL.NS.
 
+**Backtest (P2)** — `terminal_in/backtest/engine.py` `run_backtest(db, days, symbols)` is v2: replays real `ohlcv_1d` through a deterministic MIRROR of the live pipeline (regime heuristic-parity → lenses S2/S4/S5/MOM with live confidences+regime mult → `EV = avg_conf×R:R×vol×convergence` → persistence ≥2 → planner degraded bar EV≥1.2/conf≥0.45 → gate-lite max-pos/sector → fill at **t+1 open**, SL/target ±1.5/2.5 ATR, stop checked before target). **No lookahead, no synthetic data** (refuses <250 bars/symbol). Long-only cash segment; NEWS lens excluded (no historical headlines). Output includes `equity_curve` (≤300 pts) + `recent_trades` (≤60) + per-lens/per-regime/walk-forward-by-year. Served `/api/backtest/run` (POST, background; GET=status) + `/api/backtest/latest`; BACKTEST UI module. The lens/EV math is hand-kept in formula-parity with the live orchestrator — if you change orchestrator scoring, mirror it here. Keystone eval gate for future strategy/edge-model/M6 changes. Tests: `tests/test_backtest.py`.
+
 **DB API conventions** — `get_ohlcv_1d/1m` return pandas DataFrames with DatetimeIndex. `insert_trade(dict)` accepts `instrument_id` or `instrument_token`. `agent_decisions` table stores planner verdicts + hindsight (see decision_memory.py).
 
 **pandas 2.x timestamps** — convert via `(series - pd.Timestamp('1970-01-01', tz='UTC')) // pd.Timedelta('1ms')`, never `.astype('int64')`.
@@ -190,7 +194,7 @@ Python 3.14 on Windows 11. Interpreter: `.venv/Scripts/python.exe`.
 
 **Remaining (see docs/PRD.md for full detail):**
 - P2: F&O execution (contract chain, lot-based fills, SPAN margin) — separate pipeline, NOT a bolt-on to the equities path
-- P2: Backtest engine (`terminal_in/backtest/` empty) — replay through the full agentic stack, walk-forward
+- P2: Backtest engine — DONE (v2): `terminal_in/backtest/engine.py` replays real daily OHLCV through the deterministic core (regime→lenses→EV→persistence→planner degraded bar→gate-lite→next-open fills), no lookahead, long-only cash segment, walk-forward by year + per-lens/per-regime attribution. Served at `/api/backtest/run|latest` (background run) + BACKTEST module (`app/backtest/page.tsx`: horizon picker, equity curve, attribution tables, closed trades). NEXT: full agentic-stack replay (live planner LLM in the loop), parameter walk-forward for the LightGBM edge model
 - P2: Training eval set + deploy automation (merge → GGUF via llama.cpp → ollama create)
 - P2 latency: Kite WebSocket ticks in live mode, event-driven scans, async planner fast-lane
 - P3: Multi-asset (NSE CDS FX → MCX commodities → global read-only → IBKR), options strategy engine

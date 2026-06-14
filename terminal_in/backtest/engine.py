@@ -349,8 +349,25 @@ def _report(closed: list[Trade], daily_equity: list, days: int,
     window = [d for d in dates if d in regimes]
     regime_days = pd.Series([regimes[d] for d in window]).value_counts().to_dict() if window else {}
 
+    # Equity curve for charting — downsample to <=300 points so the payload
+    # stays small regardless of horizon (10y daily = ~2,470 points).
+    curve = [{'date': d, 'equity': round(float(v))} for d, v in daily_equity]
+    if len(curve) > 300:
+        step = len(curve) // 300 + 1
+        curve = curve[::step] + [curve[-1]]
+
+    # Most-recent closed trades (newest first) for the UI table.
+    recent = [
+        {'symbol': t.symbol, 'lens': t.strategy, 'side': t.side, 'regime': t.regime,
+         'entry_date': t.entry_date, 'exit_date': t.exit_date,
+         'entry': round(t.entry, 2), 'exit': round(t.exit_price, 2),
+         'ev': t.ev, 'exit_reason': t.exit_reason, 'pnl': round(t.pnl)}
+        for t in sorted(closed, key=lambda x: x.exit_date, reverse=True)[:60]
+    ]
+
     result = {
         'ts': int(time.time() * 1000), 'days': days, 'engine': 'v2-live-ev',
+        'capital': CAPITAL,
         'final_equity': round(float(eq.iloc[-1])) if len(eq) else CAPITAL,
         'return_pct': round((float(eq.iloc[-1]) / CAPITAL - 1) * 100, 2) if len(eq) else 0,
         'max_drawdown_pct': round(float(dd) * 100, 2),
@@ -360,6 +377,9 @@ def _report(closed: list[Trade], daily_equity: list, days: int,
         'per_regime': per_regime,
         'regime_days': regime_days,
         'walk_forward_years': {y: stats(ts) for y, ts in sorted(by_year.items())},
+        'equity_curve': curve,
+        'recent_trades': recent,
+        'symbols_tested': len({t.symbol for t in closed}),
     }
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUT_DIR / f'backtest_{int(time.time())}.json'

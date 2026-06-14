@@ -32,6 +32,7 @@ const NAV = [
   { label: 'F&O',      href: '/fno'     },
   { label: 'AGENTS',   href: '/agents'  },
   { label: 'TRAIN',    href: '/train'   },
+  { label: 'BACKTEST', href: '/backtest'},
   { label: 'LEARN',    href: '/learn'   },
 ]
 
