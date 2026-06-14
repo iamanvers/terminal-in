@@ -132,7 +132,12 @@ class StrategyEngine:
         nifty_df = ohlcv.get(nifty_token, {}).get('1d', pd.DataFrame())
         if not nifty_df.empty and len(nifty_df) >= 21:
             close = nifty_df['close'].values.astype(float)
-            regime, confidence = classifier.classify(close, self._india_vix)
+            # Date of the latest settled daily bar — gates the classifier so a
+            # new regime is only evaluated when a new daily bar arrives (intraday
+            # rescans on an unchanged bar keep the regime stable).
+            last_idx = nifty_df.index[-1]
+            asof = last_idx.date() if hasattr(last_idx, 'date') else last_idx
+            regime, confidence = classifier.classify(close, self._india_vix, asof=asof)
         else:
             regime = classifier.current_state
             confidence = 0.5

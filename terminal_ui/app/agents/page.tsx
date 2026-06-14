@@ -863,12 +863,17 @@ function PipelineTab({ agents, decisions, selectedId, onSelect }:
           {filtered.length > 0 && <span style={{ fontSize: 9.5, color: C.teal }}>{(approved.length / filtered.length * 100).toFixed(0)}% pass</span>}
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: DCOLS, gap: 8, padding: '5px 12px', background: '#080808', borderBottom: `1px solid #23272E`, flexShrink: 0 }}>
-        {['TIME','','STRATEGY','SYMBOL','DETAILS','FILL','P&L','STATUS'].map(h => (
-          <span key={h} style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.07em' }}>{h}</span>
-        ))}
-      </div>
       <div style={{ flex: 1, overflowY: 'auto' }}>
+        {/* Header lives INSIDE the scroll body (sticky) and carries the same
+            2px left border + padding as the rows, so every column sits exactly
+            under its header regardless of the scrollbar. */}
+        <div style={{ display: 'grid', gridTemplateColumns: DCOLS, gap: 8, padding: '6px 12px',
+          background: '#080808', borderBottom: `1px solid #23272E`, borderLeft: '2px solid transparent',
+          position: 'sticky', top: 0, zIndex: 1 }}>
+          {([['TIME','left'],['','left'],['STRATEGY','left'],['SYMBOL','left'],['DETAILS','left'],['FILL','right'],['P&L','right'],['STATUS','left']] as const).map(([h, al], i) => (
+            <span key={i} style={{ fontSize: 9, color: '#4A4F57', letterSpacing: '.07em', textAlign: al }}>{h}</span>
+          ))}
+        </div>
         {filtered.length === 0
           ? <div style={{ textAlign: 'center', color: '#4A4F57', fontSize: 10.5, padding: 40 }}>No decisions yet — strategy engine must generate signals first</div>
           : filtered.map(d => (

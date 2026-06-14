@@ -54,6 +54,7 @@ class RegimeClassifier:
         self._pending_count: int = 0
         self._current_state: str = 'sideways'
         self._current_confidence: float = 0.5
+        self._last_asof = None   # date of the last daily bar we classified on
         self._load_model()
 
     def _load_model(self):
@@ -67,11 +68,21 @@ class RegimeClassifier:
         else:
             log.info('No HMM model file found at %s — heuristic mode', MODEL_PATH)
 
-    def classify(self, close: np.ndarray, vix: float) -> tuple[str, float]:
+    def classify(self, close: np.ndarray, vix: float, asof=None) -> tuple[str, float]:
         """
         Returns (regime_name, confidence).
-        Updates current state with 3-day hysteresis.
+
+        Regime is a DAILY concept. ``asof`` is the date of the latest daily bar;
+        when it has not changed since the last classification we return the
+        current state UNCHANGED — repeated intraday scans on the same settled bar
+        must never flip the regime (the "bear↔sideways without new data" bug).
+        Only a genuinely new daily bar advances the 3-day hysteresis, so the
+        documented "3-day" persistence is now measured in trading days, not scans.
         """
+        if asof is not None and asof == self._last_asof:
+            return self._current_state, self._current_confidence
+        self._last_asof = asof
+
         if self._model is not None:
             return self._classify_hmm(close, vix)
         return self._classify_heuristic(close, vix)

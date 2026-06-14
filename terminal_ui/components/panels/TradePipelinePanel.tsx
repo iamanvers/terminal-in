@@ -136,8 +136,10 @@ function Row({ it }: { it: PipelineItem }) {
   const td: React.CSSProperties = { padding: '7px 10px', fontSize: 11, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }
   const tdR: React.CSSProperties = { ...td, textAlign: 'right' }
   return (
-    <tr style={{ borderLeft: `2px solid ${st.color}` }}>
-      <td style={{ ...td, paddingLeft: 12 }}><span style={{ fontSize: 9, fontWeight: 700, color: it.segment === 'FNO' ? C.warn : C.steel }}>{it.segment}</span></td>
+    <tr>
+      {/* stage colour as an inset shadow (does not shift the cell like a tr
+          border-left does under border-collapse — that was the misalignment) */}
+      <td style={{ ...td, paddingLeft: 10, boxShadow: `inset 2px 0 0 0 ${st.color}` }}><span style={{ fontSize: 9, fontWeight: 700, color: it.segment === 'FNO' ? C.warn : C.steel }}>{it.segment}</span></td>
       <td style={{ ...td, color: C.text, fontWeight: 600, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.symbol}</td>
       <td style={{ ...td, color: it.side === 'BUY' ? C.green : it.side === 'SELL' ? C.red : C.muted, fontWeight: 600 }}>{it.side || '—'}</td>
       <td style={{ ...td, color: C.sub }}>{it.strategy || '—'}</td>
