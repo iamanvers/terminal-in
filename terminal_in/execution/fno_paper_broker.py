@@ -31,6 +31,7 @@ from threading import Lock
 from terminal_in.bus import bus
 from terminal_in.agents.control import registry
 from terminal_in.execution.options_pricing import bs_price
+from terminal_in.risk.span_margin import span_margin
 from terminal_in.data_ingest import fno_instruments as fno
 
 log = logging.getLogger(__name__)
@@ -39,8 +40,6 @@ IST = timezone(fno.IST.utcoffset(None))
 VIX_TOKEN = 264969
 COMMISSION = 20.0           # flat ₹20/order (entry + exit charged)
 SLIPPAGE_PCT = 0.0010       # options are wider — 0.10% on the premium
-# SPAN-approx margin fraction of NOTIONAL for short legs (Stage-4 placeholder).
-SHORT_MARGIN_FRAC = 0.12
 
 
 class FnOPaperBroker:
@@ -149,15 +148,16 @@ class FnOPaperBroker:
         premium = raw_premium * (1 + SLIPPAGE_PCT * (1 if side == 'BUY' else -1))
         premium = max(premium, 0.05)
         qty = lots * inst.lot_size
-        notional = (strike if opt_type != 'FUT' else spot) * qty
 
-        # Capital to reserve: long option = premium debit (max loss);
-        # short option / future = SPAN-approx margin (Stage-4 placeholder).
+        # Capital to reserve: long option = the premium actually PAID (max loss,
+        # slippage included); short option / future = scenario-based SPAN-approx.
         if side == 'BUY' and opt_type in ('CE', 'PE'):
-            margin = premium * qty
+            margin = round(premium * qty, 2)
+            span = {'margin': margin, 'scan_loss': margin, 'exposure': 0.0}
         else:
-            margin = max(notional * SHORT_MARGIN_FRAC, premium * qty)
-        margin = round(margin, 2)        # reserve and release the SAME value
+            span = span_margin(spot, strike, t, max(self._vix, 1.0) / 100.0,
+                               opt_type, side, qty)
+            margin = span['margin']      # reserve and release the SAME value
 
         if not self._cash.reserve_capital(margin):
             return {'ok': False, 'error': f'insufficient capital for margin ₹{margin:,.0f}'}
@@ -189,7 +189,9 @@ class FnOPaperBroker:
         log.info('FNO FILL: %s %s %dx%d @%.2f (margin %.0f)',
                  side, inst.tradingsymbol, lots, inst.lot_size, premium, margin)
         return {'ok': True, 'trade_id': trade_id, 'premium': round(premium, 2),
-                'qty': qty, 'margin': round(margin, 2),
+                'qty': qty, 'margin': margin,
+                'scan_loss': span['scan_loss'], 'exposure': span['exposure'],
+                'margin_approx': True,
                 'tradingsymbol': inst.tradingsymbol, 'theoretical': True}
 
     def _persist_open(self, pos: dict):

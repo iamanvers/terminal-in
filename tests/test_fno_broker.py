@@ -2,7 +2,8 @@
 
 import pytest
 
-from terminal_in.execution.fno_paper_broker import FnOPaperBroker, SHORT_MARGIN_FRAC
+from terminal_in.execution.fno_paper_broker import FnOPaperBroker
+from terminal_in.risk.span_margin import span_margin
 
 
 class FakeCash:
@@ -69,18 +70,19 @@ def test_long_call_profit_on_spot_rise():
     assert b._cash.reserved == pytest.approx(0.0, abs=1e-6)   # margin released
 
 
-def test_short_option_uses_span_margin_not_premium():
+def test_short_option_uses_scenario_span_margin():
     b = _broker()
     b._spot[256265] = 22000.0
+    b._vix = 14.0
     r = b.place_order({'underlying': 'NIFTY', 'expiry': '2026-08-27',
                        'strike': 22000, 'opt_type': 'CE', 'side': 'SELL', 'lots': 1})
-    qty = 75
-    # short margin = max(notional × SPAN-approx, premium liability) — assert the
-    # rule holds regardless of which term dominates, and that for a near-dated
-    # ATM short the SPAN-notional term wins (margin ≫ the premium received).
-    expected = round(max(22000 * qty * SHORT_MARGIN_FRAC, r['premium'] * qty), 2)
+    # broker margin must equal the SPAN-approx model for this short leg
+    from terminal_in.data_ingest import fno_instruments as fno
+    t = fno._t_years('2026-08-27')
+    expected = span_margin(22000.0, 22000.0, t, 0.14, 'CE', 'SELL', 75)['margin']
     assert r['margin'] == pytest.approx(expected, rel=1e-6)
-    assert r['margin'] >= r['premium'] * qty       # margin covers the premium
+    assert r['scan_loss'] > 0 and r['exposure'] > 0      # scenario loss + exposure
+    assert r['margin_approx'] is True
 
 
 def test_expiry_square_off_settles_intrinsic():

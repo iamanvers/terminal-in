@@ -119,3 +119,45 @@ def test_tradingsymbol_format():
     assert inst.tradingsymbol == 'NIFTY26JAN22000CE'
     assert inst.lot_size == 75
     assert inst.underlying_token == 256265
+
+
+# ── SPAN-approx margin (Stage 4) ────────────────────────────────────────────────
+
+from terminal_in.risk.span_margin import span_margin, scan_range
+
+
+def test_span_long_option_margin_is_just_premium():
+    from terminal_in.execution.options_pricing import bs_price
+    m = span_margin(22000, 22000, 30 / 365, 0.14, 'CE', 'BUY', 75)
+    prem = bs_price(22000, 22000, 30 / 365, 0.14, 'CE')
+    assert m['margin'] == pytest.approx(prem * 75, rel=1e-6)   # premium = max loss
+    assert m['exposure'] == 0.0
+
+
+def test_span_short_atm_costs_more_than_otm():
+    # the whole point of SPAN over a flat %: an ATM short carries MORE risk
+    # margin than a far-OTM short (more gamma exposure to the price scan).
+    atm = span_margin(22000, 22000, 30 / 365, 0.14, 'CE', 'SELL', 75)['margin']
+    otm = span_margin(22000, 24000, 30 / 365, 0.14, 'CE', 'SELL', 75)['margin']
+    assert atm > otm > 0
+
+
+def test_span_short_has_scan_plus_exposure():
+    m = span_margin(22000, 22000, 30 / 365, 0.14, 'CE', 'SELL', 75)
+    assert m['scan_loss'] > 0 and m['exposure'] > 0
+    assert m['margin'] == pytest.approx(m['scan_loss'] + m['exposure'], rel=1e-6)
+
+
+def test_span_future_margin_in_realistic_band():
+    # index future initial margin should land in a sane single/low-double-digit
+    # % of notional band (not the cash 30% rule).
+    qty, spot = 75, 22000.0
+    m = span_margin(spot, 0, 30 / 365, 0.14, 'FUT', 'BUY', qty)['margin']
+    pct = m / (spot * qty)
+    assert 0.05 <= pct <= 0.18
+
+
+def test_scan_range_floored_and_capped():
+    spot = 22000.0
+    assert scan_range(spot, 0.01) == pytest.approx(spot * 0.05)   # tiny vol -> floor 5%
+    assert scan_range(spot, 2.0) == pytest.approx(spot * 0.15)    # huge vol -> cap 15%
