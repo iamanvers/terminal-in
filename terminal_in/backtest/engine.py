@@ -202,7 +202,7 @@ def _lenses(row: pd.Series, regime: str) -> list[tuple[str, float]]:
 
 def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
                  planner: str = 'degraded', max_llm_calls: int = 150,
-                 progress_cb=None, should_stop=None) -> dict:
+                 progress_cb=None, should_stop=None, signals: str = 'lenses') -> dict:
     """Replay the live decision core. `planner`:
       'degraded' — the deterministic planner bar (fast, reproducible; default)
       'llm'      — the REAL TradePlanner LLM judge in the loop (sampled up to
@@ -243,6 +243,19 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
     if not data:
         raise RuntimeError('backtest: no symbols with >=250 real daily bars')
 
+    # unified calendar (no lookahead: act on t at t+1 open)
+    dates = sorted(set().union(*[set(d.index) for d in data.values()]))
+    dates = dates[-days:]
+    sectors = {s: registry.sector(t) for t, s in eq_tokens.items()}
+
+    # signals='strategies' → replay the REAL strategy_engine classes (S2/S3/S4/S5/
+    # S8 daily) via a historical MarketContext, instead of the orchestrator-lens
+    # mirror. Zero formula drift — it calls each strategy's own evaluate().
+    if signals == 'strategies':
+        return _strategy_engine_backtest(
+            data, all_1d, eq_tokens, sectors, regimes, vix_by_date, dates, days,
+            idx_tokens, progress_cb, should_stop)
+
     # ── the judge: the actual TradePlanner, detached from the live bus ──
     from terminal_in.config import load_config
     from terminal_in.agents.trade_planner import TradePlanner
@@ -255,11 +268,6 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
             log.info('backtest: planner=llm — LLM judge in the loop (budget=%d calls)', max_llm_calls)
         else:
             log.warning('backtest: planner=llm requested but Ollama unavailable → degraded baseline')
-
-    # unified calendar (no lookahead: act on t at t+1 open)
-    dates = sorted(set().union(*[set(d.index) for d in data.values()]))
-    dates = dates[-days:]
-    sectors = {s: registry.sector(t) for t, s in eq_tokens.items()}
 
     equity = CAPITAL
     positions: dict[str, Position] = {}
@@ -403,6 +411,113 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
                     'llm_batches': llm_calls, 'degraded_batches': degraded_calls,
                     'llm_budget': max_llm_calls, 'cancelled': stopped}
     return _report(closed, daily_equity, days, regimes, dates, planner_meta)
+
+
+def _strategy_engine_backtest(data, all_1d, eq_tokens, sectors, regimes, vix_by_date,
+                              dates, days, idx_tokens, progress_cb=None, should_stop=None) -> dict:
+    """Replay the REAL strategy_engine daily classes (S2/S3/S4/S5/S8) via a
+    historical MarketContext — calls each strategy's own evaluate(), zero drift.
+    Long-only cash (BUY signals); strategy_engine signals bypass the LLM planner
+    in live (engine → gate), so we route them straight to gate-lite → t+1 fill.
+    Heavier than the lens path (indicators recompute per day) — cancellable."""
+    from terminal_in.strategy_engine.engine import ALL_STRATEGIES
+    from terminal_in.strategy_engine.context import MarketContext
+    from terminal_in.data_ingest.instruments import KNOWN_TOKENS, registry
+
+    strats = [s for s in ALL_STRATEGIES if getattr(s, 'timeframe', '') == '1d']
+    # symbol→token for everything we have bars for (incl. NIFTY 50 / VIX so the
+    # index strategies can read them); frames by symbol drive exits + fills.
+    sym2tok = {s: t for s, t in KNOWN_TOKENS.items() if all_1d.get(t) is not None and len(all_1d[t]) >= 60}
+    tok2sym = {t: s for s, t in sym2tok.items()}
+    frames = {s: data.get(s) if data.get(s) is not None else _indicators(all_1d[t]) for s, t in sym2tok.items()}
+    raw = {t: all_1d[t] for t in sym2tok.values()}
+
+    equity = CAPITAL
+    positions: dict[str, Position] = {}
+    closed: list[Trade] = []
+    daily_equity: list[tuple[str, float]] = []
+    n_steps = len(dates) - 1
+    stopped = False
+
+    for i, d in enumerate(dates[:-1]):
+        if should_stop is not None and should_stop():
+            stopped = True; break
+        if i % 5 == 0 and progress_cb is not None:
+            progress_cb(i / max(n_steps, 1), {'day': i, 'total': n_steps, 'date': str(d)[:10],
+                                              'llm_calls': 0, 'trades': len(closed), 'open': len(positions)})
+        nxt = dates[i + 1]
+        regime = regimes.get(d, 'sideways')
+
+        # exits on today's bar (stop before target — conservative)
+        for sym in list(positions):
+            df = frames.get(sym)
+            if df is None or d not in df.index:
+                continue
+            row = df.loc[d]; t = positions[sym].trade; px = None
+            if float(row['low']) <= t.sl:    px, t.exit_reason = t.sl, 'stop_loss'
+            elif float(row['high']) >= t.target: px, t.exit_reason = t.target, 'target'
+            if px is not None:
+                fill = px * (1 - SLIPPAGE)
+                t.exit_price, t.exit_date = fill, str(d)[:10]
+                t.pnl = (fill - t.entry) * t.qty - COST_PER_TRADE
+                equity += t.pnl; closed.append(t); del positions[sym]
+
+        # build the historical context (only bars up to d — no lookahead)
+        ohlcv: dict[int, dict] = {}
+        last: dict[int, float] = {}
+        for sym, tok in sym2tok.items():
+            df = raw[tok]
+            pos = df.index.searchsorted(d, side='right')   # rows with date <= d
+            if pos <= 0:
+                continue
+            sl = df.iloc[:pos]
+            ohlcv[tok] = {'1d': sl}
+            last[tok] = float(sl['close'].iloc[-1])
+        ctx = MarketContext(
+            now=d, regime=regime, regime_confidence=0.7,
+            india_vix=float(vix_by_date.get(d, 14.0)), event_mask=1.0,
+            size_multiplier=REGIME_MULT.get(regime, 1.0), instruments=sym2tok,
+            _ohlcv=ohlcv, _last_prices=last)
+
+        # each real strategy rules; long-only cash → BUY only
+        for strat in strats:
+            try:
+                sig = strat.evaluate(ctx)
+            except Exception:
+                continue
+            if sig is None or sig.side != 'BUY':
+                continue
+            sym = (sig.metadata or {}).get('symbol') or tok2sym.get(sig.instrument_id)
+            if not sym or sym not in frames or nxt not in frames[sym].index or sym in positions:
+                continue
+            if len(positions) >= MAX_POSITIONS:
+                continue
+            sec = registry.sector(sym2tok[sym]) or 'other'
+            sec_n = sum(1 for p in positions.values() if p.sector == sec) + 1
+            if sec_n > SECTOR_FLOOR and sec_n / (len(positions) + 1) > SECTOR_CAP:
+                continue
+            entry = float(frames[sym].loc[nxt]['open']) * (1 + SLIPPAGE)
+            ref = sig.limit_price or last.get(sym2tok[sym], entry)
+            sl_dist = max(ref - sig.stop_loss, ref * 0.002)
+            tgt_dist = max(sig.target - ref, ref * 0.003)
+            qty = max(1, int((equity * RISK_PER_TRADE) / entry))
+            t = Trade(sym, strat.id, 'BUY', str(nxt)[:10], entry, entry - sl_dist, entry + tgt_dist,
+                      qty, regime=regime, ev=round(float(sig.confidence), 3), judge='strategy')
+            positions[sym] = Position(t, sec)
+            equity -= COST_PER_TRADE
+
+        mark = equity + sum(
+            (float(frames[s].loc[d]['close']) - p.trade.entry) * p.trade.qty
+            for s, p in positions.items() if d in frames[s].index)
+        daily_equity.append((str(d)[:10], mark))
+
+    if progress_cb is not None:
+        progress_cb(1.0, {'day': n_steps, 'total': n_steps, 'llm_calls': 0,
+                          'trades': len(closed), 'open': len(positions)})
+    meta = {'mode': 'strategy_engine', 'ollama_available': False, 'llm_batches': 0,
+            'degraded_batches': 0, 'llm_budget': 0, 'cancelled': stopped,
+            'strategies': sorted(s.id for s in strats)}
+    return _report(closed, daily_equity, days, regimes, dates, meta)
 
 
 def _report(closed: list[Trade], daily_equity: list, days: int,

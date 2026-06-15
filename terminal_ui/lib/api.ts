@@ -451,12 +451,13 @@ export type BacktestTrade = {
 }
 
 export type BacktestPlanner = {
-  mode: 'degraded' | 'llm'
+  mode: 'degraded' | 'llm' | 'strategy_engine'
   ollama_available: boolean
   llm_batches: number
   degraded_batches: number
   llm_budget: number
   cancelled?: boolean
+  strategies?: string[]
 }
 
 export type BacktestProgress = {
@@ -681,10 +682,11 @@ export const api = {
     }).then(r => r.json()) as Promise<{ ok: boolean; error?: string }>,
   backtestLatest: () => get<BacktestLatest>('/backtest/latest'),
   backtestStatus: () => get<BacktestRunStatus>('/backtest/run'),
-  backtestRun: (days = 730, planner: 'degraded' | 'llm' = 'degraded', symbols?: string[]) =>
+  backtestRun: (days = 730, planner: 'degraded' | 'llm' = 'degraded',
+                signals: 'lenses' | 'strategies' = 'lenses', symbols?: string[]) =>
     fetch(`${BASE}/backtest/run`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ days, planner, symbols }),
+      body: JSON.stringify({ days, planner, signals, symbols }),
     }).then(r => r.json()) as Promise<{ ok: boolean; error?: string; params?: unknown }>,
   backtestCancel: () =>
     fetch(`${BASE}/backtest/cancel`, { method: 'POST' }).then(r => r.json()) as Promise<{ ok: boolean; error?: string }>,

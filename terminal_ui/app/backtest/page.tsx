@@ -230,6 +230,7 @@ export default function BacktestPage() {
   const [error, setError]     = useState<string | null>(null)
   const [days, setDays]       = usePersistedState('tin.backtest.days', 730)
   const [planner, setPlanner] = usePersistedState<'degraded' | 'llm'>('tin.backtest.planner', 'degraded')
+  const [source, setSource]   = usePersistedState<'lenses' | 'strategies'>('tin.backtest.source', 'lenses')
   const [startedMs, setStarted] = useState<number | null>(null)
   const [progress, setProgress] = useState<BacktestProgress | null>(null)
   const [cancelling, setCancelling] = useState(false)
@@ -271,7 +272,7 @@ export default function BacktestPage() {
   async function run() {
     setError(null); setActive(true); setStarted(Date.now()); setProgress(null); setCancelling(false)
     try {
-      const res = await api.backtestRun(days, planner)
+      const res = await api.backtestRun(days, planner, source)
       if (!res.ok) { setError(res.error ?? 'failed to start'); setActive(false); return }
       if (pollRef.current) clearInterval(pollRef.current)
       pollRef.current = setInterval(poll, 2500)
@@ -309,12 +310,28 @@ export default function BacktestPage() {
             ))}
           </div>
         </div>
-        {/* judge: deterministic degraded bar vs the real LLM planner in the loop */}
+        {/* signal source: orchestrator lenses (agentic path) vs the real strategy_engine classes */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+          <span style={{ fontSize: 8, color: C.dim, letterSpacing: '.12em', fontWeight: 700 }}>SOURCE</span>
+          <div style={{ display: 'flex', gap: 3, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
+            {([['lenses', 'LENSES'], ['strategies', 'STRATEGIES']] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setSource(k)} disabled={active}
+                title={k === 'strategies'
+                  ? 'Replay the real strategy_engine classes (S2/S3/S4/S5/S6/S8) — bypasses the LLM planner, like live'
+                  : 'Orchestrator 6-lens scan → planner (the agentic path)'}
+                style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: '.04em', padding: '5px 11px', border: 'none', cursor: active ? 'default' : 'pointer',
+                  background: source === k ? C.accent : 'transparent', color: source === k ? C.onAccent : C.sub,
+                }}>{label}</button>
+            ))}
+          </div>
+        </div>
+        {/* judge: deterministic degraded bar vs the real LLM planner in the loop (lenses only) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start', opacity: source === 'strategies' ? 0.4 : 1 }}>
           <span style={{ fontSize: 8, color: C.dim, letterSpacing: '.12em', fontWeight: 700 }}>JUDGE</span>
           <div style={{ display: 'flex', gap: 3, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
             {([['degraded', 'DEGRADED'], ['llm', 'LLM JUDGE']] as const).map(([k, label]) => (
-              <button key={k} onClick={() => setPlanner(k)} disabled={active}
+              <button key={k} onClick={() => setPlanner(k)} disabled={active || source === 'strategies'}
                 title={k === 'llm'
                   ? 'Put the real Ollama planner in the loop (sampled — slower)'
                   : 'Deterministic planner bar (fast, reproducible)'}
@@ -381,12 +398,13 @@ export default function BacktestPage() {
           {/* Summary metrics */}
           <div className="panel" style={{ flexShrink: 0, height: 'auto' }}>
             <div className="panel-header">RESULT
-              <span style={{ marginLeft: 8, fontSize: 9, fontWeight: 700, letterSpacing: '.05em', padding: '1px 7px', borderRadius: 3,
-                color: r.planner?.mode === 'llm' ? C.teal : C.steel,
-                background: (r.planner?.mode === 'llm' ? C.teal : C.steel) + '1A',
-                border: `1px solid ${(r.planner?.mode === 'llm' ? C.teal : C.steel)}40` }}>
-                {r.planner?.mode === 'llm' ? '⚖ LLM JUDGE' : 'DEGRADED BAR'}
-              </span>
+              {(() => {
+                const m = r.planner?.mode
+                const label = m === 'llm' ? '⚖ LLM JUDGE' : m === 'strategy_engine' ? '⚙ STRATEGY ENGINE' : 'DEGRADED BAR'
+                const col = m === 'llm' ? C.teal : m === 'strategy_engine' ? C.accentBright : C.steel
+                return <span style={{ marginLeft: 8, fontSize: 9, fontWeight: 700, letterSpacing: '.05em', padding: '1px 7px', borderRadius: 3,
+                  color: col, background: col + '1A', border: `1px solid ${col}40` }}>{label}</span>
+              })()}
               {r.planner?.cancelled && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, color: C.warn }} title="run was cancelled — this is the partial result up to the stop point">⚠ PARTIAL (cancelled)</span>}
               <span style={{ marginLeft: 'auto', color: C.muted, fontWeight: 400 }}>
                 {r.engine} · {r.days >= 365 ? `${(r.days / 365).toFixed(0)}y` : `${r.days}d`} · {r.symbols_tested} symbols · {new Date(r.ts).toLocaleString('en-IN', { hour12: false, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}

@@ -55,6 +55,9 @@ def run():
     planner = body.get('planner', 'degraded')
     if planner not in ('degraded', 'llm'):
         return jsonify({'ok': False, 'error': "planner must be 'degraded' or 'llm'"}), 400
+    sig = body.get('signals', 'lenses')
+    if sig not in ('lenses', 'strategies'):
+        return jsonify({'ok': False, 'error': "signals must be 'lenses' or 'strategies'"}), 400
 
     from terminal_in.backtest.engine import run_backtest
 
@@ -67,9 +70,9 @@ def run():
         t0 = time.time()
         try:
             _run['result'] = run_backtest(db=_db, days=days, symbols=symbols, planner=planner,
-                                          progress_cb=_progress, should_stop=_stop.is_set)
-            log.info('backtest done in %.1fs (%d trades, planner=%s%s)', time.time() - t0,
-                     _run['result'].get('trades', {}).get('n', 0), planner,
+                                          signals=sig, progress_cb=_progress, should_stop=_stop.is_set)
+            log.info('backtest done in %.1fs (%d trades, signals=%s planner=%s%s)', time.time() - t0,
+                     _run['result'].get('trades', {}).get('n', 0), sig, planner,
                      ' CANCELLED' if _stop.is_set() else '')
         except Exception as e:
             log.exception('backtest failed')
@@ -79,7 +82,7 @@ def run():
 
     _run.update(active=True, result=None, error=None, progress=None,
                 started_ms=int(time.time() * 1000),
-                params={'days': days, 'symbols': symbols, 'planner': planner})
+                params={'days': days, 'symbols': symbols, 'planner': planner, 'signals': sig})
     Thread(target=_work, daemon=True, name='backtest').start()
     return jsonify({'ok': True, 'params': _run['params']})
 
