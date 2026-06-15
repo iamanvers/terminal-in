@@ -1,11 +1,12 @@
 'use client'
 import { THEME } from '@/lib/theme'
 /**
- * BACKTEST MODULE (PRD P2) — replay real daily OHLCV through the deterministic
- * core of the live pipeline (regime → lenses → EV → persistence → planner bar →
- * gate-lite → next-open fills) and report it. Strictly real data; no lookahead
- * (a signal on bar t fills at t+1 open). Long-only cash segment; the LLM planner
- * is represented by its deterministic degraded bar (EV ≥ 1.2, conf ≥ 0.45).
+ * BACKTEST MODULE (PRD P2) — replay real daily OHLCV through the live decision
+ * core (regime → lenses → EV → persistence → TradePlanner → gate-lite →
+ * next-open fills) and report it. Strictly real data; no lookahead (a signal on
+ * bar t fills at t+1 open). v3 agentic replay: the JUDGE toggle runs the real
+ * Ollama planner in the loop (sampled) or the deterministic degraded bar, with a
+ * per-judge comparison. Long-only cash segment.
  *
  * This is the keystone eval surface: every strategy claim, and later the
  * LightGBM edge model + the M6 world-model, is gated by walk-forward here.
@@ -166,6 +167,52 @@ function RegimeExposure({ regimeDays, colorFor }: { regimeDays: Record<string, n
   )
 }
 
+// ── Judge comparison: LLM planner vs the deterministic degraded bar ───────────
+// The v3 headline — did putting the real LLM judge in the loop beat the bar?
+function JudgeCompare({ perJudge, planner }: {
+  perJudge: Record<string, BacktestStat>; planner?: { llm_batches: number; degraded_batches: number; ollama_available: boolean }
+}) {
+  const llm = perJudge.llm, deg = perJudge.degraded
+  if (!llm || !deg || (llm.n ?? 0) === 0) return null   // only meaningful on an LLM run
+  const cols: [string, BacktestStat, string][] = [
+    ['LLM JUDGE', llm, C.teal],
+    ['DEGRADED BAR', deg, C.steel],
+  ]
+  const llmWR = llm.win_rate ?? 0, degWR = deg.win_rate ?? 0
+  const llmAvg = llm.avg_pnl ?? 0, degAvg = deg.avg_pnl ?? 0
+  const edge = llmAvg - degAvg
+  return (
+    <div className="panel" style={{ flexShrink: 0, borderColor: C.teal + '55' }}>
+      <div className="panel-header" style={{ color: C.teal }}>JUDGE COMPARISON · LLM vs DEGRADED
+        <span style={{ marginLeft: 'auto', color: C.dim, fontWeight: 400, fontSize: 9.5 }}>
+          {planner ? `${planner.llm_batches} batches LLM-judged · ${planner.degraded_batches} degraded` : ''}
+        </span>
+      </div>
+      <div className="panel-body" style={{ padding: '12px 14px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+        {cols.map(([label, s, col]) => (
+          <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 12px', background: C.card, borderRadius: 4, borderLeft: `2px solid ${col}` }}>
+            <span style={{ fontSize: 9, color: col, letterSpacing: '.07em', fontWeight: 700 }}>{label}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}><span style={{ color: C.muted }}>trades</span><span style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{s.n}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}><span style={{ color: C.muted }}>win rate</span><span style={{ color: (s.win_rate ?? 0) >= 0.5 ? C.green : C.sub, fontVariantNumeric: 'tabular-nums' }}>{((s.win_rate ?? 0) * 100).toFixed(0)}%</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}><span style={{ color: C.muted }}>avg trade</span><span style={{ color: pnlColor(s.avg_pnl), fontVariantNumeric: 'tabular-nums' }}>{fmtINR(s.avg_pnl)}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}><span style={{ color: C.muted }}>total P&L</span><span style={{ color: pnlColor(s.total_pnl), fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{fmtINR(s.total_pnl)}</span></div>
+          </div>
+        ))}
+        {/* verdict */}
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6, padding: '8px 12px' }}>
+          <span style={{ fontSize: 9, color: C.dim, letterSpacing: '.07em', fontWeight: 700 }}>LLM EDGE (avg trade)</span>
+          <span style={{ fontSize: 22, fontWeight: 700, color: edge >= 0 ? C.green : C.red, fontVariantNumeric: 'tabular-nums' }}>{edge >= 0 ? '+' : ''}{fmtINR(edge)}</span>
+          <span style={{ fontSize: 9.5, color: C.muted, lineHeight: 1.5 }}>
+            {edge >= 0
+              ? `the LLM judge's picks averaged ${fmtINR(Math.abs(edge))} more per trade (${(llmWR * 100).toFixed(0)}% vs ${(degWR * 100).toFixed(0)}% WR)`
+              : `the degraded bar beat the LLM here by ${fmtINR(Math.abs(edge))}/trade — sample is small, not conclusive`}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Metric({ label, value, color, sub }: { label: string; value: string; color: string; sub?: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -181,6 +228,7 @@ export default function BacktestPage() {
   const [active, setActive]   = useState(false)
   const [error, setError]     = useState<string | null>(null)
   const [days, setDays]       = useState(730)
+  const [planner, setPlanner] = useState<'degraded' | 'llm'>('degraded')
   const [startedMs, setStarted] = useState<number | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -207,7 +255,7 @@ export default function BacktestPage() {
   async function run() {
     setError(null); setActive(true); setStarted(Date.now())
     try {
-      const res = await api.backtestRun(days)
+      const res = await api.backtestRun(days, planner)
       if (!res.ok) { setError(res.error ?? 'failed to start'); setActive(false); return }
       if (pollRef.current) clearInterval(pollRef.current)
       pollRef.current = setInterval(poll, 2500)
@@ -232,20 +280,46 @@ export default function BacktestPage() {
           </div>
         </div>
         <div style={{ flex: 1 }} />
-        <div style={{ display: 'flex', gap: 3, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
-          {HORIZONS.map(hz => (
-            <button key={hz.days} onClick={() => setDays(hz.days)} disabled={active}
-              style={{
-                fontSize: 10, fontWeight: 700, letterSpacing: '.04em', padding: '5px 11px', border: 'none', cursor: active ? 'default' : 'pointer',
-                background: days === hz.days ? C.accent : 'transparent', color: days === hz.days ? '#fff' : C.sub,
-              }}>{hz.label}</button>
-          ))}
+        {/* horizon */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+          <span style={{ fontSize: 8, color: C.dim, letterSpacing: '.12em', fontWeight: 700 }}>HORIZON</span>
+          <div style={{ display: 'flex', gap: 3, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
+            {HORIZONS.map(hz => (
+              <button key={hz.days} onClick={() => setDays(hz.days)} disabled={active}
+                style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: '.04em', padding: '5px 11px', border: 'none', cursor: active ? 'default' : 'pointer',
+                  background: days === hz.days ? C.accent : 'transparent', color: days === hz.days ? '#fff' : C.sub,
+                }}>{hz.label}</button>
+            ))}
+          </div>
+        </div>
+        {/* judge: deterministic degraded bar vs the real LLM planner in the loop */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+          <span style={{ fontSize: 8, color: C.dim, letterSpacing: '.12em', fontWeight: 700 }}>JUDGE</span>
+          <div style={{ display: 'flex', gap: 3, border: `1px solid ${C.border}`, borderRadius: 4, overflow: 'hidden' }}>
+            {([['degraded', 'DEGRADED'], ['llm', 'LLM JUDGE']] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setPlanner(k)} disabled={active}
+                title={k === 'llm'
+                  ? 'Put the real Ollama planner in the loop (sampled — slower)'
+                  : 'Deterministic planner bar (fast, reproducible)'}
+                style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: '.04em', padding: '5px 11px', border: 'none', cursor: active ? 'default' : 'pointer',
+                  background: planner === k ? (k === 'llm' ? C.teal : C.accent) : 'transparent',
+                  color: planner === k ? '#fff' : C.sub,
+                }}>{label}</button>
+            ))}
+          </div>
         </div>
         <button className="btn btn--primary" onClick={run} disabled={active}
-          title="Run the backtest over the selected horizon (CPU; a few seconds to ~1 min for 10y)">
+          title="Run the backtest over the selected horizon">
           {active ? '◷ RUNNING…' : '▶ RUN BACKTEST'}
         </button>
       </div>
+      {planner === 'llm' && !active && (
+        <div style={{ fontSize: 10, color: C.teal, padding: '0 4px', flexShrink: 0 }}>
+          ⚖ LLM judge in the loop — the real Ollama planner rules on each decision batch (sampled to the first ~400; minutes, not seconds). Falls back to the degraded bar past budget and if Ollama is offline.
+        </div>
+      )}
 
       {error && <div style={{ fontSize: 10.5, color: C.red, padding: '0 4px', flexShrink: 0 }}>⚠ {error}</div>}
       {active && <div style={{ fontSize: 10, color: C.muted, padding: '0 4px', flexShrink: 0 }}>◷ Replaying {days >= 365 ? `${(days / 365).toFixed(0)}y` : `${days}d`} across the universe… {elapsed != null ? `${elapsed}s` : ''}</div>}
@@ -261,6 +335,12 @@ export default function BacktestPage() {
           {/* Summary metrics */}
           <div className="panel" style={{ flexShrink: 0 }}>
             <div className="panel-header">RESULT
+              <span style={{ marginLeft: 8, fontSize: 9, fontWeight: 700, letterSpacing: '.05em', padding: '1px 7px', borderRadius: 3,
+                color: r.planner?.mode === 'llm' ? C.teal : C.steel,
+                background: (r.planner?.mode === 'llm' ? C.teal : C.steel) + '1A',
+                border: `1px solid ${(r.planner?.mode === 'llm' ? C.teal : C.steel)}40` }}>
+                {r.planner?.mode === 'llm' ? '⚖ LLM JUDGE' : 'DEGRADED BAR'}
+              </span>
               <span style={{ marginLeft: 'auto', color: C.muted, fontWeight: 400 }}>
                 {r.engine} · {r.days >= 365 ? `${(r.days / 365).toFixed(0)}y` : `${r.days}d`} · {r.symbols_tested} symbols · {new Date(r.ts).toLocaleString('en-IN', { hour12: false, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
               </span>
@@ -274,6 +354,9 @@ export default function BacktestPage() {
               <Metric label="TOTAL P&L" value={fmtINR(r.trades.total_pnl)} color={pnlColor(r.trades.total_pnl)} sub="realised" />
             </div>
           </div>
+
+          {/* Judge comparison (LLM runs only) — the v3 headline */}
+          {r.per_judge && <JudgeCompare perJudge={r.per_judge} planner={r.planner} />}
 
           {/* Equity curve + underwater drawdown */}
           <div className="panel" style={{ flexShrink: 0 }}>
@@ -303,7 +386,7 @@ export default function BacktestPage() {
             <div className="panel-body" style={{ overflow: 'auto' }}>
               <table>
                 <thead><tr>
-                  <th>EXIT</th><th>SYMBOL</th><th>LENSES</th><th>REGIME</th><th>ENTRY</th><th>EXIT</th><th>EV</th><th>REASON</th><th>P&L</th>
+                  <th>EXIT</th><th>SYMBOL</th><th>LENSES</th><th>JUDGE</th><th>REGIME</th><th>ENTRY</th><th>EXIT</th><th>EV</th><th>REASON</th><th>P&L</th>
                 </tr></thead>
                 <tbody>
                   {(r.recent_trades ?? []).map((t, i) => (
@@ -311,6 +394,9 @@ export default function BacktestPage() {
                       <td style={{ color: C.muted }}>{t.exit_date}</td>
                       <td style={{ color: C.text, fontWeight: 600 }}>{t.symbol}</td>
                       <td style={{ color: C.sub }}>{t.lens}</td>
+                      <td style={{ color: t.judge === 'llm' ? C.teal : C.muted, fontSize: 9.5 }}>
+                        {t.judge === 'llm' ? `⚖ llm${t.size_factor != null && t.size_factor !== 1 ? ` ×${t.size_factor}` : ''}` : 'bar'}
+                      </td>
                       <td style={{ color: REGIME_C[t.regime] ?? C.steel }}>{t.regime}</td>
                       <td style={{ color: C.sub, fontVariantNumeric: 'tabular-nums' }}>{t.entry}</td>
                       <td style={{ color: C.sub, fontVariantNumeric: 'tabular-nums' }}>{t.exit}</td>
@@ -324,9 +410,9 @@ export default function BacktestPage() {
             </div>
           </div>
 
-          {/* Honesty footnote — scope of the v2 engine */}
+          {/* Honesty footnote — scope of the v3 engine */}
           <div style={{ fontSize: 10, color: C.dim, padding: '2px 4px', flexShrink: 0 }}>
-            v2 scope: long-only cash segment; the LLM planner is represented by its deterministic degraded bar (EV ≥ 1.2, conf ≥ 0.45); regime is heuristic-mode parity (NIFTY + VIX, 3-day hysteresis); NEWS lens excluded (no historical headlines retained). Signals on bar <em>t</em> fill at <em>t+1</em> open; stop is checked before target (conservative).
+            v3 scope: candidates clear the orchestrator EV bar (≥1.2) + ≥2-scan persistence, then the <strong>real TradePlanner</strong> rules on each batch — the <em>LLM JUDGE</em> mode puts Ollama in the loop (sampled to the budget; degraded bar past it / when offline), <em>DEGRADED</em> uses the deterministic high bar (EV ≥ 1.5, conf ≥ 0.50, ≤3/scan). Long-only cash segment; regime is heuristic-mode parity (NIFTY + VIX, 3-day hysteresis); NEWS lens excluded (no historical headlines retained). Signals on bar <em>t</em> fill at <em>t+1</em> open; stop checked before target (conservative).
           </div>
         </>
       )}

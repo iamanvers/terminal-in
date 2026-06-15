@@ -446,6 +446,16 @@ export type BacktestTrade = {
   ev: number
   exit_reason: string
   pnl: number
+  judge?: 'llm' | 'degraded'
+  size_factor?: number
+}
+
+export type BacktestPlanner = {
+  mode: 'degraded' | 'llm'
+  ollama_available: boolean
+  llm_batches: number
+  degraded_batches: number
+  llm_budget: number
 }
 
 export type BacktestResult = {
@@ -460,6 +470,8 @@ export type BacktestResult = {
   trades: BacktestStat
   per_lens: Record<string, BacktestStat>
   per_regime: Record<string, BacktestStat>
+  per_judge?: Record<string, BacktestStat>
+  planner?: BacktestPlanner
   regime_days: Record<string, number>
   walk_forward_years: Record<string, BacktestStat>
   equity_curve: { date: string; equity: number }[]
@@ -471,7 +483,7 @@ export type BacktestRunStatus = {
   active: boolean
   error: string | null
   started_ms: number | null
-  params: { days: number; symbols: string[] | null } | null
+  params: { days: number; symbols: string[] | null; planner?: string } | null
   result: BacktestResult | null
 }
 
@@ -662,11 +674,11 @@ export const api = {
     }).then(r => r.json()) as Promise<{ ok: boolean; error?: string }>,
   backtestLatest: () => get<BacktestLatest>('/backtest/latest'),
   backtestStatus: () => get<BacktestRunStatus>('/backtest/run'),
-  backtestRun: (days = 730, symbols?: string[]) =>
+  backtestRun: (days = 730, planner: 'degraded' | 'llm' = 'degraded', symbols?: string[]) =>
     fetch(`${BASE}/backtest/run`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ days, symbols }),
-    }).then(r => r.json()),
+      body: JSON.stringify({ days, planner, symbols }),
+    }).then(r => r.json()) as Promise<{ ok: boolean; error?: string; params?: unknown }>,
   symbolSearch: (q: string, limit = 15) =>
     get<NSESymbol[]>(`/agents/symbols/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 }

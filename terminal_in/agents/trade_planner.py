@@ -79,7 +79,7 @@ class Verdict:
 
 
 class TradePlanner:
-    def __init__(self, db, config, memory, learner=None):
+    def __init__(self, db, config, memory, learner=None, attach_bus=True):
         self._db      = db
         self._config  = config
         self._memory  = memory
@@ -93,9 +93,13 @@ class TradePlanner:
         self._last_latency_ms: int | None = None
         self._plan_count = 0
 
-        registry.register('PLANNER', 'orchestrator', 'LLM Trade Judge')
-        bus.subscribe('planner.candidates', self._enqueue)
-        log.info('TradePlanner initialised (model=%s, timeout=%ds)', OLLAMA_MODEL, PLAN_TIMEOUT_S)
+        # attach_bus=False → standalone judge (backtest replay): no registry
+        # entry, no live 'planner.candidates' subscription. judge_batch() and
+        # the LLM/degraded path work identically without the bus.
+        if attach_bus:
+            registry.register('PLANNER', 'orchestrator', 'LLM Trade Judge')
+            bus.subscribe('planner.candidates', self._enqueue)
+            log.info('TradePlanner initialised (model=%s, timeout=%ds)', OLLAMA_MODEL, PLAN_TIMEOUT_S)
 
     # ── Public state for API/UI ──────────────────────────────────────────────
 
@@ -146,15 +150,36 @@ class TradePlanner:
     # ── Planning round ───────────────────────────────────────────────────────
 
     def _plan(self, batch: dict) -> None:
+        if not (batch.get('candidates') or []):
+            return
+        verdicts, mode, latency_ms = self.judge_batch(batch, use_llm=True)
+        if not verdicts:
+            return
+        if mode == 'degraded':
+            log.warning('Planner: DEGRADED mode — deterministic high-bar verdicts '
+                        '(Ollama unavailable or output invalid)')
+        self._mode = mode
+        self._last_latency_ms = latency_ms
+        self._plan_count += 1
+        self._emit(batch, verdicts, mode, latency_ms)
+
+    def judge_batch(self, batch: dict, use_llm: bool = True) -> tuple[list[Verdict], str, int]:
+        """Rule on a candidate batch and return (verdicts, mode, latency_ms).
+
+        Pure: no bus publish, no DecisionMemory write — so the backtest engine
+        can replay the EXACT live judging logic (formula parity). `use_llm=False`
+        forces the deterministic degraded bar without probing Ollama (lets a
+        backtest run a clean degraded baseline, or skip the LLM once a sampling
+        budget is spent)."""
         candidates = batch.get('candidates') or []
         if not candidates:
-            return
+            return [], 'idle', 0
 
         t0 = time.monotonic()
         verdicts: list[Verdict] | None = None
         mode = 'degraded'
 
-        if self._ollama_available():
+        if use_llm and self._ollama_available():
             raw = self._call_llm(self._build_messages(batch))
             if raw is not None:
                 verdicts = self._validate(raw, candidates)
@@ -170,14 +195,8 @@ class TradePlanner:
 
         if verdicts is None:
             verdicts = self._degraded_verdicts(candidates)
-            log.warning('Planner: DEGRADED mode — deterministic high-bar verdicts '
-                        '(Ollama unavailable or output invalid)')
 
-        latency_ms = int((time.monotonic() - t0) * 1000)
-        self._mode = mode
-        self._last_latency_ms = latency_ms
-        self._plan_count += 1
-        self._emit(batch, verdicts, mode, latency_ms)
+        return verdicts, mode, int((time.monotonic() - t0) * 1000)
 
     # ── Prompt construction ──────────────────────────────────────────────────
 

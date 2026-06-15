@@ -76,6 +76,8 @@ class Trade:
     exit_price: float = 0.0
     exit_reason: str = ''
     pnl: float = 0.0
+    judge: str = 'degraded'   # which judge approved this entry: 'llm' | 'degraded'
+    size_factor: float = 1.0  # planner size multiplier applied to Kelly qty
 
 
 @dataclass
@@ -198,7 +200,13 @@ def _lenses(row: pd.Series, regime: str) -> list[tuple[str, float]]:
     return out
 
 
-def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None) -> dict:
+def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
+                 planner: str = 'degraded', max_llm_calls: int = 400) -> dict:
+    """Replay the live decision core. `planner`:
+      'degraded' — the deterministic planner bar (fast, reproducible; default)
+      'llm'      — the REAL TradePlanner LLM judge in the loop (sampled up to
+                   max_llm_calls Ollama calls; degraded for batches past budget).
+    Both routes go through TradePlanner.judge_batch — true formula parity."""
     if db is None:
         from terminal_in.config import load_config
         from terminal_in.db import DB
@@ -206,16 +214,20 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None) -> 
     from terminal_in.data_ingest.instruments import KNOWN_TOKENS, registry
     registry.load_stubs()
 
+    planner = planner if planner in ('degraded', 'llm') else 'degraded'
+
     eq_tokens = {t: s for s, t in KNOWN_TOKENS.items()
                  if registry.sector(t) not in ('index',)}
     if symbols:
         eq_tokens = {t: s for t, s in eq_tokens.items() if s in symbols}
 
-    # index series for the market regime
+    # index series for the market regime + per-day VIX (planner context)
     idx_tokens = [KNOWN_TOKENS.get('NIFTY 50'), KNOWN_TOKENS.get('INDIA VIX')]
     all_1d = db.get_ohlcv_1d_all(list(eq_tokens) + [t for t in idx_tokens if t],
                                  limit=days + 300)
     regimes = _regime_series(all_1d.get(idx_tokens[0]), all_1d.get(idx_tokens[1]))
+    vix_df = all_1d.get(idx_tokens[1])
+    vix_by_date = {d: float(v) for d, v in vix_df['close'].items()} if vix_df is not None else {}
 
     data: dict[str, pd.DataFrame] = {}
     for tok, sym in eq_tokens.items():
@@ -227,6 +239,19 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None) -> 
     if not data:
         raise RuntimeError('backtest: no symbols with >=250 real daily bars')
 
+    # ── the judge: the actual TradePlanner, detached from the live bus ──
+    from terminal_in.config import load_config
+    from terminal_in.agents.trade_planner import TradePlanner
+    judge = TradePlanner(db, load_config(), memory=None, attach_bus=False)
+    ollama_ok = False
+    if planner == 'llm':
+        ollama_ok = judge._ollama_available()
+        if ollama_ok:
+            judge._warmup()
+            log.info('backtest: planner=llm — LLM judge in the loop (budget=%d calls)', max_llm_calls)
+        else:
+            log.warning('backtest: planner=llm requested but Ollama unavailable → degraded baseline')
+
     # unified calendar (no lookahead: act on t at t+1 open)
     dates = sorted(set().union(*[set(d.index) for d in data.values()]))
     dates = dates[-days:]
@@ -237,6 +262,8 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None) -> 
     closed: list[Trade] = []
     persist: dict[str, int] = {}            # symbol → consecutive candidate days
     daily_equity: list[tuple[str, float]] = []
+    llm_calls = 0                           # batches LLM-judged (sampling counter)
+    degraded_calls = 0
 
     for i, d in enumerate(dates[:-1]):
         nxt = dates[i + 1]
@@ -262,8 +289,9 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None) -> 
                 closed.append(t)
                 del positions[sym]
 
-        # ── candidates on bar d (live EV formula), executed at nxt open ──
+        # ── eligible candidates on bar d (orchestrator EV bar + persistence) ──
         seen_today: set[str] = set()
+        eligible: list[dict] = []
         for sym, df in data.items():
             if d not in df.index or nxt not in df.index:
                 continue
@@ -288,24 +316,55 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None) -> 
             rr = (tgt - price) / max(price - sl, 1e-9)
             ev = avg_conf * rr * vol_factor * conv_bonus        # live formula
 
-            if ev < MIN_EV or avg_conf < MIN_CONF:              # planner bar
+            if ev < MIN_EV or avg_conf < MIN_CONF:              # orchestrator eligibility
                 continue
-            if len(positions) >= MAX_POSITIONS:                  # gate-lite
-                continue
-            sec = sectors.get(sym, 'other')
-            sec_n = sum(1 for p in positions.values() if p.sector == sec) + 1
-            if sec_n > SECTOR_FLOOR and sec_n / (len(positions) + 1) > SECTOR_CAP:
-                continue
+            eligible.append({
+                'symbol': sym, 'side': 'BUY', 'ev': round(ev, 3),
+                'confidence': round(avg_conf, 3), 'conf_smoothed': round(avg_conf, 3),
+                'persistence': persist[sym], 'rr': round(rr, 2), 'rsi': float(row['rsi']),
+                'vol_factor': round(vol_factor, 2), 'price': price,
+                'lenses': [{'strategy': l} for l, _ in lenses],
+                'atr': atr, 'strat': '+'.join(l for l, _ in lenses),
+            })
 
-            entry = float(df.loc[nxt]['open']) * (1 + SLIPPAGE)
-            # SL/target re-anchored on the actual fill, same ATR distances
-            sl_f, tgt_f = entry - 1.5 * atr, entry + 2.5 * atr
-            qty = max(1, int((equity * RISK_PER_TRADE) / entry))
-            strat = '+'.join(l for l, _ in lenses)
-            t = Trade(sym, strat, 'BUY', str(nxt)[:10], entry, sl_f, tgt_f, qty,
-                      regime=regime, ev=round(ev, 3))
-            positions[sym] = Position(t, sec)
-            equity -= COST_PER_TRADE
+        # ── the judge rules on the batch (LLM sampled within budget, else degraded) ──
+        if eligible:
+            use_llm = planner == 'llm' and ollama_ok and llm_calls < max_llm_calls
+            batch = {
+                'scan_id': i, 'regime': regime,
+                'india_vix': vix_by_date.get(d, 0.0), 'equity': equity, 'throttle': 0,
+                'open_positions': [
+                    {'symbol': s, 'side': p.trade.side, 'qty': p.trade.qty,
+                     'unrealized': (float(data[s].loc[d]['close']) - p.trade.entry) * p.trade.qty
+                                   if d in data[s].index else 0.0}
+                    for s, p in positions.items()],
+                'candidates': eligible,
+            }
+            verdicts, mode, _lat = judge.judge_batch(batch, use_llm=use_llm)
+            if mode == 'llm':
+                llm_calls += 1
+            else:
+                degraded_calls += 1
+
+            by_sym = {c['symbol']: c for c in eligible}
+            approved = [v for v in verdicts if v.action == 'approve' and v.symbol in by_sym]
+            approved.sort(key=lambda v: by_sym[v.symbol]['ev'], reverse=True)
+            for v in approved:
+                c = by_sym[v.symbol]
+                if len(positions) >= MAX_POSITIONS:                  # gate-lite
+                    continue
+                sec = sectors.get(v.symbol, 'other')
+                sec_n = sum(1 for p in positions.values() if p.sector == sec) + 1
+                if sec_n > SECTOR_FLOOR and sec_n / (len(positions) + 1) > SECTOR_CAP:
+                    continue
+                entry = float(data[v.symbol].loc[nxt]['open']) * (1 + SLIPPAGE)
+                atr = c['atr']
+                sl_f, tgt_f = entry - 1.5 * atr, entry + 2.5 * atr   # re-anchored on fill
+                qty = max(1, int((equity * RISK_PER_TRADE) / entry * v.size_factor))
+                t = Trade(v.symbol, c['strat'], 'BUY', str(nxt)[:10], entry, sl_f, tgt_f, qty,
+                          regime=regime, ev=c['ev'], judge=mode, size_factor=round(v.size_factor, 2))
+                positions[v.symbol] = Position(t, sec)
+                equity -= COST_PER_TRADE
 
         # reset persistence for symbols that produced no candidate today
         for sym in list(persist):
@@ -317,11 +376,14 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None) -> 
             for s, p in positions.items() if d in data[s].index)
         daily_equity.append((str(d)[:10], mark))
 
-    return _report(closed, daily_equity, days, regimes, dates)
+    planner_meta = {'mode': planner, 'ollama_available': ollama_ok,
+                    'llm_batches': llm_calls, 'degraded_batches': degraded_calls,
+                    'llm_budget': max_llm_calls}
+    return _report(closed, daily_equity, days, regimes, dates, planner_meta)
 
 
 def _report(closed: list[Trade], daily_equity: list, days: int,
-            regimes: dict, dates: list) -> dict:
+            regimes: dict, dates: list, planner_meta: dict | None = None) -> dict:
     eq = pd.Series({d: v for d, v in daily_equity})
     rets = eq.pct_change().dropna()
     dd = (eq / eq.cummax() - 1).min() if len(eq) else 0.0
@@ -342,6 +404,9 @@ def _report(closed: list[Trade], daily_equity: list, days: int,
                 for l in lens_names}
     per_regime = {r: stats([t for t in closed if t.regime == r])
                   for r in sorted({t.regime for t in closed})}
+    # who judged the entry: 'llm' vs 'degraded' (the v3 agentic-replay split)
+    per_judge = {j: stats([t for t in closed if t.judge == j])
+                 for j in sorted({t.judge for t in closed})}
     by_year: dict[str, list] = {}
     for t in closed:
         by_year.setdefault(t.exit_date[:4], []).append(t)
@@ -361,12 +426,15 @@ def _report(closed: list[Trade], daily_equity: list, days: int,
         {'symbol': t.symbol, 'lens': t.strategy, 'side': t.side, 'regime': t.regime,
          'entry_date': t.entry_date, 'exit_date': t.exit_date,
          'entry': round(t.entry, 2), 'exit': round(t.exit_price, 2),
-         'ev': t.ev, 'exit_reason': t.exit_reason, 'pnl': round(t.pnl)}
+         'ev': t.ev, 'exit_reason': t.exit_reason, 'pnl': round(t.pnl),
+         'judge': t.judge, 'size_factor': t.size_factor}
         for t in sorted(closed, key=lambda x: x.exit_date, reverse=True)[:60]
     ]
 
+    pm = planner_meta or {'mode': 'degraded'}
     result = {
-        'ts': int(time.time() * 1000), 'days': days, 'engine': 'v2-live-ev',
+        'ts': int(time.time() * 1000), 'days': days,
+        'engine': f"v3-{pm.get('mode', 'degraded')}",
         'capital': CAPITAL,
         'final_equity': round(float(eq.iloc[-1])) if len(eq) else CAPITAL,
         'return_pct': round((float(eq.iloc[-1]) / CAPITAL - 1) * 100, 2) if len(eq) else 0,
@@ -375,6 +443,8 @@ def _report(closed: list[Trade], daily_equity: list, days: int,
         'trades': stats(closed),
         'per_lens': per_lens,
         'per_regime': per_regime,
+        'per_judge': per_judge,
+        'planner': pm,
         'regime_days': regime_days,
         'walk_forward_years': {y: stats(ts) for y, ts in sorted(by_year.items())},
         'equity_curve': curve,
@@ -393,7 +463,10 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
     ap = argparse.ArgumentParser()
     ap.add_argument('--days', type=int, default=730)
+    ap.add_argument('--planner', choices=['degraded', 'llm'], default='degraded',
+                    help="'llm' puts the real Ollama planner in the loop (sampled)")
+    ap.add_argument('--max-llm-calls', type=int, default=400)
     args = ap.parse_args()
-    r = run_backtest(days=args.days)
+    r = run_backtest(days=args.days, planner=args.planner, max_llm_calls=args.max_llm_calls)
     print(json.dumps({k: v for k, v in r.items() if k != 'path'}, indent=1))
     print('->', r['path'])

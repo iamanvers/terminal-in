@@ -51,15 +51,18 @@ def run():
     symbols = body.get('symbols') or None
     if symbols is not None and not isinstance(symbols, list):
         return jsonify({'ok': False, 'error': 'symbols must be a list'}), 400
+    planner = body.get('planner', 'degraded')
+    if planner not in ('degraded', 'llm'):
+        return jsonify({'ok': False, 'error': "planner must be 'degraded' or 'llm'"}), 400
 
     from terminal_in.backtest.engine import run_backtest
 
     def _work():
         t0 = time.time()
         try:
-            _run['result'] = run_backtest(db=_db, days=days, symbols=symbols)
-            log.info('backtest done in %.1fs (%d trades)', time.time() - t0,
-                     _run['result'].get('trades', {}).get('n', 0))
+            _run['result'] = run_backtest(db=_db, days=days, symbols=symbols, planner=planner)
+            log.info('backtest done in %.1fs (%d trades, planner=%s)', time.time() - t0,
+                     _run['result'].get('trades', {}).get('n', 0), planner)
         except Exception as e:
             log.exception('backtest failed')
             _run['error'] = str(e)[:400]
@@ -68,7 +71,7 @@ def run():
 
     _run.update(active=True, result=None, error=None,
                 started_ms=int(time.time() * 1000),
-                params={'days': days, 'symbols': symbols})
+                params={'days': days, 'symbols': symbols, 'planner': planner})
     Thread(target=_work, daemon=True, name='backtest').start()
     return jsonify({'ok': True, 'params': _run['params']})
 
