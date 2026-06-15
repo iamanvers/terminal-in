@@ -100,6 +100,13 @@ Three feedback loops at three speeds — trade-by-trade control (supervisor), ba
 
 ## Quick start
 
+> **First time on a clean machine?** The launcher bootstraps from nothing —
+> it checks prerequisites (Python ≥ 3.11, Node ≥ 18, optional Ollama) and prints
+> install commands for anything missing, reuses whatever's already there (no
+> needless re-downloads), shows numbered progress, then opens the app in your
+> browser. Run `./start.sh --check` (or `.\start.ps1 -Check`) to verify your
+> machine first. Full walkthrough: **[docs/STARTUP.md](docs/STARTUP.md)**.
+
 **macOS / Linux** (browser-served on `localhost:5000`, no Node at runtime):
 
 ```bash
