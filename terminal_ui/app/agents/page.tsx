@@ -1314,13 +1314,18 @@ function FinancialAgentPanel() {
                       lineHeight: 1.65,
                     }}>
                       {renderAnswer(m.content)}
+                      {/* blinking caret on the message currently streaming in */}
+                      {loading && m.role === 'assistant' && i === messages.length - 1 && (
+                        <span style={{ display: 'inline-block', width: 7, height: 13, marginLeft: 2,
+                          background: C.teal, verticalAlign: 'text-bottom', animation: 'blink 1s step-end infinite' }} />
+                      )}
                     </div>
                     {m.toolCalls && m.toolCalls.length > 0 && <ToolCallAccordion calls={m.toolCalls} />}
                   </div>
                 )}
               </div>
             ))}
-            {loading && (
+            {loading && !(messages.length && messages[messages.length - 1].role === 'assistant' && messages[messages.length - 1].content) && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
                 <div style={{ display: 'flex', gap: 4 }}>
                   {[0,1,2].map(j => (
