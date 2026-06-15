@@ -40,10 +40,10 @@ The agentic core: actionable-only scan matrix, LLM Trade Planner verdicts with r
 |--------|-------|--------------|
 | **MARKET** | `/` | Live watchlist (72 NSE instruments), candlestick charts, news + FinBERT sentiment, global context (indices/FX/commodities), economic calendar |
 | **EQUITIES** | `/trade` | Cash cockpit: **portfolio statement** (composition, holdings with live marks, MIS/CNC products), positions book, order ticket, trade history, P&L attribution, equity curve |
-| **F&O** | `/fno` | Derivatives module: COCKPIT (index complex NIFTY/BANKNIFTY/FINNIFTY + lot sizes, India VIX, index signals) and **OPTION CHAIN** (per-strike premiums + greeks, expiry/strike, lot-based paper execution). Premiums are Black-Scholes theoretical (real spot + India VIX); rigorous SPAN margin gate is the next stage (see PRD) |
+| **F&O** | `/fno` | Derivatives module: COCKPIT (index complex NIFTY/BANKNIFTY/FINNIFTY + lot sizes, India VIX, index signals) and **OPTION CHAIN** (per-strike premiums + greeks, expiry/strike, lot-based paper execution). Paper premiums are Black-Scholes theoretical (real spot + India VIX); in live mode the **real Kite chain** (LTP/OI/volume, IV implied from LTP) is served. **SPAN-approx margin + portfolio greek caps + event-day limits** shipped |
 | **AGENTS** | `/agents` | The agentic core: actionable-only scan view, **LLM Trade Planner verdicts with reasoning**, supervisor control loop, decision log with hindsight, EventBus inspector, **streaming app-aware AI analyst** |
 | **TRAIN** | `/train` | **Recursive model training**: rebuild dataset from the system's own trades + judged decisions → LoRA fine-tune → loss metrics → run history |
-| **BACKTEST** | `/backtest` | **Walk-forward backtest** over 10y real OHLCV through the deterministic decision core (no lookahead): equity curve, per-lens/per-regime attribution, walk-forward-by-year, closed trades |
+| **BACKTEST** | `/backtest` | **Walk-forward backtest** over 10y real OHLCV (no lookahead): replays the live core with the **real Trade Planner in the loop** (degraded *or* sampled LLM, with a per-judge comparison) or the **real strategy_engine classes** (SOURCE toggle); equity curve, per-lens/per-regime/by-year attribution, progress bar + cancel |
 
 ## Architecture
 
@@ -94,7 +94,7 @@ Three feedback loops at three speeds — trade-by-trade control (supervisor), ba
 - **Regime classifier** — 6-state HMM (heuristic fallback until trained; degraded mode reported, never hidden)
 - **DSA** — monthly capital allocation across strategies: `0.40×regime_fit + 0.30×Bayesian_WR + 0.30×Sharpe`
 - **Risk** — 13-check pre-trade gate, sector concentration via full-universe sector map, drawdown/daily-loss caps, kill switch, margin check that *rejects* unpriceable orders
-- **Data** — real NSE OHLCV via yfinance (730d daily + 60d 5m, gap-aware backfill, 24h refresh), live quotes, FinBERT news sentiment
+- **Data** — real NSE OHLCV via yfinance (~10y daily back to 2016 + 60d 5m, gap-aware forward + backward backfill, 24h refresh), live quotes, FinBERT news sentiment
 - **Health** — `/api/health` reports every degraded subsystem; the UI badges them. No silent fallbacks anywhere in the signal path.
 - **Design system** — layered cool-dark surfaces under an embossed dot-matrix mesh (cursor acts as a soft lamp; the grid never moves), frosted-glass chrome, electric-blue accent ramp (gold strictly = warning), Geist Mono for data / Georgia for display. Single palette source: `terminal_ui/lib/theme.ts` + `styles/globals.css`.
 

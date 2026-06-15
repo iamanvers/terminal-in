@@ -288,9 +288,9 @@ export default function SignalFeedPanel() {
         {/* ── Events ───────────────────────────────────────── */}
         {tab === 'events' && (
           <>
-            <p style={{ fontSize: 10, color: '#71767F', lineHeight: 1.5, padding: '8px 12px', borderBottom: '1px solid #181B21' }}>
+            <p className="text-muted" style={{ fontSize: 10, lineHeight: 1.5, padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
               Upcoming market-moving events (RBI policy, FOMC, F&amp;O expiry, earnings). The risk
-              gate <strong style={{ color: '#AEB3BB' }}>blacks out or shrinks new trades</strong> around
+              gate <strong style={{ color: 'var(--text-2)' }}>blacks out or shrinks new trades</strong> around
               them — the status shows how much trading is allowed on each day.
             </p>
             {events.length === 0
