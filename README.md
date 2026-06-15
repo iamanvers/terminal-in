@@ -100,6 +100,17 @@ Three feedback loops at three speeds — trade-by-trade control (supervisor), ba
 
 ## Quick start
 
+**macOS / Linux** (browser-served on `localhost:5000`, no Node at runtime):
+
+```bash
+./start.sh                        # venv + deps + builds the static UI once, serves UI+API on :5000, opens the browser
+./start.sh --dev                  # Next.js hot-reload on :3000 + API on :5000
+./start.sh --rebuild-ui           # rebuild the static UI after UI changes
+#   --live (needs KITE_ACCESS_TOKEN) · --low-latency (HIGH priority + Python 3.14 JIT)
+```
+
+**Windows:**
+
 ```powershell
 # One-time setup
 .\start.ps1                       # creates venv, installs deps, starts everything
@@ -122,11 +133,11 @@ cd terminal_ui ; npm run dev                          # UI :3000
 .venv\Scripts\pytest tests\ -v                        # 191 tests
 ```
 
-**Dev vs shipped:** in development the backend serves on `localhost:5000` and you use a browser — convenient for iteration. The **packaged `.exe` is a self-serving desktop app**: it runs the backend on a private loopback port and hosts the UI in a native `TERMINAL//IN` window (WebView2), so there is no browser and no visible URL. Hardware maximization (`hw.apply()` — all logical cores) runs in both.
+**Platforms:** macOS / Linux run the **browser-served** single process (`./start.sh` → `localhost:5000`) — Flask serves the static UI cross-platform, no Node needed at runtime. The **packaged Windows `.exe` is a self-serving desktop app**: backend on a private loopback port, UI in a native `TERMINAL//IN` window (WebView2), no browser, no visible URL. Hardware maximization (`hw.apply()` — all logical cores) runs everywhere.
 
 Operator guide: [docs/USAGE.md](docs/USAGE.md) · Product specification: [docs/PRD.md](docs/PRD.md) · Legal & privacy: [docs/LEGAL.md](docs/LEGAL.md)
 
-`.env` keys: `MODE=paper|live`, `KITE_API_KEY/SECRET/ACCESS_TOKEN`, `NEWSAPI_KEY`, `INITIAL_CAPITAL`, `MAX_DD_PCT`, `DAILY_LOSS_CAP_PCT`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `PLANNER_ENABLED`.
+`.env` keys: `MODE=paper|live`, `KITE_API_KEY/SECRET/ACCESS_TOKEN`, `NEWSAPI_KEY`, `INITIAL_CAPITAL`, `MAX_DD_PCT`, `DAILY_LOSS_CAP_PCT`, `PLANNER_ENABLED`. **LLM backend:** `OLLAMA_HOST`/`OLLAMA_MODEL` (default), or set `LLM_BACKEND=openai` + `LLM_BASE_URL`/`LLM_MODEL` to point the Trade Planner at any OpenAI-compatible server — e.g. a local `llama-server` (llama.cpp), the path to dropping the Ollama dependency for distribution.
 
 ## Recursive training (TRAIN module)
 
@@ -149,8 +160,9 @@ TERMINAL//IN is a personal analysis and automation tool — **not investment adv
 
 ## Roadmap (detail in [docs/PRD.md](docs/PRD.md))
 
-- **P2** — F&O execution: ✅ option chain + lot-based paper fills + expiry square-off + SPAN-approx margin + **portfolio greek caps & event-day limits** shipped; live-mode Kite chain ingestion remains
-- **P2** — Backtest engine: ✅ shipped — walk-forward over 10y real OHLCV through the decision core, equity curve + attribution on `/backtest`
+- **P2** — F&O execution: ✅ option chain + lot-based paper fills + expiry square-off + SPAN-approx margin + portfolio greek caps & event-day limits + ✅ **live-mode Kite chain ingestion** (real LTP/OI/volume, IV implied from LTP)
+- **P2** — Backtest engine: ✅ walk-forward over 10y real OHLCV through the decision core + ✅ **v3: the real Trade Planner in the loop** (degraded *or* sampled Ollama LLM) with a per-judge comparison, progress bar + cancel. ⚠️ *remaining:* replay the full `strategy_engine` strategy suite (today it mirrors the S2/S4/S5/MOM lens subset in formula-parity)
+- **P2** — Cross-platform: ✅ **macOS/Linux browser-served** (`start.sh`); LLM backend pluggable (Ollama → `llama-server`). ⚠️ *remaining:* bundle `llama-server`+GGUF + migrate the AI analyst off Ollama to fully drop the dependency; GitHub-Releases auto-update
 - **P3** — Multi-asset: NSE CDS currency futures (USDINR), MCX commodities (gold/crude), then global venues
 - **P3** — Options strategies as first-class multi-leg positions (spreads, condors, greeks)
 

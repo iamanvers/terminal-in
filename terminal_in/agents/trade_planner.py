@@ -40,6 +40,14 @@ log = logging.getLogger(__name__)
 OLLAMA_BASE  = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
 OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen2.5:3b')
 
+# LLM backend — 'ollama' (default) or 'openai' (any OpenAI-compatible server,
+# e.g. a bundled llama.cpp `llama-server`, the path to dropping the Ollama
+# dependency for distribution). LLM_BASE_URL points at it; LLM_MODEL names the
+# served model. Default is unchanged so the live loop behaves exactly as before.
+LLM_BACKEND  = os.environ.get('LLM_BACKEND', 'ollama').lower()
+LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'http://localhost:8080')  # llama-server default
+LLM_MODEL    = os.environ.get('LLM_MODEL', OLLAMA_MODEL)
+
 PLAN_TIMEOUT_S   = int(os.environ.get('PLANNER_TIMEOUT_S', '60'))  # << 120s scan interval
 PROBE_TIMEOUT_S  = 3
 MAX_APPROVED     = 3
@@ -106,7 +114,7 @@ class TradePlanner:
     def get_state(self) -> dict:
         return {
             'mode':            self._mode,
-            'model':           OLLAMA_MODEL,
+            'model':           LLM_MODEL,
             'plan_count':      self._plan_count,
             'last_latency_ms': self._last_latency_ms,
             'last_verdict':    self._last_verdict,
@@ -244,24 +252,31 @@ class TradePlanner:
     # ── Ollama client ────────────────────────────────────────────────────────
 
     def _warmup(self):
-        """Load the model into Ollama's memory at startup so the first real
-        planning call doesn't spend ~30s on cold load inside its timeout."""
+        """Load the model into memory at startup so the first real planning call
+        doesn't spend ~30s on cold load inside its timeout."""
         if not self._ollama_available():
             return
         try:
-            self._session.post(
-                f'{OLLAMA_BASE}/api/generate',
-                json={'model': OLLAMA_MODEL, 'prompt': 'ok', 'stream': False,
-                      'options': {'num_predict': 1}},
-                timeout=PLAN_TIMEOUT_S,
-            )
-            log.info('Planner: model %s warmed up', OLLAMA_MODEL)
+            if LLM_BACKEND == 'openai':
+                self._call_llm([{'role': 'user', 'content': 'ok'}], timeout_s=PLAN_TIMEOUT_S, num_predict=1)
+            else:
+                self._session.post(
+                    f'{OLLAMA_BASE}/api/generate',
+                    json={'model': OLLAMA_MODEL, 'prompt': 'ok', 'stream': False,
+                          'options': {'num_predict': 1}},
+                    timeout=PLAN_TIMEOUT_S,
+                )
+            log.info('Planner: model %s warmed up (%s)', LLM_MODEL, LLM_BACKEND)
         except Exception as e:
             log.debug('Planner warmup failed (non-fatal): %s', str(e)[:80])
 
     def _ollama_available(self) -> bool:
+        """Backend-agnostic reachability probe (name kept for call sites)."""
         try:
-            r = self._session.get(f'{OLLAMA_BASE}/api/tags', timeout=PROBE_TIMEOUT_S)
+            if LLM_BACKEND == 'openai':
+                r = self._session.get(f'{LLM_BASE_URL}/v1/models', timeout=PROBE_TIMEOUT_S)
+            else:
+                r = self._session.get(f'{OLLAMA_BASE}/api/tags', timeout=PROBE_TIMEOUT_S)
             return r.status_code == 200
         except Exception:
             return False
@@ -269,6 +284,23 @@ class TradePlanner:
     def _call_llm(self, messages: list[dict], timeout_s: int | None = None,
                   num_predict: int = 500) -> str | None:
         try:
+            if LLM_BACKEND == 'openai':
+                # OpenAI-compatible (llama.cpp llama-server, vLLM, etc.)
+                r = self._session.post(
+                    f'{LLM_BASE_URL}/v1/chat/completions',
+                    json={
+                        'model':           LLM_MODEL,
+                        'messages':        messages,
+                        'temperature':     0.1,
+                        'max_tokens':      num_predict,
+                        'response_format': {'type': 'json_object'},
+                    },
+                    timeout=timeout_s or PLAN_TIMEOUT_S,
+                )
+                r.raise_for_status()
+                choices = r.json().get('choices') or []
+                return (choices[0].get('message') or {}).get('content') if choices else None
+            # Ollama native
             r = self._session.post(
                 f'{OLLAMA_BASE}/api/chat',
                 json={
@@ -283,7 +315,7 @@ class TradePlanner:
             r.raise_for_status()
             return (r.json().get('message') or {}).get('content') or None
         except Exception as e:
-            log.warning('Planner: LLM call failed: %s', str(e)[:120])
+            log.warning('Planner: LLM call failed (%s): %s', LLM_BACKEND, str(e)[:120])
             return None
 
     # ── Verdict validation ───────────────────────────────────────────────────
@@ -393,7 +425,7 @@ class TradePlanner:
             'scan_id':    batch.get('scan_id'),
             'ts':         int(time.time() * 1000),
             'mode':       mode,
-            'model':      OLLAMA_MODEL if mode == 'llm' else None,
+            'model':      LLM_MODEL if mode == 'llm' else None,
             'latency_ms': latency_ms,
             'fired':      fired,
             'verdicts': [

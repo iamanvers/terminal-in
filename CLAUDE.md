@@ -9,7 +9,8 @@ Bloomberg-style **agentic** algorithmic trading terminal for Indian markets (NSE
 .venv/Scripts/python.exe -m terminal_in.main
 
 # Run via launcher (also creates venv + installs deps)
-.\start.ps1
+.\start.ps1                       # Windows
+./start.sh                        # macOS/Linux — builds static UI + serves UI+API on :5000 (browser); --dev for :3000 hot-reload
 
 # Run tests (191 passing)
 .venv/Scripts/pytest tests/ -v
@@ -180,6 +181,10 @@ docs/PRD.md                         ← product requirements: F&O execution P2, 
 
 **Ollama** — `OLLAMA_HOST` (default localhost:11434), `OLLAMA_MODEL` (default qwen2.5:3b; `financial-analyst` = qwen + system prompt from `Modelfile`). Used by TradePlanner (trade loop) and financial_agent (chat). Planner: `PLANNER_ENABLED=true|false`.
 
+**LLM backend (pluggable, distribution path)** — TradePlanner's client is backend-agnostic: `LLM_BACKEND=ollama` (default, native `/api/chat`) or `LLM_BACKEND=openai` → OpenAI-compatible `/v1/chat/completions` at `LLM_BASE_URL` (default `:8080`) with model `LLM_MODEL` — lets a bundled llama.cpp `llama-server` replace Ollama. Default behaviour is unchanged. NOTE: only the planner is migrated; **financial_agent (AI analyst) still uses Ollama directly**, so fully dropping Ollama also needs the analyst moved + the binary/GGUF bundled.
+
+**Backtest v3** — `run_backtest(..., planner='degraded'|'llm', max_llm_calls=150, progress_cb, should_stop)` routes candidates through the REAL `TradePlanner.judge_batch` (degraded high bar OR sampled Ollama LLM in the loop), reports `per_judge` (LLM vs degraded) + a `planner` block + progress; `POST /api/backtest/cancel` aborts at the next step (partial result kept). LLM mode is slow on local HW (best 1–2Y). ⚠️ still mirrors the S2/S4/S5/MOM lens subset, NOT the full `strategy_engine` suite.
+
 ## Codebase Memory MCP (token-saving index)
 
 A **local, non-committed** MCP server (`codebase-memory-mcp`, DeusData) indexes this
@@ -218,7 +223,7 @@ Install: `pip install -r requirements.txt` (inside `.venv`).
 
 Python 3.14 on Windows 11. Interpreter: `.venv/Scripts/python.exe`.
 
-`.env`: `KITE_API_KEY`, `KITE_API_SECRET`, `KITE_ACCESS_TOKEN` (daily), `NEWSAPI_KEY`, `JWT_SECRET`, `MODE` (paper/live), `INITIAL_CAPITAL=1000000`, `MAX_DD_PCT=0.20`, `DAILY_LOSS_CAP_PCT=0.04`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `PLANNER_ENABLED`.
+`.env`: `KITE_API_KEY`, `KITE_API_SECRET`, `KITE_ACCESS_TOKEN` (daily), `NEWSAPI_KEY`, `JWT_SECRET`, `MODE` (paper/live), `INITIAL_CAPITAL=1000000`, `MAX_DD_PCT=0.20`, `DAILY_LOSS_CAP_PCT=0.04`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `PLANNER_ENABLED`, and the optional LLM-backend trio `LLM_BACKEND`/`LLM_BASE_URL`/`LLM_MODEL` (see LLM backend note above).
 
 ## What's Built / What's Next
 
