@@ -213,7 +213,11 @@ html, body {
 .ticker-track:hover { animation-play-state: paused; }
 
 /* ── Tables ────────────────────────────────────────────────────────────── */
-table { width: 100%; border-collapse: collapse; }
+/* `separate` (not `collapse`): under border-collapse the cell borders belong to
+   the table grid, so a `position: sticky` th loses its bottom border on scroll
+   and rows slide under a borderless header. `separate` + zero spacing keeps the
+   borders on the cells (they stick with the header) and looks identical static. */
+table { width: 100%; border-collapse: separate; border-spacing: 0; }
 th {
   padding: 5px 10px;
   text-align: right;

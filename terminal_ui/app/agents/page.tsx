@@ -1605,7 +1605,7 @@ function DecisionLogTab({ decisions }: { decisions: AgentDecision[] }) {
     ? decisions.filter(d => d.planner_action !== 'fired' && d.planner_action !== 'approve' && d.hindsight_outcome === 'would_win')
     : decisions
   const th: React.CSSProperties = { fontSize: 9.5, color: '#4A4F57', letterSpacing: '.08em', fontWeight: 700, textAlign: 'left', padding: '6px 8px', position: 'sticky', top: 0, background: C.panel }
-  const td: React.CSSProperties = { fontSize: 10, padding: '5px 8px', borderTop: `1px solid #111`, whiteSpace: 'nowrap' }
+  const td: React.CSSProperties = { fontSize: 10, padding: '5px 8px', borderTop: `1px solid #111`, whiteSpace: 'nowrap', textAlign: 'left' }
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>

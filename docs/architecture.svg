@@ -1,0 +1,218 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="1300" viewBox="0 0 1320 1300" font-family="ui-monospace, 'Geist Mono', 'SF Mono', Menlo, monospace">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#006FF9"/>
+    </marker>
+    <marker id="arrowFb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2BC4B8"/>
+    </marker>
+    <linearGradient id="busGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0025F6"/>
+      <stop offset="0.5" stop-color="#0094FB"/>
+      <stop offset="1" stop-color="#00B9FC"/>
+    </linearGradient>
+    <style>
+      .band   { fill:#0E1014; stroke:#23272E; stroke-width:1; }
+      .box    { fill:#121419; stroke:#23272E; stroke-width:1; }
+      .boxA   { fill:#0B1622; stroke:#0094FB; stroke-width:1.2; }
+      .boxG   { fill:#16130A; stroke:#FFB02E; stroke-width:1.2; }
+      .boxX   { fill:#0C1A12; stroke:#2DBD80; stroke-width:1.2; }
+      .t      { fill:#ECEEF1; font-size:13px; font-weight:700; letter-spacing:.02em; }
+      .ts     { fill:#AEB3BB; font-size:10px; }
+      .tss    { fill:#71767F; font-size:9px; }
+      .lbl    { fill:#4A4F57; font-size:10px; font-weight:700; letter-spacing:.18em; }
+      .accent { fill:#00B9FC; }
+      .gold   { fill:#FFB02E; }
+      .green  { fill:#2DBD80; }
+      .teal   { fill:#2BC4B8; }
+      .conn   { stroke:#006FF9; stroke-width:1.6; fill:none; }
+      .fb     { stroke:#2BC4B8; stroke-width:1.4; fill:none; stroke-dasharray:5 4; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1320" height="1300" fill="#080808"/>
+
+  <!-- Title -->
+  <text x="40" y="46" class="t" font-size="22" letter-spacing=".14em">TERMINAL<tspan fill="#0094FB">//</tspan>IN</text>
+  <text x="40" y="66" class="tss" letter-spacing=".18em">SYSTEM ARCHITECTURE · single Python process · multi-threaded · in-process EventBus · SQLite · no cloud</text>
+
+  <!-- ============ DATA INGEST ============ -->
+  <rect class="band" x="40" y="92" width="1240" height="92" rx="6"/>
+  <text x="56" y="112" class="lbl">DATA INGEST · REAL DATA ONLY</text>
+  <!-- 5 boxes -->
+  <g>
+    <rect class="boxA" x="60"  y="122" width="222" height="50" rx="5"/>
+    <text x="71" y="142" class="t" font-size="11">yfinance backfill</text>
+    <text x="71" y="160" class="tss">10y daily + 60d 5m · gap-aware</text>
+
+    <rect class="boxA" x="296" y="122" width="222" height="50" rx="5"/>
+    <text x="307" y="142" class="t" font-size="11">yf_live + tick_agg</text>
+    <text x="307" y="160" class="tss">real quotes → 1m bars (paper)</text>
+
+    <rect class="boxA" x="532" y="122" width="222" height="50" rx="5"/>
+    <text x="543" y="142" class="t" font-size="11">news + FinBERT</text>
+    <text x="543" y="160" class="tss">RSS/NewsAPI · sentiment</text>
+
+    <rect class="boxA" x="768" y="122" width="222" height="50" rx="5"/>
+    <text x="779" y="142" class="t" font-size="11">KiteStreamer</text>
+    <text x="779" y="160" class="tss">live ticks/orders (MODE=live)</text>
+
+    <rect class="box" x="1004" y="122" width="216" height="50" rx="5"/>
+    <text x="1015" y="142" class="t" font-size="11">InstrumentRegistry</text>
+    <text x="1015" y="160" class="tss">72 symbols · sector map · F&amp;O</text>
+  </g>
+
+  <!-- arrow down to bus -->
+  <path class="conn" d="M660,184 L660,206" marker-end="url(#arrow)"/>
+
+  <!-- ============ EVENTBUS ============ -->
+  <rect x="40" y="208" width="1240" height="58" rx="6" fill="#06121F" stroke="url(#busGrad)" stroke-width="1.6"/>
+  <text x="56" y="232" class="t" font-size="13" fill="#00B9FC">EVENTBUS</text>
+  <text x="56" y="251" class="tss" fill="#8FB6D6">in-process pub/sub + hot cache — ticks.* · regime.update · strategy.signal · order.approved/rejected · trade.opened/closed · pnl.update · planner.verdict · supervisor.state · settlement.*</text>
+  <!-- SQLite tag -->
+  <rect class="box" x="1100" y="216" width="120" height="42" rx="5"/>
+  <text x="1160" y="234" class="ts" text-anchor="middle" fill="#ECEEF1" font-weight="700">SQLite WAL</text>
+  <text x="1160" y="249" class="tss" text-anchor="middle">thread-safe · migrations</text>
+
+  <path class="conn" d="M660,266 L660,288" marker-end="url(#arrow)"/>
+
+  <!-- ============ INTELLIGENCE ============ -->
+  <rect class="band" x="40" y="290" width="1240" height="92" rx="6"/>
+  <text x="56" y="310" class="lbl">MARKET INTELLIGENCE</text>
+  <rect class="box" x="60"  y="320" width="388" height="50" rx="5"/>
+  <text x="71" y="340" class="t" font-size="11">Regime classifier — 6-state HMM</text>
+  <text x="71" y="358" class="tss">NumPy Baum-Welch/Viterbi · gated to new daily bars · heuristic fallback</text>
+
+  <rect class="box" x="464" y="320" width="388" height="50" rx="5"/>
+  <text x="475" y="340" class="t" font-size="11">Strategy Engine — 8 strategies (S1–S9)</text>
+  <text x="475" y="358" class="tss">ORB · 52w · RSI · EMA · pairs · VIX fade · momentum · vectorized</text>
+
+  <rect class="box" x="868" y="320" width="352" height="50" rx="5"/>
+  <text x="879" y="340" class="t" font-size="11">DSA — capital allocation</text>
+  <text x="879" y="358" class="tss">0.40·regime_fit + 0.30·BayesWR + 0.30·Sharpe</text>
+
+  <path class="conn" d="M660,382 L660,404" marker-end="url(#arrow)"/>
+
+  <!-- ============ AGENTIC CORE ============ -->
+  <rect x="40" y="406" width="1240" height="184" rx="6" fill="#0A0F16" stroke="#0094FB" stroke-width="1.3"/>
+  <text x="56" y="426" class="lbl" fill="#0094FB">AGENTIC DECISION CORE</text>
+
+  <!-- pipeline row -->
+  <rect class="boxA" x="60" y="436" width="300" height="56" rx="5"/>
+  <text x="71" y="456" class="t" font-size="11">Orchestrator</text>
+  <text x="71" y="472" class="tss">6 lenses (S2·S4·S5·S8·MOM·NEWS)</text>
+  <text x="71" y="485" class="tss">120s scan · EV rank · top-5 batch</text>
+
+  <path class="conn" d="M360,464 L388,464" marker-end="url(#arrow)"/>
+  <rect class="boxA" x="390" y="436" width="300" height="56" rx="5"/>
+  <text x="401" y="456" class="t" font-size="11">Signal Filters</text>
+  <text x="401" y="472" class="tss">persistence ≥2 · conf EMA · EV</text>
+  <text x="401" y="485" class="tss">hysteresis (1.2/1.0) · data-quality gate</text>
+
+  <path class="conn" d="M690,464 L718,464" marker-end="url(#arrow)"/>
+  <rect class="boxA" x="720" y="436" width="320" height="56" rx="5"/>
+  <text x="731" y="456" class="t" font-size="11">Trade Planner — LLM judge</text>
+  <text x="731" y="472" class="tss">Ollama (Qwen2.5) · 1 JSON call/scan</text>
+  <text x="731" y="485" class="tss">approve / reject / size · degraded=stricter bar</text>
+
+  <rect class="boxG" x="1052" y="436" width="168" height="56" rx="5"/>
+  <text x="1136" y="458" class="ts" text-anchor="middle" fill="#FFB02E" font-weight="700">Ollama local</text>
+  <text x="1136" y="473" class="tss" text-anchor="middle">qwen2.5 / finance</text>
+  <text x="1136" y="485" class="tss" text-anchor="middle">DDR-bound ~10t/s</text>
+
+  <!-- support row -->
+  <rect class="box" x="60" y="506" width="300" height="66" rx="5"/>
+  <text x="71" y="526" class="t" font-size="11">Decision Memory</text>
+  <text x="71" y="542" class="tss">every verdict persisted · hindsight</text>
+  <text x="71" y="555" class="tss">re-prices rejections 4–72h later →</text>
+  <text x="71" y="567" class="tss">would_win/lose feeds planner prompt</text>
+
+  <rect class="box" x="390" y="506" width="300" height="66" rx="5"/>
+  <text x="401" y="526" class="t" font-size="11">Trading Supervisor</text>
+  <text x="401" y="542" class="tss">lens circuit breaker (3 losses→2h)</text>
+  <text x="401" y="555" class="tss">global throttle (5) · hard stop (8) →</text>
+  <text x="401" y="567" class="tss">KillSwitch</text>
+
+  <rect class="box" x="720" y="506" width="320" height="66" rx="5"/>
+  <text x="731" y="526" class="t" font-size="11">Strategy Learner</text>
+  <text x="731" y="542" class="tss">Bayesian win-rate tracking</text>
+  <text x="731" y="555" class="tss">adaptive params / thresholds</text>
+  <text x="731" y="567" class="tss">per 15 closed trades</text>
+
+  <path class="conn" d="M880,590 L880,612" marker-end="url(#arrow)"/>
+
+  <!-- ============ RISK GATE ============ -->
+  <rect class="boxG" x="40" y="614" width="1240" height="66" rx="6"/>
+  <text x="56" y="636" class="lbl" fill="#FFB02E">M2 RISK GATE · 13 DETERMINISTIC CHECKS</text>
+  <text x="56" y="655" class="ts">kill switch → symbol block → event mask → VIX hard stop → drawdown → daily loss cap → trade count → confidence → max positions → dedup → margin (rejects unpriceable) → sector → correlation</text>
+  <text x="56" y="672" class="tss" fill="#FFB02E">the planner/judge can veto or shrink a signal — it can NEVER bypass this gate</text>
+
+  <path class="conn" d="M660,680 L660,702" marker-end="url(#arrow)"/>
+
+  <!-- ============ EXECUTION ============ -->
+  <rect class="band" x="40" y="704" width="1240" height="92" rx="6"/>
+  <text x="56" y="724" class="lbl" fill="#2DBD80">EXECUTION &amp; SETTLEMENT</text>
+  <rect class="boxX" x="60"  y="734" width="284" height="52" rx="5"/>
+  <text x="71" y="754" class="t" font-size="11">Paper Broker</text>
+  <text x="71" y="772" class="tss">0.03% slip + ₹20/order · shared acct</text>
+
+  <rect class="boxX" x="358" y="734" width="296" height="52" rx="5"/>
+  <text x="369" y="754" class="t" font-size="11">F&amp;O Paper Broker</text>
+  <text x="369" y="772" class="tss">lot-based · SPAN-approx · greek caps</text>
+
+  <rect class="boxX" x="668" y="734" width="266" height="52" rx="5"/>
+  <text x="679" y="754" class="t" font-size="11">Options Pricing</text>
+  <text x="679" y="772" class="tss">Black-Scholes theoretical + greeks</text>
+
+  <rect class="boxX" x="948" y="734" width="272" height="52" rx="5"/>
+  <text x="959" y="754" class="t" font-size="11">Settlement</text>
+  <text x="959" y="772" class="tss">MIS EOD square-off · CNC carry · MTM</text>
+
+  <path class="conn" d="M660,796 L660,818" marker-end="url(#arrow)"/>
+
+  <!-- ============ EVAL + TRAINING ============ -->
+  <rect class="band" x="40" y="820" width="1240" height="92" rx="6"/>
+  <text x="56" y="840" class="lbl">EVALUATION &amp; SELF-IMPROVEMENT</text>
+  <rect class="box" x="60" y="850" width="588" height="52" rx="5"/>
+  <text x="71" y="870" class="t" font-size="11">Backtest Engine — walk-forward over 10y real OHLCV</text>
+  <text x="71" y="888" class="tss">deterministic mirror of the live core · no lookahead · per-lens/regime + by-year attribution</text>
+
+  <rect class="box" x="664" y="850" width="556" height="52" rx="5"/>
+  <text x="675" y="870" class="t" font-size="11">Recursive Training — LoRA on the system's own record</text>
+  <text x="675" y="888" class="tss">own trades + hindsight-judged decisions → Qwen2.5-1.5B → GGUF → ollama · eval-gated</text>
+
+  <path class="conn" d="M660,912 L660,934" marker-end="url(#arrow)"/>
+
+  <!-- ============ API + UI ============ -->
+  <rect x="40" y="936" width="1240" height="128" rx="6" fill="#0E1014" stroke="#23272E"/>
+  <text x="56" y="956" class="lbl">SERVING</text>
+  <rect class="boxA" x="60" y="966" width="1160" height="40" rx="5"/>
+  <text x="71" y="990" class="t" font-size="11">Flask + SocketIO (threading mode, no eventlet) · /api routes + WebSocket fan-out · /api/health degraded-mode report · static UI or native pywebview window</text>
+
+  <!-- UI modules -->
+  <g font-size="11" font-weight="700">
+    <rect class="box" x="60"   y="1016" width="184" height="36" rx="5"/><text x="152" y="1039" class="t" text-anchor="middle" font-size="11">MARKET</text>
+    <rect class="box" x="252"  y="1016" width="184" height="36" rx="5"/><text x="344" y="1039" class="t" text-anchor="middle" font-size="11">EQUITIES</text>
+    <rect class="box" x="444"  y="1016" width="184" height="36" rx="5"/><text x="536" y="1039" class="t" text-anchor="middle" font-size="11">F&amp;O</text>
+    <rect class="box" x="636"  y="1016" width="184" height="36" rx="5"/><text x="728" y="1039" class="t" text-anchor="middle" font-size="11" fill="#00B9FC">AGENTS</text>
+    <rect class="box" x="828"  y="1016" width="184" height="36" rx="5"/><text x="920" y="1039" class="t" text-anchor="middle" font-size="11">TRAIN</text>
+    <rect class="box" x="1020" y="1016" width="200" height="36" rx="5"/><text x="1120" y="1039" class="t" text-anchor="middle" font-size="11">BACKTEST</text>
+  </g>
+
+  <!-- ============ FEEDBACK LOOP (teal, right edge) ============ -->
+  <path class="fb" d="M1235,760 C1300,760 1300,539 1044,539"/>
+  <path class="fb" d="M1235,760 C1300,760 1300,876 1224,876" marker-end="url(#arrowFb)"/>
+  <path class="fb" d="M1044,539 L1044,539" marker-end="url(#arrowFb)"/>
+  <text x="1262" y="650" class="teal" font-size="9" font-weight="700" transform="rotate(90 1262 650)">TRADE OUTCOMES → HINDSIGHT · LEARNER · TRAINING</text>
+
+  <!-- ============ LEGEND ============ -->
+  <g transform="translate(40,1086)">
+    <text x="0" y="10" class="lbl">LEGEND</text>
+    <rect x="86"  y="0" width="12" height="12" rx="2" class="boxA"/><text x="104" y="10" class="ts">data / agentic pipeline</text>
+    <rect x="280" y="0" width="12" height="12" rx="2" class="boxG"/><text x="298" y="10" class="ts">risk &amp; LLM (gold = caution)</text>
+    <rect x="512" y="0" width="12" height="12" rx="2" class="boxX"/><text x="530" y="10" class="ts">execution</text>
+    <line x1="640" y1="6" x2="676" y2="6" class="conn" marker-end="url(#arrow)"/><text x="684" y="10" class="ts">forward flow</text>
+    <line x1="800" y1="6" x2="836" y2="6" class="fb" marker-end="url(#arrowFb)"/><text x="844" y="10" class="ts">feedback loop</text>
+  </g>
+  <text x="40" y="1130" class="tss">Three feedback loops at three speeds: supervisor (trade-by-trade) · learner (per-15-trades) · recursive training (model). Every decision is persisted and explainable.</text>
+</svg>

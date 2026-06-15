@@ -8,6 +8,32 @@
 
 ---
 
+## Screens
+
+> A Bloomberg-style dense terminal: layered cool-dark surfaces over an embossed dot-matrix mesh, frosted-glass chrome, electric-blue accent ramp. Captures are paper mode, NSE closed (last-close marks).
+
+### MARKET — `/`
+Watchlist (72 NSE instruments + indices/FX/commodities/risk tabs), live candlestick chart, regime strip, streaming AI market-intelligence panel, full-width signal feed.
+
+![MARKET module](docs/screenshots/market.png)
+
+### EQUITIES — `/trade`
+Cash cockpit: portfolio statement (composition + holdings with live marks), positions book, order ticket, P&L attribution, and closed-trades history.
+
+![EQUITIES module](docs/screenshots/equities.png)
+
+### F&O — `/fno`
+Derivatives: COCKPIT (book + greeks, index complex with lot sizes, India VIX, index strategy signals) and OPTION CHAIN (per-strike Black-Scholes premiums + greeks, lot-based paper execution).
+
+![F&O module](docs/screenshots/fno.png)
+
+### AGENTS — `/agents`
+The agentic core: actionable-only scan matrix, LLM Trade Planner verdicts with reasoning, supervisor control loop, decision log with hindsight, and the streaming app-aware AI analyst.
+
+![AGENTS module](docs/screenshots/agents.png)
+
+---
+
 ## Modules
 
 | Module | Route | What it does |
@@ -18,6 +44,12 @@
 | **AGENTS** | `/agents` | The agentic core: actionable-only scan view, **LLM Trade Planner verdicts with reasoning**, supervisor control loop, decision log with hindsight, EventBus inspector, **streaming app-aware AI analyst** |
 | **TRAIN** | `/train` | **Recursive model training**: rebuild dataset from the system's own trades + judged decisions → LoRA fine-tune → loss metrics → run history |
 | **BACKTEST** | `/backtest` | **Walk-forward backtest** over 10y real OHLCV through the deterministic decision core (no lookahead): equity curve, per-lens/per-regime attribution, walk-forward-by-year, closed trades |
+
+## Architecture
+
+A single multi-threaded Python process. Every component communicates through the in-process `EventBus` — no Redis, no Docker, no message broker. Real market data flows in at the top; trade outcomes flow back as three feedback loops at three speeds (supervisor → learner → recursive training).
+
+![TERMINAL//IN system architecture](docs/architecture.svg)
 
 ## The agentic decision flow
 

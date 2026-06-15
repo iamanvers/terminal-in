@@ -100,9 +100,9 @@ export default function TradePipelinePanel({ defaultSegment = 'ALL' }:
             No recent trade activity{seg !== 'ALL' ? ` for ${seg}` : ''}.
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums' }}>
+          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontVariantNumeric: 'tabular-nums' }}>
             <thead>
-              <tr style={{ position: 'sticky', top: 0, background: C.panel, zIndex: 1 }}>
+              <tr>
                 <Th>SEG</Th><Th>SYMBOL</Th><Th>SIDE</Th><Th>STRATEGY</Th><Th>STAGE</Th>
                 <Th>DETAIL</Th><Th right>QTY</Th><Th right>ENTRY</Th><Th right>EXIT</Th>
                 <Th right>P&amp;L</Th><Th right>AGE</Th>
@@ -121,7 +121,8 @@ export default function TradePipelinePanel({ defaultSegment = 'ALL' }:
 function Th({ children, right }: { children: React.ReactNode; right?: boolean }) {
   return (
     <th style={{ textAlign: right ? 'right' : 'left', fontSize: 9, fontWeight: 700, letterSpacing: '.06em',
-      color: C.dim, padding: '7px 10px', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{children}</th>
+      color: C.dim, padding: '7px 10px', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap',
+      position: 'sticky', top: 0, background: C.panel, zIndex: 1 }}>{children}</th>
   )
 }
 
@@ -133,7 +134,10 @@ function Row({ it }: { it: PipelineItem }) {
   const st = STAGE[it.stage] ?? STAGE.closed
   const pnlCol = it.pnl == null ? C.muted : it.pnl >= 0 ? C.green : C.red
   const when = it.stage === 'rejected' || it.stage === 'open' ? it.opened_at : it.closed_at
-  const td: React.CSSProperties = { padding: '7px 10px', fontSize: 11, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }
+  // textAlign:'left' is explicit — the global stylesheet sets `td { text-align:
+  // right }`, which would otherwise right-align these body cells while their
+  // (left-aligned) headers stay put, shifting every left column off its header.
+  const td: React.CSSProperties = { padding: '7px 10px', fontSize: 11, borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap', textAlign: 'left' }
   const tdR: React.CSSProperties = { ...td, textAlign: 'right' }
   return (
     <tr>

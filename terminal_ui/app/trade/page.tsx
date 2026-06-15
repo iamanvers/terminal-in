@@ -369,7 +369,9 @@ function PositionsTable({
                 display: 'grid', gridTemplateColumns: PCOLS, gap: 0, padding: '6px 10px',
                 borderBottom: `1px solid ${C.border}`, cursor: 'pointer', alignItems: 'center',
                 background: sel ? '#0094FB08' : (unr != null && unr > 0) ? '#2DBD800A' : (unr != null && unr < 0) ? '#F2495C0A' : 'transparent',
-                borderLeft: `2px solid ${sel ? C.amber : (unr != null && unr > 0) ? '#2DBD8033' : (unr != null && unr < 0) ? '#F2495C33' : 'transparent'}`,
+                // accent as inset shadow, not border-left — a left border adds 2px
+                // to the box and shifts every column off the (borderless) header
+                boxShadow: `inset 2px 0 0 0 ${sel ? C.amber : (unr != null && unr > 0) ? '#2DBD8033' : (unr != null && unr < 0) ? '#F2495C33' : 'transparent'}`,
                 opacity: isClosing ? 0.4 : 1,
               }}>
               <span style={{ fontSize: 11.5, fontWeight: 700, color: C.text }}>{useSym(pos.instrument_id, tokenMap)}</span>
@@ -456,7 +458,8 @@ function TradeHistory({
                   display: 'grid', gridTemplateColumns: HCOLS, gap: 0, padding: '5px 10px',
                   borderBottom: `1px solid ${C.border}`, cursor: 'pointer', alignItems: 'center',
                   background: sel ? '#0094FB08' : 'transparent',
-                  borderLeft: `2px solid ${sel ? C.amber : (t.net_pnl ?? 0) > 0 ? '#2DBD8022' : '#F2495C22'}`,
+                  // inset shadow keeps the row geometry identical to the header
+                  boxShadow: `inset 2px 0 0 0 ${sel ? C.amber : (t.net_pnl ?? 0) > 0 ? '#2DBD8022' : '#F2495C22'}`,
                 }}>
                 <span style={{ fontSize: 9.5, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{extMs ? tsFmt(extMs) : '—'}</span>
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text }}>{useSym(t.instrument_token, tokenMap)}</span>
