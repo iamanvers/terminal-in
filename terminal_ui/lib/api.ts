@@ -505,7 +505,7 @@ export type FnOChain = {
   underlying: string; underlying_symbol: string; spot: number; atm_strike: number
   expiry: string; t_years: number; iv_used_pct: number; iv_source: string
   lot_size: number; strike_interval: number; rows: FnOChainRow[]
-  theoretical: boolean; note: string
+  theoretical: boolean; note: string; source?: string; live_error?: string
   spot_source?: string; vix_source?: string; expiries?: FnOExpiry[]
 }
 export type FnOUnderlying = {

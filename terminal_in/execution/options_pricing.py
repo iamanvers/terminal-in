@@ -82,6 +82,30 @@ def bs_greeks(spot: float, strike: float, t_years: float, iv: float,
     return {'delta': delta, 'gamma': gamma, 'theta': theta, 'vega': vega}
 
 
+def implied_vol(price: float, spot: float, strike: float, t_years: float,
+                opt_type: str, r: float = RISK_FREE) -> float | None:
+    """Back out the implied vol (decimal) from a REAL traded premium via bisection.
+    Used in live mode to turn a Kite LTP into a real IV — a derived-from-real
+    quantity, not a fabricated one. Returns None when the price is below intrinsic
+    or outside a solvable range (so callers surface 'n/a' rather than guess)."""
+    opt_type = opt_type.upper()
+    if opt_type == 'FUT' or price is None or price <= 0 or t_years <= 0 or spot <= 0 or strike <= 0:
+        return None
+    intrinsic = max(0.0, spot - strike) if opt_type == 'CE' else max(0.0, strike - spot)
+    if price < intrinsic - 1e-6:
+        return None                       # arbitrage / stale quote — don't invent an IV
+    lo, hi = 1e-4, 5.0                     # 0.01% .. 500% vol bracket
+    if bs_price(spot, strike, t_years, hi, opt_type, r) < price:
+        return None                        # price implies vol beyond the bracket
+    for _ in range(60):                    # bisection → ~1e-15 convergence
+        mid = 0.5 * (lo + hi)
+        if bs_price(spot, strike, t_years, mid, opt_type, r) < price:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
 def price_and_greeks(spot: float, strike: float, t_years: float, iv: float,
                      opt_type: str, r: float = RISK_FREE) -> dict:
     """Convenience: premium + greeks in one dict, rounded for transport."""

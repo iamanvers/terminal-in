@@ -51,7 +51,7 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
     training.init(trainer=components.get('trainer'), db=db)
     settings.init(db=db)
     backtest.init(db=db)
-    fno.init(db=db, fno_broker=components.get('fno_broker'))
+    fno.init(db=db, fno_broker=components.get('fno_broker'), kite=components.get('kite'))
 
     # Initialise EventBus ring buffer
     from terminal_in.api import event_buffer

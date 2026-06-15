@@ -27,6 +27,7 @@ export const THEME = {
   sub:     '#AEB3BB',
   muted:   '#71767F',
   dim:     '#4A4F57',
+  onAccent: '#FFFFFF',   // text on a filled accent/teal button (active tabs, primary)
 
   // Primary accent — electric blue ramp (user-specified).
   accent:       '#0094FB',

@@ -428,10 +428,17 @@ function OptionChain() {
               </button>
             ))}
           </span>
-          {chain && <span style={{ marginLeft: 'auto', color: C.muted, fontWeight: 400, fontSize: 9.5 }}>
+          {chain && <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, color: C.muted, fontWeight: 400, fontSize: 9.5 }}>
+            {chain.live_error && <span title={chain.live_error} style={{ color: C.warn, fontWeight: 700 }}>⚠ LIVE FEED DOWN — THEORETICAL</span>}
+            <span style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '.06em', padding: '1px 6px', borderRadius: 3,
+              color: chain.theoretical ? C.dim : C.teal,
+              background: (chain.theoretical ? C.dim : C.teal) + '1A',
+              border: `1px solid ${(chain.theoretical ? C.dim : C.teal)}40` }}>
+              {chain.theoretical ? 'THEORETICAL' : '● LIVE'}
+            </span>
             spot {chain.spot.toLocaleString('en-IN')} · ATM {chain.atm_strike} · IV {chain.iv_used_pct}%
-            <span title={chain.iv_source} style={{ color: chain.kind === 'stock' ? C.teal : C.accentBright, marginLeft: 4 }}>
-              ({chain.kind === 'stock' ? 'realized vol' : 'India VIX'})
+            <span title={chain.iv_source} style={{ color: !chain.theoretical ? C.teal : chain.kind === 'stock' ? C.teal : C.accentBright }}>
+              ({!chain.theoretical ? 'live IV' : chain.kind === 'stock' ? 'realized vol' : 'India VIX'})
             </span> · lot {chain.lot_size}
           </span>}
         </div>
@@ -483,11 +490,15 @@ function OptionChain() {
             </table>
           )}
         </div>
-        {chain?.theoretical && (
+        {chain?.theoretical ? (
           <div style={{ fontSize: 9, color: C.dim, padding: '5px 10px', borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
             *LTP = <strong style={{ color: C.muted }}>theoretical</strong> Black-Scholes premium from live spot + {chain.iv_source} ({chain.iv_used_pct}%) as IV — not a traded price. OI/real-IV are live-only. Click a premium to trade.
           </div>
-        )}
+        ) : chain ? (
+          <div style={{ fontSize: 9, color: C.dim, padding: '5px 10px', borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+            *LTP = <strong style={{ color: C.teal }}>live Kite</strong> last-traded price; OI/volume are real, IV is implied from the LTP. Strikes with no trade show null. Click a premium to trade.
+          </div>
+        ) : null}
       </div>
 
       {/* RIGHT — order ticket + positions */}
@@ -731,7 +742,7 @@ export default function FnoPage() {
             </button>
           ))}
         </div>
-        <span style={{ marginLeft: 'auto', fontSize: 9, color: C.dim }}>derivatives · theoretical pricing (paper)</span>
+        <span style={{ marginLeft: 'auto', fontSize: 9, color: C.dim }}>derivatives · paper execution</span>
       </div>
 
       {view === 'cockpit' ? (

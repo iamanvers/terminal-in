@@ -243,6 +243,7 @@ def main():
         'supervisor': supervisor,
         'broker': broker,
         'fno_broker': fno_broker,
+        'kite': kite,                # live Kite client (None in paper) → live F&O chain
         'engine': engine,
         'dsa': engine._dsa,
         'analyst': analyst,

@@ -18,13 +18,22 @@ log = logging.getLogger(__name__)
 
 _db = None
 _fno_broker = None
+_live_chain = None        # LiveChain (kite) — only in live mode
 VIX_TOKEN = 264969
 
 
-def init(db=None, fno_broker=None):
-    global _db, _fno_broker
+def init(db=None, fno_broker=None, kite=None):
+    global _db, _fno_broker, _live_chain
     _db = db
     _fno_broker = fno_broker
+    if kite is not None:
+        try:
+            from terminal_in.data_ingest.fno_live_chain import LiveChain
+            _live_chain = LiveChain(kite)
+            log.info('F&O: live Kite chain ingestion enabled')
+        except Exception:
+            log.exception('F&O: LiveChain init failed — theoretical chain only')
+            _live_chain = None
 
 
 def _spot(token: int) -> tuple[float, str]:
@@ -66,6 +75,13 @@ def underlyings():
 @bp.route('/expiries')
 def expiries():
     label = (request.args.get('underlying') or 'NIFTY').upper()
+    if _live_chain is not None:
+        try:
+            exps = _live_chain.expiries(label)
+            if exps:
+                return jsonify({'underlying': label, 'expiries': exps, 'source': 'kite_live'})
+        except Exception as e:
+            log.warning('F&O live expiries failed for %s: %s', label, str(e)[:120])
     return jsonify({'underlying': label, 'expiries': fno.expiries(label)})
 
 
@@ -86,6 +102,27 @@ def chain():
         return jsonify({'available': False,
                         'error': 'no spot (no live tick and no stored close)',
                         'underlying': label}), 503
+    # ── Live Kite chain (real LTP/OI/volume, IV implied from LTP) ──
+    live_error = None
+    if _live_chain is not None:
+        try:
+            exps = _live_chain.expiries(label)
+            expiry = request.args.get('expiry') or (exps[0]['date'] if exps else None)
+            if not expiry:
+                raise RuntimeError('no live expiries')
+            data = _live_chain.build_chain(label, spot, expiry, n_strikes=n)
+            data.update({
+                'available': True,
+                'kind': 'index' if fno.is_index(label) else 'stock',
+                'spot_source': spot_src, 'expiries': exps,
+            })
+            return jsonify(data)
+        except Exception as e:
+            # No silent fallback: log + surface that live ingestion failed and we
+            # dropped to the theoretical chain, so the UI can badge it.
+            live_error = str(e)[:160]
+            log.warning('F&O live chain failed for %s (%s) — theoretical fallback', label, live_error)
+
     vix, _ = _vix()
     if vix <= 0:
         vix = 14.0  # labeled assumption when VIX feed is cold
@@ -105,6 +142,7 @@ def chain():
         'kind': 'index' if fno.is_index(label) else 'stock',
         'spot_source': spot_src,
         'expiries': exps,
+        **({'live_error': live_error} if live_error else {}),
     })
     return jsonify(data)
 

@@ -288,7 +288,7 @@ export default function BacktestPage() {
               <button key={hz.days} onClick={() => setDays(hz.days)} disabled={active}
                 style={{
                   fontSize: 10, fontWeight: 700, letterSpacing: '.04em', padding: '5px 11px', border: 'none', cursor: active ? 'default' : 'pointer',
-                  background: days === hz.days ? C.accent : 'transparent', color: days === hz.days ? '#fff' : C.sub,
+                  background: days === hz.days ? C.accent : 'transparent', color: days === hz.days ? C.onAccent : C.sub,
                 }}>{hz.label}</button>
             ))}
           </div>
@@ -305,7 +305,7 @@ export default function BacktestPage() {
                 style={{
                   fontSize: 10, fontWeight: 700, letterSpacing: '.04em', padding: '5px 11px', border: 'none', cursor: active ? 'default' : 'pointer',
                   background: planner === k ? (k === 'llm' ? C.teal : C.accent) : 'transparent',
-                  color: planner === k ? '#fff' : C.sub,
+                  color: planner === k ? C.onAccent : C.sub,
                 }}>{label}</button>
             ))}
           </div>
