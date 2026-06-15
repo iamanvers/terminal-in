@@ -126,7 +126,7 @@ type NewsFilter = 'all' | 'positive' | 'negative' | 'high'
 export default function SignalFeedPanel() {
   const [news, setNews]     = useState<NewsItem[]>([])
   const [events, setEvents] = useState<CalendarEvent[]>([])
-  const [tab, setTab]       = useState<'signals' | 'news' | 'events'>('signals')
+  const [tab, setTab]       = useState<'news' | 'signals' | 'events'>('news')
   const [newsFilter, setNewsFilter] = useState<NewsFilter>('all')
   const [tokenName, setTokenName] = useState<Record<number, string>>({})
 
@@ -183,15 +183,16 @@ export default function SignalFeedPanel() {
       <div className="panel-header justify-between">
         <span><span className="accent">▸</span> SIGNAL FEED</span>
         <div className="flex gap-2">
-          {(['signals', 'news', 'events'] as const).map(t => (
+          {(['news', 'signals', 'events'] as const).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
+              title={t === 'events' ? 'Market-moving events (RBI, FOMC, expiry, earnings) the risk gate watches' : undefined}
               className={`text-[10.5px] px-2 py-0.5 rounded ${tab === t ? 'bg-accent text-black font-bold' : 'text-muted hover:text-gray-300'}`}
             >
               {t === 'signals' ? `SIGNALS (${signals.length})`
                 : t === 'news' ? `NEWS (${newsCountLabel})`
-                : t.toUpperCase()}
+                : `EVENTS (${events.length})`}
             </button>
           ))}
         </div>
@@ -286,26 +287,35 @@ export default function SignalFeedPanel() {
 
         {/* ── Events ───────────────────────────────────────── */}
         {tab === 'events' && (
-          events.length === 0
-            ? <p className="text-muted text-center mt-4 text-[11.5px]">No upcoming events</p>
-            : (
-              <table>
-                <thead>
-                  <tr><th>Date</th><th>Event</th><th>Mask</th></tr>
-                </thead>
-                <tbody>
-                  {events.map((e, i) => (
-                    <tr key={i}>
-                      <td className="text-muted">{e.date}</td>
-                      <td className="text-gray-300">{e.event}</td>
-                      <td className={e.mask < 0.5 ? 'text-neg' : e.mask < 1 ? 'text-accent' : 'text-pos'}>
-                        {(e.mask * 100).toFixed(0)}%
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )
+          <>
+            <p style={{ fontSize: 10, color: '#71767F', lineHeight: 1.5, padding: '8px 12px', borderBottom: '1px solid #181B21' }}>
+              Upcoming market-moving events (RBI policy, FOMC, F&amp;O expiry, earnings). The risk
+              gate <strong style={{ color: '#AEB3BB' }}>blacks out or shrinks new trades</strong> around
+              them — the status shows how much trading is allowed on each day.
+            </p>
+            {events.length === 0
+              ? <p className="text-muted text-center mt-4 text-[11.5px]">No upcoming events on the calendar.</p>
+              : (
+                <table>
+                  <thead>
+                    <tr><th>Date</th><th>Event</th><th>Trading</th></tr>
+                  </thead>
+                  <tbody>
+                    {events.map((e, i) => {
+                      const status = e.mask <= 0 ? 'BLACKOUT' : e.mask < 1 ? `REDUCED ${Math.round(e.mask * 100)}%` : 'NORMAL'
+                      const cls = e.mask < 0.5 ? 'text-neg' : e.mask < 1 ? 'text-accent' : 'text-pos'
+                      return (
+                        <tr key={i}>
+                          <td className="text-muted">{e.date}</td>
+                          <td className="text-gray-300">{e.event}</td>
+                          <td className={cls} title={`event_mask = ${e.mask.toFixed(2)} (0 = no new trades, 1 = unrestricted)`}>{status}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+          </>
         )}
       </div>
     </div>

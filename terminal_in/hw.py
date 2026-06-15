@@ -15,14 +15,53 @@ offload for llama.cpp) are P2 — see PRD 5b.4.
 import logging
 import os
 import subprocess
+import sys
 
 log = logging.getLogger(__name__)
 
 _inventory: dict = {}
 
 
+def _detect_windows():
+    out = subprocess.run(
+        ['powershell', '-NoProfile', '-Command',
+         '(Get-CimInstance Win32_Processor).Name; '
+         '(Get-CimInstance Win32_Processor).NumberOfCores; '
+         '(Get-CimInstance Win32_VideoController).Name'],
+        capture_output=True, text=True, timeout=15,
+    ).stdout.strip().splitlines()
+    cpu = out[0].strip() if out else ''
+    physical = int(out[1].strip()) if len(out) > 1 and out[1].strip() else None
+    gpus = [g.strip() for g in out[2:] if g.strip()] if len(out) > 2 else []
+    return cpu, physical, gpus
+
+
+def _detect_macos():
+    def sc(key):
+        return subprocess.run(['sysctl', '-n', key], capture_output=True, text=True, timeout=5).stdout.strip()
+    cpu = sc('machdep.cpu.brand_string')                 # e.g. "Apple M2 Pro"
+    physical = int(sc('hw.physicalcpu') or 0) or None
+    # GPU: skip system_profiler (slow); Apple Silicon is integrated GPU = chip name
+    gpus = [cpu] if cpu.startswith('Apple') else []
+    return cpu, physical, gpus
+
+
+def _detect_linux():
+    cpu, physical = '', None
+    try:
+        info = open('/proc/cpuinfo').read()
+        for line in info.splitlines():
+            if line.startswith('model name'):
+                cpu = line.split(':', 1)[1].strip(); break
+        cores = {l.split(':')[1].strip() for l in info.splitlines() if l.startswith('core id')}
+        physical = len(cores) or None
+    except Exception:
+        pass
+    return cpu, physical, []
+
+
 def detect() -> dict:
-    """One-time hardware inventory. Cached."""
+    """One-time hardware inventory. Cached. Cross-platform (Windows/macOS/Linux)."""
     global _inventory
     if _inventory:
         return _inventory
@@ -32,19 +71,16 @@ def detect() -> dict:
     gpus: list[str] = []
     cpu_name = ''
     try:
-        out = subprocess.run(
-            ['powershell', '-NoProfile', '-Command',
-             '(Get-CimInstance Win32_Processor).Name; '
-             '(Get-CimInstance Win32_Processor).NumberOfCores; '
-             '(Get-CimInstance Win32_VideoController).Name'],
-            capture_output=True, text=True, timeout=15,
-        ).stdout.strip().splitlines()
-        if len(out) >= 2:
-            cpu_name = out[0].strip()
-            physical = int(out[1].strip() or physical)
-            gpus = [g.strip() for g in out[2:] if g.strip()]
+        if sys.platform == 'win32':
+            cpu_name, phys, gpus = _detect_windows()
+        elif sys.platform == 'darwin':
+            cpu_name, phys, gpus = _detect_macos()
+        else:
+            cpu_name, phys, gpus = _detect_linux()
+        if phys:
+            physical = phys
     except Exception:
-        log.warning('hw: WMI inventory failed — using os.cpu_count() only')
+        log.warning('hw: CPU inventory failed — using os.cpu_count() only')
 
     cuda = False
     try:

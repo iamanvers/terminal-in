@@ -46,7 +46,7 @@ OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen2.5:3b')
 # served model. Default is unchanged so the live loop behaves exactly as before.
 LLM_BACKEND  = os.environ.get('LLM_BACKEND', 'ollama').lower()
 LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'http://localhost:8080')  # llama-server default
-LLM_MODEL    = os.environ.get('LLM_MODEL', OLLAMA_MODEL)
+LLM_MODEL    = os.environ.get('LLM_MODEL') or OLLAMA_MODEL  # blank → fall back to Ollama model
 
 PLAN_TIMEOUT_S   = int(os.environ.get('PLANNER_TIMEOUT_S', '60'))  # << 120s scan interval
 PROBE_TIMEOUT_S  = 3
