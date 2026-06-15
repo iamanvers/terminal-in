@@ -13,6 +13,7 @@ import { THEME } from '@/lib/theme'
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, BacktestResult, BacktestStat, BacktestProgress } from '@/lib/api'
+import { usePersistedState } from '@/hooks/usePersistedState'
 
 const C = THEME
 
@@ -227,8 +228,8 @@ export default function BacktestPage() {
   const [result, setResult]   = useState<BacktestResult | null>(null)
   const [active, setActive]   = useState(false)
   const [error, setError]     = useState<string | null>(null)
-  const [days, setDays]       = useState(730)
-  const [planner, setPlanner] = useState<'degraded' | 'llm'>('degraded')
+  const [days, setDays]       = usePersistedState('tin.backtest.days', 730)
+  const [planner, setPlanner] = usePersistedState<'degraded' | 'llm'>('tin.backtest.planner', 'degraded')
   const [startedMs, setStarted] = useState<number | null>(null)
   const [progress, setProgress] = useState<BacktestProgress | null>(null)
   const [cancelling, setCancelling] = useState(false)

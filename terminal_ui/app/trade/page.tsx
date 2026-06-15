@@ -1,6 +1,7 @@
 'use client'
 import { THEME } from '@/lib/theme'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { usePersistedState } from '@/hooks/usePersistedState'
 import {
   api, type Instrument, type JournalEntry, type LearnerParams,
   type OrchestratorResult, type OrchestratorState, type PortfolioSummary,
@@ -1042,8 +1043,8 @@ type Tab  = 'book' | 'performance' | 'signals' | 'pipeline'
 type Sel  = { kind: 'position' | 'trade'; id: string } | { kind: 'order' } | null
 
 export default function TradePage() {
-  const [tab,        setTab]       = useState<Tab>('book')
-  const [filter,     setFilter]    = useState('ALL')
+  const [tab,        setTab]       = usePersistedState<Tab>('tin.equities.tab', 'book')
+  const [filter,     setFilter]    = usePersistedState('tin.equities.filter', 'ALL')
   // Order ticket open by default — the cockpit should be immediately tradeable
   const [sel,        setSel]       = useState<Sel>({ kind: 'order' })
   const [positions,  setPositions] = useState<Position[]>([])

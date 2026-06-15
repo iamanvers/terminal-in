@@ -14,6 +14,7 @@ import { THEME } from '@/lib/theme'
  * SPAN margin estimation — tracked in the PRD.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { usePersistedState } from '@/hooks/usePersistedState'
 import {
   api, OrchestratorState, OrchestratorResult, RegimeState, SignalRec, Instrument,
   FnOChain, FnOExpiry, FnOUnderlying, FnOPosition, FnOGreeks,
@@ -709,7 +710,7 @@ export default function FnoPage() {
   const [regime, setRegime]   = useState<RegimeState | null>(null)
   const [orch, setOrch]       = useState<OrchestratorState | null>(null)
   const [signals, setSignals] = useState<SignalRec[]>([])
-  const [view, setView]       = useState<'cockpit' | 'chain' | 'pipeline'>('cockpit')
+  const [view, setView]       = usePersistedState<'cockpit' | 'chain' | 'pipeline'>('tin.fno.view', 'cockpit')
 
   const load = useCallback(async () => {
     const [r, o, s] = await Promise.allSettled([

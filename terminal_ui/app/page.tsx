@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
+import { usePersistedState } from '@/hooks/usePersistedState'
 import MarketDataPanel    from '@/components/panels/MarketDataPanel'
 import StrategyBookPanel  from '@/components/panels/StrategyBookPanel'
 import PositionsPanel     from '@/components/panels/PositionsPanel'
@@ -137,7 +138,7 @@ type ReadyState = 'loading' | 'ready' | 'error'
 
 export default function TerminalPage() {
   const [readyState, setReadyState] = useState<ReadyState>('loading')
-  const [chartIdx,   setChartIdx]   = useState(0)
+  const [chartIdx,   setChartIdx]   = usePersistedState('tin.market.chartIdx', 0)
   const resolvedRef = useRef(false)
 
   useEffect(() => {

@@ -45,6 +45,9 @@ portfolio, and answer questions about how TERMINAL//IN works.
 Use tools for any price/indicator/fundamental claim — never fabricate numbers.
 A LIVE CONTEXT block accompanies each question with the current regime, VIX, portfolio \
 and recent system activity — use it; do not re-fetch what it already tells you.
+In this system "EV" ALWAYS means Expected Value (avg_conf x reward:risk x volume x \
+convergence — a trade-quality score, typically ~1-3), NEVER Enterprise Value. "@EV1.8" \
+means that signal's expected-value score is 1.8.
 Be concise and structured; state the basis and the risk for every recommendation."""
 
 

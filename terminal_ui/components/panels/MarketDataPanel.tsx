@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useTickMap } from '@/hooks/useSocket'
+import { usePersistedState } from '@/hooks/usePersistedState'
 import { api, type GlobalQuote } from '@/lib/api'
 import PriceTag from '@/components/primitives/PriceTag'
 import InstrumentModal from '@/components/panels/InstrumentModal'
@@ -106,7 +107,7 @@ const SHIMMER_CSS = `
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (idx: number) => void }) {
   const ticks = useTickMap()
-  const [tab, setTab] = useState<Tab>('NSE')
+  const [tab, setTab] = usePersistedState<Tab>('tin.market.watchlistTab', 'NSE')
   const [prices, setPrices]           = useState<PriceMap>({})   // REST-seeded + WS updated
   const [prevPrices, setPrevPrices]   = useState<Record<number, number>>({})
   const [priceHistory, setPriceHistory] = useState<Record<number, number[]>>({})

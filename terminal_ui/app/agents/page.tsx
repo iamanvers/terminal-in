@@ -1,6 +1,7 @@
 'use client'
 import { THEME } from '@/lib/theme'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { usePersistedState } from '@/hooks/usePersistedState'
 import {
   api, AgentState, AuditEntry, DecisionRecord, EventRecord,
   KillSwitchState, RegimeState, PortfolioSummary, SignalLineage,
@@ -1670,8 +1671,8 @@ type Tab = 'command' | 'matrix' | 'judge' | 'pipeline' | 'scoreboard' | 'broadca
 type SelType = { kind: 'agent'; id: string } | { kind: 'signal'; signalId: string }
 
 export default function AgentsPage() {
-  const [tab,           setTab]          = useState<Tab>('command')
-  const [filter,        setFilter]       = useState<Filter>('all')
+  const [tab,           setTab]          = usePersistedState<Tab>('tin.agents.tab', 'command')
+  const [filter,        setFilter]       = usePersistedState<Filter>('tin.agents.filter', 'all')
   const [agents,        setAgents]       = useState<AgentState[]>([])
   const [decisions,     setDecisions]    = useState<DecisionRecord[]>([])
   const [events,        setEvents]       = useState<EventRecord[]>([])
