@@ -89,7 +89,7 @@ function HBarAttribution({ title, rows, colorFor }: {
   return (
     <div className="panel" style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <div className="panel-header">{title}</div>
-      <div className="panel-body" style={{ overflow: 'auto', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 7 }}>
         {ordered.length === 0 ? <div style={{ padding: 16, textAlign: 'center', fontSize: 10, color: C.muted }}>No closed trades.</div> :
           ordered.map(([k, s]) => {
             const pnl = s.total_pnl ?? 0
@@ -121,7 +121,7 @@ function YearBars({ rows }: { rows: [string, BacktestStat][] }) {
   return (
     <div className="panel" style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <div className="panel-header">WALK-FORWARD · BY YEAR</div>
-      <div className="panel-body" style={{ padding: '10px 12px', display: 'flex', alignItems: 'flex-end', gap: 8, overflow: 'auto', minHeight: 120 }}>
+      <div className="panel-body" style={{ flex: 1, minHeight: 0, padding: '10px 12px', display: 'flex', alignItems: 'flex-end', gap: 8, overflow: 'auto' }}>
         {rows.length === 0 ? <div style={{ margin: 'auto', fontSize: 10, color: C.muted }}>No closed trades.</div> :
           rows.map(([y, s]) => {
             const pnl = s.total_pnl ?? 0
@@ -147,7 +147,7 @@ function RegimeExposure({ regimeDays, colorFor }: { regimeDays: Record<string, n
   const entries = Object.entries(regimeDays).sort((a, b) => b[1] - a[1])
   const total = entries.reduce((s, [, n]) => s + n, 0) || 1
   return (
-    <div className="panel" style={{ flexShrink: 0 }}>
+    <div className="panel" style={{ flexShrink: 0, height: 'auto' }}>
       <div className="panel-header">REGIME EXPOSURE <span style={{ marginLeft: 'auto', color: C.dim, fontWeight: 400, fontSize: 9.5 }}>{total} trading days</span></div>
       <div className="panel-body" style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ display: 'flex', height: 16, borderRadius: 3, overflow: 'hidden', border: `1px solid ${C.border}` }}>
@@ -182,7 +182,7 @@ function JudgeCompare({ perJudge, planner }: {
   const llmAvg = llm.avg_pnl ?? 0, degAvg = deg.avg_pnl ?? 0
   const edge = llmAvg - degAvg
   return (
-    <div className="panel" style={{ flexShrink: 0, borderColor: C.teal + '55' }}>
+    <div className="panel" style={{ flexShrink: 0, height: 'auto', borderColor: C.teal + '55' }}>
       <div className="panel-header" style={{ color: C.teal }}>JUDGE COMPARISON · LLM vs DEGRADED
         <span style={{ marginLeft: 'auto', color: C.dim, fontWeight: 400, fontSize: 9.5 }}>
           {planner ? `${planner.llm_batches} batches LLM-judged · ${planner.degraded_batches} degraded` : ''}
@@ -269,7 +269,7 @@ export default function BacktestPage() {
   const wfRows = useMemo(() => Object.entries(r?.walk_forward_years ?? {}).sort(), [r])
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', background: 'transparent', overflow: 'auto' }}>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', background: 'transparent', overflow: 'hidden' }}>
 
       {/* Header strip */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 5, padding: '10px 14px', flexShrink: 0 }}>
@@ -322,7 +322,20 @@ export default function BacktestPage() {
       )}
 
       {error && <div style={{ fontSize: 10.5, color: C.red, padding: '0 4px', flexShrink: 0 }}>⚠ {error}</div>}
-      {active && <div style={{ fontSize: 10, color: C.muted, padding: '0 4px', flexShrink: 0 }}>◷ Replaying {days >= 365 ? `${(days / 365).toFixed(0)}y` : `${days}d`} across the universe… {elapsed != null ? `${elapsed}s` : ''}</div>}
+      {active && (
+        <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 5, padding: '2px 4px 0' }}>
+          <style dangerouslySetInnerHTML={{ __html: '@keyframes btbar { 0% { left: -42% } 100% { left: 100% } }' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.muted }}>
+            <span>◷ Replaying {days >= 365 ? `${(days / 365).toFixed(0)}y` : `${days}d`} across {r?.symbols_tested ?? 'the'} symbols
+              {planner === 'llm' ? ' · LLM judge in the loop — this can take minutes' : ' — a few seconds'}…</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>{elapsed != null ? `${elapsed}s` : ''}</span>
+          </div>
+          <div style={{ position: 'relative', height: 3, background: C.card, borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: 0, bottom: 0, width: '42%', borderRadius: 2,
+              background: planner === 'llm' ? C.teal : C.accent, animation: 'btbar 1.1s ease-in-out infinite' }} />
+          </div>
+        </div>
+      )}
 
       {!r && !active && (
         <div className="panel" style={{ flex: 1 }}><div className="panel-body" style={{ padding: 40, textAlign: 'center', color: C.muted, fontSize: 11 }}>
@@ -331,9 +344,9 @@ export default function BacktestPage() {
       )}
 
       {r && (
-        <>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {/* Summary metrics */}
-          <div className="panel" style={{ flexShrink: 0 }}>
+          <div className="panel" style={{ flexShrink: 0, height: 'auto' }}>
             <div className="panel-header">RESULT
               <span style={{ marginLeft: 8, fontSize: 9, fontWeight: 700, letterSpacing: '.05em', padding: '1px 7px', borderRadius: 3,
                 color: r.planner?.mode === 'llm' ? C.teal : C.steel,
@@ -358,63 +371,69 @@ export default function BacktestPage() {
           {/* Judge comparison (LLM runs only) — the v3 headline */}
           {r.per_judge && <JudgeCompare perJudge={r.per_judge} planner={r.planner} />}
 
-          {/* Equity curve + underwater drawdown */}
-          <div className="panel" style={{ flexShrink: 0 }}>
-            <div className="panel-header">EQUITY CURVE
-              <span style={{ marginLeft: 'auto', color: C.dim, fontWeight: 400, fontSize: 9.5 }}>
-                <span style={{ color: C.green }}>━</span> equity · <span style={{ color: C.border2 }}>┈</span> start capital · <span style={{ color: C.red }}>▔</span> drawdown
-              </span>
+          {/* Main split — fills the remaining viewport; each side scrolls
+              internally so the page itself never grows a long scrollbar.
+              Left: equity + regime + attribution. Right: closed trades. */}
+          <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '1.45fr 1fr', gap: 8 }}>
+            {/* LEFT column */}
+            <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="panel" style={{ flexShrink: 0, height: 'auto' }}>
+                <div className="panel-header">EQUITY CURVE
+                  <span style={{ marginLeft: 'auto', color: C.dim, fontWeight: 400, fontSize: 9.5 }}>
+                    <span style={{ color: C.green }}>━</span> equity · <span style={{ color: C.border2 }}>┈</span> start capital · <span style={{ color: C.red }}>▔</span> drawdown
+                  </span>
+                </div>
+                <div className="panel-body" style={{ padding: '10px 12px' }}>
+                  <EquityCurve data={r.equity_curve ?? []} capital={r.capital} />
+                </div>
+              </div>
+
+              <RegimeExposure regimeDays={r.regime_days ?? {}} colorFor={(k) => REGIME_C[k] ?? C.steel} />
+
+              {/* Attribution: lens | regime | walk-forward — flexes + scrolls */}
+              <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <HBarAttribution title="PER-LENS" rows={lensRows} />
+                <HBarAttribution title="PER-REGIME" rows={regimeRows} colorFor={(k) => REGIME_C[k] ?? C.steel} />
+                <YearBars rows={wfRows} />
+              </div>
             </div>
-            <div className="panel-body" style={{ padding: '10px 12px' }}>
-              <EquityCurve data={r.equity_curve ?? []} capital={r.capital} />
-            </div>
-          </div>
 
-          {/* Regime exposure */}
-          <RegimeExposure regimeDays={r.regime_days ?? {}} colorFor={(k) => REGIME_C[k] ?? C.steel} />
-
-          {/* Attribution: lens | regime | walk-forward (all visual) */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr 1.1fr', gap: 8, flexShrink: 0 }}>
-            <HBarAttribution title="PER-LENS ATTRIBUTION" rows={lensRows} />
-            <HBarAttribution title="PER-REGIME" rows={regimeRows} colorFor={(k) => REGIME_C[k] ?? C.steel} />
-            <YearBars rows={wfRows} />
-          </div>
-
-          {/* Recent trades */}
-          <div className="panel" style={{ flex: 1, minHeight: 200 }}>
-            <div className="panel-header">CLOSED TRADES <span style={{ marginLeft: 'auto', color: C.muted }}>{r.recent_trades?.length ?? 0} most recent</span></div>
-            <div className="panel-body" style={{ overflow: 'auto' }}>
-              <table>
-                <thead><tr>
-                  <th>EXIT</th><th>SYMBOL</th><th>LENSES</th><th>JUDGE</th><th>REGIME</th><th>ENTRY</th><th>EXIT</th><th>EV</th><th>REASON</th><th>P&L</th>
-                </tr></thead>
-                <tbody>
-                  {(r.recent_trades ?? []).map((t, i) => (
-                    <tr key={i}>
-                      <td style={{ color: C.muted }}>{t.exit_date}</td>
-                      <td style={{ color: C.text, fontWeight: 600 }}>{t.symbol}</td>
-                      <td style={{ color: C.sub }}>{t.lens}</td>
-                      <td style={{ color: t.judge === 'llm' ? C.teal : C.muted, fontSize: 9.5 }}>
-                        {t.judge === 'llm' ? `⚖ llm${t.size_factor != null && t.size_factor !== 1 ? ` ×${t.size_factor}` : ''}` : 'bar'}
-                      </td>
-                      <td style={{ color: REGIME_C[t.regime] ?? C.steel }}>{t.regime}</td>
-                      <td style={{ color: C.sub, fontVariantNumeric: 'tabular-nums' }}>{t.entry}</td>
-                      <td style={{ color: C.sub, fontVariantNumeric: 'tabular-nums' }}>{t.exit}</td>
-                      <td style={{ color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{t.ev?.toFixed(2)}</td>
-                      <td style={{ color: t.exit_reason === 'target' ? C.green : C.red }}>{t.exit_reason}</td>
-                      <td style={{ color: pnlColor(t.pnl), fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{fmtINR(t.pnl)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* RIGHT column — closed trades (internal scroll) */}
+            <div className="panel" style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <div className="panel-header" style={{ flexShrink: 0 }}>CLOSED TRADES <span style={{ marginLeft: 'auto', color: C.muted }}>{r.recent_trades?.length ?? 0} most recent</span></div>
+              <div className="panel-body" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+                <table>
+                  <thead><tr>
+                    <th>EXIT</th><th>SYMBOL</th><th>LENS</th><th>JUDGE</th><th>REGIME</th><th>ENTRY</th><th>EXIT</th><th>EV</th><th>WHY</th><th>P&L</th>
+                  </tr></thead>
+                  <tbody>
+                    {(r.recent_trades ?? []).map((t, i) => (
+                      <tr key={i}>
+                        <td style={{ color: C.muted }}>{t.exit_date}</td>
+                        <td style={{ color: C.text, fontWeight: 600 }}>{t.symbol}</td>
+                        <td style={{ color: C.sub }}>{t.lens}</td>
+                        <td style={{ color: t.judge === 'llm' ? C.teal : C.muted, fontSize: 9.5 }}>
+                          {t.judge === 'llm' ? `⚖${t.size_factor != null && t.size_factor !== 1 ? ` ×${t.size_factor}` : ''}` : 'bar'}
+                        </td>
+                        <td style={{ color: REGIME_C[t.regime] ?? C.steel }}>{t.regime}</td>
+                        <td style={{ color: C.sub, fontVariantNumeric: 'tabular-nums' }}>{t.entry}</td>
+                        <td style={{ color: C.sub, fontVariantNumeric: 'tabular-nums' }}>{t.exit}</td>
+                        <td style={{ color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{t.ev?.toFixed(2)}</td>
+                        <td style={{ color: t.exit_reason === 'target' ? C.green : C.red }}>{t.exit_reason}</td>
+                        <td style={{ color: pnlColor(t.pnl), fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{fmtINR(t.pnl)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
           {/* Honesty footnote — scope of the v3 engine */}
-          <div style={{ fontSize: 10, color: C.dim, padding: '2px 4px', flexShrink: 0 }}>
-            v3 scope: candidates clear the orchestrator EV bar (≥1.2) + ≥2-scan persistence, then the <strong>real TradePlanner</strong> rules on each batch — the <em>LLM JUDGE</em> mode puts Ollama in the loop (sampled to the budget; degraded bar past it / when offline), <em>DEGRADED</em> uses the deterministic high bar (EV ≥ 1.5, conf ≥ 0.50, ≤3/scan). Long-only cash segment; regime is heuristic-mode parity (NIFTY + VIX, 3-day hysteresis); NEWS lens excluded (no historical headlines retained). Signals on bar <em>t</em> fill at <em>t+1</em> open; stop checked before target (conservative).
+          <div style={{ fontSize: 9.5, color: C.dim, padding: '0 4px', flexShrink: 0, lineHeight: 1.4 }}>
+            v3 scope: orchestrator EV bar (≥1.2) + ≥2-scan persistence, then the <strong>real TradePlanner</strong> rules each batch — <em>LLM JUDGE</em> puts Ollama in the loop (sampled; degraded past budget / when offline), <em>DEGRADED</em> = deterministic bar (EV ≥ 1.5, conf ≥ 0.50, ≤3/scan). Long-only cash; heuristic-mode regime; NEWS excluded. Signals on bar <em>t</em> fill at <em>t+1</em> open.
           </div>
-        </>
+        </div>
       )}
     </div>
   )
