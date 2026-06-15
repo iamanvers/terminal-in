@@ -8,7 +8,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from threading import Thread
+from threading import Event, Thread
 
 from flask import Blueprint, jsonify, request
 
@@ -20,7 +20,8 @@ OUT_DIR = Path('./data/backtests')
 
 # Single in-flight run (the engine is CPU-heavy; one at a time is intentional).
 _run = {'active': False, 'result': None, 'error': None,
-        'started_ms': None, 'params': None}
+        'started_ms': None, 'params': None, 'progress': None}
+_stop = Event()   # set by /cancel → engine aborts at the next checkpoint
 
 
 def init(db=None):
@@ -57,19 +58,26 @@ def run():
 
     from terminal_in.backtest.engine import run_backtest
 
+    _stop.clear()
+
+    def _progress(frac, info):
+        _run['progress'] = {'frac': round(float(frac), 3), **info}
+
     def _work():
         t0 = time.time()
         try:
-            _run['result'] = run_backtest(db=_db, days=days, symbols=symbols, planner=planner)
-            log.info('backtest done in %.1fs (%d trades, planner=%s)', time.time() - t0,
-                     _run['result'].get('trades', {}).get('n', 0), planner)
+            _run['result'] = run_backtest(db=_db, days=days, symbols=symbols, planner=planner,
+                                          progress_cb=_progress, should_stop=_stop.is_set)
+            log.info('backtest done in %.1fs (%d trades, planner=%s%s)', time.time() - t0,
+                     _run['result'].get('trades', {}).get('n', 0), planner,
+                     ' CANCELLED' if _stop.is_set() else '')
         except Exception as e:
             log.exception('backtest failed')
             _run['error'] = str(e)[:400]
         finally:
             _run['active'] = False
 
-    _run.update(active=True, result=None, error=None,
+    _run.update(active=True, result=None, error=None, progress=None,
                 started_ms=int(time.time() * 1000),
                 params={'days': days, 'symbols': symbols, 'planner': planner})
     Thread(target=_work, daemon=True, name='backtest').start()
@@ -84,8 +92,18 @@ def run_status():
         'error':      _run['error'],
         'started_ms': _run['started_ms'],
         'params':     _run['params'],
+        'progress':   _run['progress'],
         'result':     _run['result'],
     })
+
+
+@bp.route('/cancel', methods=['POST'])
+def cancel():
+    """Abort the in-flight run at its next checkpoint (returns the partial result)."""
+    if not _run['active']:
+        return jsonify({'ok': False, 'error': 'no run in flight'}), 409
+    _stop.set()
+    return jsonify({'ok': True})
 
 
 @bp.route('/latest')

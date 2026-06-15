@@ -201,12 +201,16 @@ def _lenses(row: pd.Series, regime: str) -> list[tuple[str, float]]:
 
 
 def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
-                 planner: str = 'degraded', max_llm_calls: int = 400) -> dict:
+                 planner: str = 'degraded', max_llm_calls: int = 150,
+                 progress_cb=None, should_stop=None) -> dict:
     """Replay the live decision core. `planner`:
       'degraded' — the deterministic planner bar (fast, reproducible; default)
       'llm'      — the REAL TradePlanner LLM judge in the loop (sampled up to
                    max_llm_calls Ollama calls; degraded for batches past budget).
-    Both routes go through TradePlanner.judge_batch — true formula parity."""
+    Both routes go through TradePlanner.judge_batch — true formula parity.
+
+    progress_cb(frac, info) is called periodically (frac 0..1); should_stop() →
+    True aborts early and reports the partial result (used by the cancel button)."""
     if db is None:
         from terminal_in.config import load_config
         from terminal_in.db import DB
@@ -265,7 +269,20 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
     llm_calls = 0                           # batches LLM-judged (sampling counter)
     degraded_calls = 0
 
+    n_steps = len(dates) - 1
+    stopped = False
     for i, d in enumerate(dates[:-1]):
+        # cooperative cancel — checked EVERY step (cheap), so a cancel lands within
+        # one in-flight LLM call (≤ the 25s call timeout), not 15 slow steps later.
+        if should_stop is not None and should_stop():
+            stopped = True
+            log.info('backtest: cancelled at day %d/%d', i, n_steps)
+            break
+        if i % 10 == 0 and progress_cb is not None:
+            progress_cb(i / max(n_steps, 1), {
+                'day': i, 'total': n_steps, 'date': str(d)[:10],
+                'llm_calls': llm_calls, 'trades': len(closed),
+                'open': len(positions)})
         nxt = dates[i + 1]
         regime = regimes.get(d, 'sideways')
 
@@ -340,7 +357,10 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
                     for s, p in positions.items()],
                 'candidates': eligible,
             }
-            verdicts, mode, _lat = judge.judge_batch(batch, use_llm=use_llm)
+            # backtest LLM calls are tight + no-retry so a long horizon doesn't
+            # spend 2×60s per batch; verdicts are short so num_predict is small.
+            verdicts, mode, _lat = judge.judge_batch(
+                batch, use_llm=use_llm, timeout_s=25, retry=False, num_predict=220)
             if mode == 'llm':
                 llm_calls += 1
             else:
@@ -376,9 +396,12 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
             for s, p in positions.items() if d in data[s].index)
         daily_equity.append((str(d)[:10], mark))
 
+    if progress_cb is not None:
+        progress_cb(1.0, {'day': n_steps, 'total': n_steps, 'llm_calls': llm_calls,
+                          'trades': len(closed), 'open': len(positions)})
     planner_meta = {'mode': planner, 'ollama_available': ollama_ok,
                     'llm_batches': llm_calls, 'degraded_batches': degraded_calls,
-                    'llm_budget': max_llm_calls}
+                    'llm_budget': max_llm_calls, 'cancelled': stopped}
     return _report(closed, daily_equity, days, regimes, dates, planner_meta)
 
 

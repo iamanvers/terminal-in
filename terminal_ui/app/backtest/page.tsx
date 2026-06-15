@@ -12,7 +12,7 @@ import { THEME } from '@/lib/theme'
  * LightGBM edge model + the M6 world-model, is gated by walk-forward here.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, BacktestResult, BacktestStat } from '@/lib/api'
+import { api, BacktestResult, BacktestStat, BacktestProgress } from '@/lib/api'
 
 const C = THEME
 
@@ -230,6 +230,8 @@ export default function BacktestPage() {
   const [days, setDays]       = useState(730)
   const [planner, setPlanner] = useState<'degraded' | 'llm'>('degraded')
   const [startedMs, setStarted] = useState<number | null>(null)
+  const [progress, setProgress] = useState<BacktestProgress | null>(null)
+  const [cancelling, setCancelling] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const loadLatest = useCallback(async () => {
@@ -244,16 +246,29 @@ export default function BacktestPage() {
       const s = await api.backtestStatus()
       setActive(s.active)
       setError(s.error)
+      setProgress(s.progress)
       if (s.result) setResult(s.result)
-      if (!s.active && pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+      if (!s.active) {
+        setCancelling(false)
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+      }
     } catch { /* ignore */ }
   }, [])
 
+  async function cancel() {
+    setCancelling(true)
+    try { await api.backtestCancel() } catch { /* ignore */ }
+  }
+
   useEffect(() => { loadLatest(); poll() }, [loadLatest, poll])
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
+  // keep polling whenever a run is in flight (covers loading the page mid-run)
+  useEffect(() => {
+    if (active && !pollRef.current) pollRef.current = setInterval(poll, 2000)
+  }, [active, poll])
 
   async function run() {
-    setError(null); setActive(true); setStarted(Date.now())
+    setError(null); setActive(true); setStarted(Date.now()); setProgress(null); setCancelling(false)
     try {
       const res = await api.backtestRun(days, planner)
       if (!res.ok) { setError(res.error ?? 'failed to start'); setActive(false); return }
@@ -314,10 +329,17 @@ export default function BacktestPage() {
           title="Run the backtest over the selected horizon">
           {active ? '◷ RUNNING…' : '▶ RUN BACKTEST'}
         </button>
+        {active && (
+          <button className="btn" onClick={cancel} disabled={cancelling}
+            title="Abort the run and keep the partial result"
+            style={{ borderColor: `${C.red}55`, color: C.red, background: '#1A0808' }}>
+            {cancelling ? '◷ STOPPING…' : '✕ CANCEL'}
+          </button>
+        )}
       </div>
       {planner === 'llm' && !active && (
-        <div style={{ fontSize: 10, color: C.teal, padding: '0 4px', flexShrink: 0 }}>
-          ⚖ LLM judge in the loop — the real Ollama planner rules on each decision batch (sampled to the first ~400; minutes, not seconds). Falls back to the degraded bar past budget and if Ollama is offline.
+        <div style={{ fontSize: 10, color: days >= 1825 ? C.warn : C.teal, padding: '0 4px', flexShrink: 0 }}>
+          ⚖ LLM judge in the loop — the real Ollama planner rules on each decision batch (~150 LLM calls, then the degraded bar). Each call is a few seconds on local hardware, so this is <strong>best on 1–2Y</strong>{days >= 1825 ? ' — a 5–10Y LLM run takes many minutes; use DEGRADED for full-horizon coverage, or cancel anytime.' : '. Cancel anytime.'}
         </div>
       )}
 
@@ -326,13 +348,23 @@ export default function BacktestPage() {
         <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 5, padding: '2px 4px 0' }}>
           <style dangerouslySetInnerHTML={{ __html: '@keyframes btbar { 0% { left: -42% } 100% { left: 100% } }' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.muted }}>
-            <span>◷ Replaying {days >= 365 ? `${(days / 365).toFixed(0)}y` : `${days}d`} across {r?.symbols_tested ?? 'the'} symbols
-              {planner === 'llm' ? ' · LLM judge in the loop — this can take minutes' : ' — a few seconds'}…</span>
-            <span style={{ fontVariantNumeric: 'tabular-nums' }}>{elapsed != null ? `${elapsed}s` : ''}</span>
+            <span>
+              ◷ Replaying {days >= 365 ? `${(days / 365).toFixed(0)}y` : `${days}d`}
+              {planner === 'llm' ? ' · LLM judge in the loop (this can take minutes)' : ''}
+              {progress ? ` · day ${progress.day}/${progress.total}${progress.date ? ` (${progress.date})` : ''} · ${progress.trades} trades${planner === 'llm' ? ` · ${progress.llm_calls} LLM calls` : ''}` : '…'}
+            </span>
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+              {progress ? `${Math.round(progress.frac * 100)}%` : ''}{elapsed != null ? ` · ${elapsed}s` : ''}
+            </span>
           </div>
           <div style={{ position: 'relative', height: 3, background: C.card, borderRadius: 2, overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: 0, bottom: 0, width: '42%', borderRadius: 2,
-              background: planner === 'llm' ? C.teal : C.accent, animation: 'btbar 1.1s ease-in-out infinite' }} />
+            {progress ? (
+              <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: `${Math.max(1, progress.frac * 100)}%`,
+                borderRadius: 2, background: planner === 'llm' ? C.teal : C.accent, transition: 'width .4s ease' }} />
+            ) : (
+              <div style={{ position: 'absolute', top: 0, bottom: 0, width: '42%', borderRadius: 2,
+                background: planner === 'llm' ? C.teal : C.accent, animation: 'btbar 1.1s ease-in-out infinite' }} />
+            )}
           </div>
         </div>
       )}
@@ -354,6 +386,7 @@ export default function BacktestPage() {
                 border: `1px solid ${(r.planner?.mode === 'llm' ? C.teal : C.steel)}40` }}>
                 {r.planner?.mode === 'llm' ? '⚖ LLM JUDGE' : 'DEGRADED BAR'}
               </span>
+              {r.planner?.cancelled && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, color: C.warn }} title="run was cancelled — this is the partial result up to the stop point">⚠ PARTIAL (cancelled)</span>}
               <span style={{ marginLeft: 'auto', color: C.muted, fontWeight: 400 }}>
                 {r.engine} · {r.days >= 365 ? `${(r.days / 365).toFixed(0)}y` : `${r.days}d`} · {r.symbols_tested} symbols · {new Date(r.ts).toLocaleString('en-IN', { hour12: false, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
               </span>

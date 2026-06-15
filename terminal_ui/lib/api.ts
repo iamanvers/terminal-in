@@ -456,6 +456,12 @@ export type BacktestPlanner = {
   llm_batches: number
   degraded_batches: number
   llm_budget: number
+  cancelled?: boolean
+}
+
+export type BacktestProgress = {
+  frac: number; day: number; total: number; date?: string
+  llm_calls: number; trades: number; open: number
 }
 
 export type BacktestResult = {
@@ -484,6 +490,7 @@ export type BacktestRunStatus = {
   error: string | null
   started_ms: number | null
   params: { days: number; symbols: string[] | null; planner?: string } | null
+  progress: BacktestProgress | null
   result: BacktestResult | null
 }
 
@@ -679,6 +686,8 @@ export const api = {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ days, planner, symbols }),
     }).then(r => r.json()) as Promise<{ ok: boolean; error?: string; params?: unknown }>,
+  backtestCancel: () =>
+    fetch(`${BASE}/backtest/cancel`, { method: 'POST' }).then(r => r.json()) as Promise<{ ok: boolean; error?: string }>,
   symbolSearch: (q: string, limit = 15) =>
     get<NSESymbol[]>(`/agents/symbols/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 }

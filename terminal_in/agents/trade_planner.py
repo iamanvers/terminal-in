@@ -163,14 +163,17 @@ class TradePlanner:
         self._plan_count += 1
         self._emit(batch, verdicts, mode, latency_ms)
 
-    def judge_batch(self, batch: dict, use_llm: bool = True) -> tuple[list[Verdict], str, int]:
+    def judge_batch(self, batch: dict, use_llm: bool = True,
+                    timeout_s: int | None = None, retry: bool = True,
+                    num_predict: int = 500) -> tuple[list[Verdict], str, int]:
         """Rule on a candidate batch and return (verdicts, mode, latency_ms).
 
         Pure: no bus publish, no DecisionMemory write — so the backtest engine
         can replay the EXACT live judging logic (formula parity). `use_llm=False`
         forces the deterministic degraded bar without probing Ollama (lets a
         backtest run a clean degraded baseline, or skip the LLM once a sampling
-        budget is spent)."""
+        budget is spent). `timeout_s`/`retry`/`num_predict` let the backtest use
+        a tighter, no-retry call so thousands of batches don't each cost 2×60s."""
         candidates = batch.get('candidates') or []
         if not candidates:
             return [], 'idle', 0
@@ -180,14 +183,14 @@ class TradePlanner:
         mode = 'degraded'
 
         if use_llm and self._ollama_available():
-            raw = self._call_llm(self._build_messages(batch))
+            raw = self._call_llm(self._build_messages(batch), timeout_s=timeout_s, num_predict=num_predict)
             if raw is not None:
                 verdicts = self._validate(raw, candidates)
-                if verdicts is None:
+                if verdicts is None and retry:
                     # one retry with the parse error surfaced to the model
                     raw2 = self._call_llm(self._build_messages(batch, retry_note=(
                         'Your previous output was not valid against the schema. '
-                        'Return ONLY the JSON object, no prose.')))
+                        'Return ONLY the JSON object, no prose.')), timeout_s=timeout_s, num_predict=num_predict)
                     if raw2 is not None:
                         verdicts = self._validate(raw2, candidates)
             if verdicts is not None:
@@ -263,7 +266,8 @@ class TradePlanner:
         except Exception:
             return False
 
-    def _call_llm(self, messages: list[dict]) -> str | None:
+    def _call_llm(self, messages: list[dict], timeout_s: int | None = None,
+                  num_predict: int = 500) -> str | None:
         try:
             r = self._session.post(
                 f'{OLLAMA_BASE}/api/chat',
@@ -272,9 +276,9 @@ class TradePlanner:
                     'messages': messages,
                     'stream':   False,
                     'format':   'json',
-                    'options':  {'temperature': 0.1, 'num_predict': 500},
+                    'options':  {'temperature': 0.1, 'num_predict': num_predict},
                 },
-                timeout=PLAN_TIMEOUT_S,
+                timeout=timeout_s or PLAN_TIMEOUT_S,
             )
             r.raise_for_status()
             return (r.json().get('message') or {}).get('content') or None
