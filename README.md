@@ -107,13 +107,21 @@ benchmarks (buy-hold NIFTY, equal-weight, a 1,000× random-symbol null) with
 multiple-testing correction (Deflated Sharpe / White Reality Check), walk-forward fencing,
 and robustness/concentration/survivorship checks.
 
-Verdict across **five independent, walk-forward-fenced experiments** — price-only
+Verdict across **five directional, walk-forward-fenced experiments** — price-only
 technicals, the LLM planner, a learned gradient-boosted forward-EV head (Module 6 / D₀),
 directional-competence weighting, and a point-in-time event/PEAD plane: **none beats
 buy-and-hold NIFTY net of costs.** The full stack returns ~3% CAGR net vs ~11.6% for the
 index and ~21% for equal-weighting the same names. The bottleneck is **signal/data, not
-the model** (a bigger LLM does not help — the planner adds nothing beyond noise). Full
-record: **[docs/ALPHA_FINDINGS.md](docs/ALPHA_FINDINGS.md)**.
+the model** (a bigger LLM does not help — the planner adds nothing beyond noise).
+
+The **one non-null** (a lead, not an edge): reframing to **cross-sectional market-neutral**
+— rank names against each other rather than chase the index — a **1-month reversal**
+long/short book (short leg via single-stock futures, the only way to hold a short in Indian
+cash markets) shows a borderline pulse: IC-IR ≈ 2, market-neutral net Sharpe ~0.4 over 10y
+— but with a −31% drawdown and 80% turnover, so it is cost-sensitive and not deployable as
+measured. This is the structure the published work actually exploits (cross-sectional +
+market-neutral + orthogonal data), and it's where development now points. Full record:
+**[docs/ALPHA_FINDINGS.md](docs/ALPHA_FINDINGS.md)**.
 
 What this terminal *is*, then: a **risk-managed execution + research cockpit with an honest
 eval gate** — real-data-only, cost-accurate, walk-forward-validated, no silent fallbacks.

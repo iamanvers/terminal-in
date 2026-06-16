@@ -33,6 +33,7 @@ import time
 from statistics import NormalDist
 
 import numpy as np
+import pandas as pd
 
 from terminal_in.backtest import engine
 from terminal_in.backtest.engine import run_backtest, CAPITAL
@@ -46,6 +47,14 @@ _N = NormalDist()
 _BUY_FRAC  = cost_breakdown(1.0, 'BUY',  'CNC')['total']
 _SELL_FRAC = cost_breakdown(1.0, 'SELL', 'CNC')['total']
 _RT_FRAC   = _BUY_FRAC + _SELL_FRAC
+
+# Short-leg round-trip cost for a market-neutral book IN THE INDIAN CONTEXT.
+# You CANNOT hold a short in the cash segment overnight (no naked delivery short);
+# the short leg must be a single-stock FUTURE (F&O-eligible names only) or thin SLB.
+# Stock-futures round trip is CHEAPER than cash delivery: no stamp-heavy STT
+# (STT 0.0125% sell-side only), lower exchange charge. ~6 bps round trip — an
+# ESTIMATE, as-of 2026, verify; flagged everywhere it's used.
+_FUT_RT_FRAC = 0.0006
 
 # Hand-tuned parameters to perturb in the robustness test (engine global → ±20%).
 # PERSIST_N is integer; ±20% of 2 rounds back to 2, so we step it 1/3 explicitly.
@@ -844,6 +853,121 @@ def validate_event_ablation(db=None, days: int = 2470, horizon: int = 20,
     }
 
 
+def validate_longshort(db=None, days: int = 2470, horizon: int = 20, quantile: float = 0.2,
+                       seed: int = 7) -> dict:
+    """A1 + A2 — cross-sectional, market-neutral test (the right frame for selection
+    skill: discriminate BETWEEN names, don't try to out-return a bull index).
+
+    A1: cross-sectional Information Coefficient — each rebalance, rank names by a
+        signal and Spearman-correlate against the forward `horizon`-day return.
+        Mean IC + IC-IR (mean/std·√n) per signal; OOS by year. If IC≈0, stop.
+    A2: dollar-neutral book — long top quantile / short bottom quantile, equal
+        weight, rebalanced every `horizon` days. INDIAN CONTEXT: the short leg is a
+        single-stock future (F&O names), priced at _FUT_RT_FRAC; the long leg is
+        cash CNC. Benchmark is ZERO (cash) — a neutral book's bar, not NIFTY.
+
+    Signals tested are clean cross-sectional factors (no lookahead): 12-1 momentum
+    and 1-month reversal — both documented on NSE — so this measures whether the
+    UNIVERSE has harvestable cross-sectional dispersion at all, before blaming the
+    lens machinery."""
+    from scipy.stats import spearmanr
+    if db is None:
+        from terminal_in.config import load_config
+        from terminal_in.db import DB
+        db = DB(load_config().sqlite_path)
+    n_years = max(days / 252.0, 1e-9)
+    uni, _nifty, dates, _fl = _load(db, days)
+
+    # aligned close matrix (names × dates)
+    syms = sorted(uni.keys())
+    M = pd.DataFrame({s: uni[s].reindex(dates) for s in syms}).astype(float)
+    idx = list(range(252, len(dates) - horizon, horizon))   # rebalance points
+
+    def signal_at(i, kind):
+        c0, c21, c252 = M.iloc[i], M.iloc[i - 21], M.iloc[i - 252]
+        if kind == 'mom_12_1':
+            return c21 / c252 - 1.0                          # 12m return skipping last month
+        return -(c0 / c21 - 1.0)                             # 1-month reversal
+
+    results = {}
+    for kind in ('mom_12_1', 'reversal_1m'):
+        ics, periods, eq, equity = [], [], [], 1.0
+        prev_long, prev_short, turns = set(), set(), []
+        for i in idx:
+            sig = signal_at(i, kind)
+            fwd = M.iloc[i + horizon] / M.iloc[i] - 1.0
+            ok = sig.notna() & fwd.notna()
+            if ok.sum() < 10:
+                continue
+            s, f = sig[ok], fwd[ok]
+            ic = spearmanr(s, f).correlation
+            if ic == ic:
+                ics.append((str(dates[i])[:10], float(ic)))
+            n_q = max(2, int(len(s) * quantile))
+            longs = set(s.nlargest(n_q).index)
+            shorts = set(s.nsmallest(n_q).index)
+            spread = float(f[list(longs)].mean() - f[list(shorts)].mean())
+            # turnover vs previous book → cost on the replaced fraction (both legs)
+            tl = 1.0 - len(longs & prev_long) / max(len(longs), 1)
+            ts = 1.0 - len(shorts & prev_short) / max(len(shorts), 1)
+            turns.append((tl + ts) / 2)
+            cost = tl * _RT_FRAC + ts * _FUT_RT_FRAC
+            net = spread - cost                              # 1x long + 1x short on NAV
+            equity *= (1 + net)
+            periods.append({'date': str(dates[i])[:10], 'spread': round(spread, 5),
+                            'net': round(net, 5)})
+            eq.append(equity)
+            prev_long, prev_short = longs, shorts
+
+        ic_vals = np.array([v for _, v in ics])
+        net_rets = np.array([p['net'] for p in periods])
+        ppy = 252 / horizon
+        sharpe = float(net_rets.mean() / net_rets.std() * np.sqrt(ppy)) if len(net_rets) > 2 and net_rets.std() else 0.0
+        eqa = np.array(eq)
+        dd = float((eqa / np.maximum.accumulate(eqa) - 1).min()) if len(eqa) else 0.0
+        ic_ir = float(ic_vals.mean() / ic_vals.std() * np.sqrt(len(ic_vals))) if len(ic_vals) > 2 and ic_vals.std() else 0.0
+        # OOS by year (IC is the cleanest per-fold cut)
+        by_year = {}
+        for d, v in ics:
+            by_year.setdefault(d[:4], []).append(v)
+        results[kind] = {
+            'mean_ic': round(float(ic_vals.mean()), 5) if len(ic_vals) else 0.0,
+            'ic_ir': round(ic_ir, 3), 'n_rebalances': len(ic_vals),
+            'ls_net_sharpe': round(sharpe, 3),
+            'ls_total_return_pct': round((equity - 1) * 100, 2),
+            'ls_max_dd_pct': round(dd * 100, 2),
+            'avg_turnover': round(float(np.mean(turns)), 3) if turns else 0.0,
+            'mean_gross_spread_per_period': round(float(np.mean([p['spread'] for p in periods])), 5) if periods else 0.0,
+            'ic_by_year': {y: round(float(np.mean(v)), 4) for y, v in sorted(by_year.items())},
+        }
+    return {'ts': int(time.time() * 1000), 'days': days, 'n_years': round(n_years, 2),
+            'horizon': horizon, 'quantile': quantile, 'n_symbols': len(syms),
+            'short_leg_cost_frac_estimate': _FUT_RT_FRAC,
+            'long_leg_cost_frac': round(_RT_FRAC, 5), 'signals': results,
+            'india_note': 'short leg = single-stock FUTURES (F&O names only); cash '
+                          'segment cannot hold overnight shorts. Benchmark = 0 (cash).'}
+
+
+def _print_longshort(r: dict):
+    P = print
+    P('\n' + '=' * 78)
+    P(f'CROSS-SECTIONAL MARKET-NEUTRAL TEST (A1 IC + A2 long/short) — '
+      f'{r["days"]}d / {r["n_years"]}y / {r["n_symbols"]} names / H={r["horizon"]}d')
+    P('=' * 78)
+    P(f'  India: {r["india_note"]}')
+    P(f'  long-leg cost {r["long_leg_cost_frac"]*100:.3f}%/rt (cash CNC) · '
+      f'short-leg {r["short_leg_cost_frac_estimate"]*100:.3f}%/rt (futures, ESTIMATE)')
+    for kind, v in r['signals'].items():
+        P(f'\n  {kind.upper()}')
+        P(f'    A1  mean IC {v["mean_ic"]:+.4f}  IC-IR {v["ic_ir"]:+.2f}  '
+          f'({v["n_rebalances"]} rebalances)  — IC≈0 ⇒ no cross-sectional skill')
+        P(f'    A2  L/S net Sharpe {v["ls_net_sharpe"]:+.2f}  total {v["ls_total_return_pct"]:+.1f}%  '
+          f'maxDD {v["ls_max_dd_pct"]:+.1f}%  turnover {v["avg_turnover"]*100:.0f}%/reb  '
+          f'(benchmark = 0)')
+        P(f'    IC by year: ' + '  '.join(f'{y}:{ic:+.3f}' for y, ic in v['ic_by_year'].items()))
+    P('=' * 78 + '\n')
+
+
 def _print_event_ablation(r: dict):
     P = print
     P('\n' + '=' * 78)
@@ -946,11 +1070,15 @@ if __name__ == '__main__':
     ap.add_argument('--trials', type=int, default=8, help='strategies tried (DSR deflation)')
     ap.add_argument('--m6', action='store_true', help='run the Module 6 (Phase C + D₀) validation')
     ap.add_argument('--events', action='store_true', help='run the event-plane (PEAD) ablation')
+    ap.add_argument('--longshort', action='store_true', help='run the cross-sectional market-neutral test (A1 IC + A2 L/S)')
     ap.add_argument('--horizon', type=int, default=20, help='m6 label horizon (trading days)')
     ap.add_argument('--competence-mode', choices=['veto', 'weight'], default='veto')
     ap.add_argument('--json', action='store_true', help='dump full JSON instead of the report')
     args = ap.parse_args()
-    if args.events:
+    if args.longshort:
+        r = validate_longshort(days=args.days, horizon=args.horizon)
+        print(json.dumps(r, indent=1, default=str)) if args.json else _print_longshort(r)
+    elif args.events:
         r = validate_event_ablation(days=args.days, horizon=args.horizon, n_trials=args.trials)
         print(json.dumps(r, indent=1, default=str)) if args.json else _print_event_ablation(r)
     elif args.m6:

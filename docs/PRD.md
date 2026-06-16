@@ -379,6 +379,45 @@ better LLM does not help (planner adds ~0; ~54% literature direction-accuracy ce
   modelled), since long-only selection structurally cannot out-return a bull index; (b)
   forward-accumulated firm-news sentiment evaluated on a true forward holdout.
 
+## 6c. Cross-sectional reframe + forward plan (2026-06-17)
+
+The literature scan (§7b) said the durable edge is **cross-sectional + market-neutral**,
+not directional. So we built and ran that test (`validation.py --longshort`):
+
+- **A1 — cross-sectional IC**, **A2 — dollar-neutral long/short book**, rebalanced every
+  20d. **Indian context (hard constraint):** the cash segment cannot hold overnight
+  shorts, so the short leg is a **single-stock future** (F&O-eligible names only; ~6 bps
+  round-trip estimate, flagged), long leg is cash CNC, benchmark is **cash/0** (a neutral
+  book's bar — not NIFTY).
+- **Result:** 12-1 momentum is null (IC-IR 0.88, crashes at regime turns). **1-month
+  reversal is the only non-null in six experiments** — IC-IR ≈ +1.96 (borderline
+  significant, positive 8/10 years), market-neutral net **+58% / Sharpe 0.39** over 10y —
+  but **−31% drawdown, 80% turnover, cost-sensitive**, and needs a futures short book the
+  system doesn't run. **A lead to develop carefully, not a deployable edge.**
+
+**Forward plan (sequenced, each behind the same walk-forward gate):**
+1. **A1/A2 — DONE** (this build). The reversal pulse is the first thing worth pursuing.
+2. **Firm Intelligence Graph (`/firm`, see §4 P3)** — the relational data plane: clean
+   edges first (sector map + rolling price co-movement/correlation + factor exposure),
+   force-directed UI (codebase-memory MCP graph is the visual seed), then **relational
+   FEATURES** (peer-relative return, sector-relative momentum, lead-lag) fed into the
+   cross-sectional frame above. Relational structure is the orthogonal lever both papers
+   exploit and the one input with a non-trivial prior we haven't tried.
+3. **Self-improving infra:** news time-bounding (12-month rolling summaries, purge >5yr);
+   forward-accumulate timestamped firm-news sentiment (no honest 10y archive exists —
+   evaluate on a forward holdout); honest "model-on-start" (boot/nightly rebuild the
+   candidate dataset + **re-run the validation gate**, auto-promote ONLY on a pass).
+
+**Universe capacity — mid/small caps (evaluation):** more breadth strengthens
+cross-sectional dispersion (reversal is documented stronger in less-covered names), but
+the frictions bite hardest on a turnover-heavy neutral book: liquidity/impact (flat
+slippage understates it), **shortability** (most mid/small are not F&O-eligible → can't
+short → breaks the neutral book), and **survivorship** (today's mid/small list is heavily
+survivor-skewed). Recommendation: add **Nifty Midcap-150 (F&O-eligible subset)** to the
+long/ranking sleeve only after point-in-time index membership (incl. delisted names) and a
+liquidity-aware impact model land; **keep small-caps out of the neutral book**. Adding them
+is a real ingest project (none backfilled today).
+
 ## 7. Success metrics
 
 > Reality check (2026-06-17): the profitability/planner-value targets below are **currently
