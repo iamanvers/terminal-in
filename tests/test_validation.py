@@ -92,6 +92,33 @@ def test_concentration_detects_one_year_dominance():
     assert c['best_regime_dominates'] is True
 
 
+def test_sharpe_and_dsr_helpers():
+    rng = np.random.default_rng(0)
+    # a clearly positive return stream → positive Sharpe
+    pos = rng.normal(0.01, 0.02, 200)
+    assert V._sharpe(pos, ppy=12.6) > 0
+    assert V._sharpe(np.full(50, 0.01), ppy=12.6) == 0.0          # zero variance
+    # DSR is a probability in [0,1]; a strong single series beats a weak one,
+    # and a larger trial count (more deflation) lowers it.
+    strong = rng.normal(0.02, 0.02, 200)
+    weak = rng.normal(0.002, 0.02, 200)
+    srs = [s.mean() / s.std() for s in (strong, weak)]
+    d_strong = V._dsr_single(strong, srs, n_trials=2)
+    d_weak = V._dsr_single(weak, srs, n_trials=2)
+    assert 0.0 <= d_weak <= d_strong <= 1.0
+    assert V._dsr_single(strong, srs, n_trials=50) <= V._dsr_single(strong, srs, n_trials=2)
+
+
+def test_net_series_regime_filter_stands_aside():
+    recs = [{'date': '2020-01-01', 'spread': 0.05, 'tl': 1.0, 'ts': 1.0,
+             'n_long': 10, 'n_short': 10, 'imp_l': 0.0, 'imp_s': 0.0, 'regime': 'strong_bull'},
+            {'date': '2020-02-01', 'spread': 0.05, 'tl': 1.0, 'ts': 1.0,
+             'n_long': 10, 'n_short': 10, 'imp_l': 0.0, 'imp_s': 0.0, 'regime': 'high_vol'}]
+    out = V._net_series(recs, impact=False, regime_filter=('high_vol',))
+    assert out[0] == 0.0                       # strong_bull → stood aside, no return/cost
+    assert out[1] != 0.0                       # high_vol → traded
+
+
 def test_survivorship_separates_floor_from_late_listers():
     # OLD/OLD2 sit at the data floor (2015-01); NEW1/NEW2 list materially later.
     first = {'OLD': '2015-01-01', 'OLD2': '2015-01-05',

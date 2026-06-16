@@ -948,6 +948,213 @@ def validate_longshort(db=None, days: int = 2470, horizon: int = 20, quantile: f
                           'segment cannot hold overnight shorts. Benchmark = 0 (cash).'}
 
 
+# ── hardened reversal book: realistic costs + impact + DSR + dynamic variants ──
+
+_REV_HORIZONS = [5, 10, 21, 42, 63]          # the search space (DSR deflates for it)
+_IMPACT_C = 0.5                              # square-root impact coefficient (~lit)
+_BORROW_FRAC = 0.0003                        # stock-futures roll/borrow per rebalance (est, flagged)
+_REVERSAL_REGIMES = ('sideways', 'high_vol', 'bear', 'strong_bear')  # a-priori: reversal favours non-(strong-)bull tape
+
+
+def _ls_records(M, vol20, advM, regimes, dates, idx, k, q):
+    """Per-rebalance long/short book for a k-day reversal signal. Returns dicts
+    with the sets, gross spread, per-leg turnover, traded-name impact unit, regime."""
+    recs, prev_l, prev_s = [], set(), set()
+    for i in idx:
+        sig = -(M.iloc[i] / M.iloc[i - k] - 1.0)
+        fwd = M.iloc[i + 21] / M.iloc[i] - 1.0      # fixed 21d hold (the book's cadence)
+        ok = sig.notna() & fwd.notna()
+        if ok.sum() < 10:
+            continue
+        s, f = sig[ok], fwd[ok]
+        nq = max(2, int(len(s) * q))
+        longs, shorts = set(s.nlargest(nq).index), set(s.nsmallest(nq).index)
+        tl = 1.0 - len(longs & prev_l) / max(len(longs), 1)
+        ts = 1.0 - len(shorts & prev_s) / max(len(shorts), 1)
+        spread = float(f[list(longs)].mean() - f[list(shorts)].mean())
+        # impact unit per leg: mean over names of sigma·sqrt(1/ADV) (×sqrt(capital/n) later)
+        d = str(dates[i])[:10]
+        def imp_unit(names):
+            xs = []
+            for nm in names:
+                adv = advM.at[dates[i], nm] if dates[i] in advM.index else np.nan
+                sg = vol20.at[dates[i], nm] if dates[i] in vol20.index else np.nan
+                if adv and adv == adv and adv > 0 and sg == sg:
+                    xs.append(sg / np.sqrt(adv))
+            return float(np.mean(xs)) if xs else 0.0
+        recs.append({'date': d, 'spread': spread, 'tl': tl, 'ts': ts,
+                     'n_long': len(longs), 'n_short': len(shorts),
+                     'imp_l': imp_unit(longs), 'imp_s': imp_unit(shorts),
+                     'regime': regimes.get(dates[i], 'sideways')})
+        prev_l, prev_s = longs, shorts
+    return recs
+
+
+def _net_series(recs, capital=1_000_000.0, impact=True, regime_filter=None):
+    """Net periodic returns of the dollar-neutral book under a capital level (for
+    impact), explicit costs (long cash CNC + short futures + borrow), optional
+    sqrt-impact, and optional regime gating (flat when regime not favoured)."""
+    out = []
+    for r in recs:
+        if regime_filter is not None and r['regime'] not in regime_filter:
+            out.append(0.0)                          # stand aside, no cost
+            continue
+        cost = r['tl'] * _RT_FRAC + r['ts'] * (_FUT_RT_FRAC + _BORROW_FRAC)
+        imp = 0.0
+        if impact:
+            imp = (r['tl'] * r['imp_l'] * np.sqrt(capital / max(r['n_long'], 1)) +
+                   r['ts'] * r['imp_s'] * np.sqrt(capital / max(r['n_short'], 1))) * _IMPACT_C
+        out.append(r['spread'] - cost - imp)
+    return np.array(out)
+
+
+def _sharpe(rets, ppy):
+    rets = np.asarray(rets)
+    return float(rets.mean() / rets.std() * np.sqrt(ppy)) if len(rets) > 2 and rets.std() else 0.0
+
+
+def _dsr_single(best_rets, all_srs, n_trials):
+    """Deflated Sharpe (Bailey & López de Prado) for the best of `n_trials`
+    horizon searches. all_srs = per-period Sharpe of each horizon (for the
+    cross-trial variance); best_rets = the winner's per-period return series."""
+    r = np.asarray(best_rets)
+    if len(r) < 3 or r.std() == 0:
+        return 0.0
+    sr = r.mean() / r.std()
+    var_sr = float(np.var(all_srs, ddof=1)) if len(all_srs) > 1 else sr ** 2
+    euler = 0.5772156649
+    sr0 = np.sqrt(max(var_sr, 1e-12)) * ((1 - euler) * _N.inv_cdf(1 - 1.0 / n_trials) +
+                                         euler * _N.inv_cdf(1 - 1.0 / (n_trials * np.e)))
+    s = r.std()
+    g3 = float(((r - r.mean()) ** 3).mean() / s ** 3)
+    g4 = float(((r - r.mean()) ** 4).mean() / s ** 4)
+    denom = np.sqrt(max(1e-12, 1 - g3 * sr + (g4 - 1) / 4 * sr ** 2))
+    return round(float(_N.cdf((sr - sr0) * np.sqrt(len(r) - 1) / denom)), 4)
+
+
+def validate_longshort_hardened(db=None, days: int = 2470, horizon: int = 20,
+                                quantile: float = 0.2, seed: int = 7) -> dict:
+    """Step-1 hardening of the cross-sectional reversal book: does IC-IR ≈ 2
+    survive realistic costs + market impact (capacity) + multiple-testing
+    deflation, and do the fenced DYNAMIC variants help?"""
+    from scipy.stats import spearmanr
+    if db is None:
+        from terminal_in.config import load_config
+        from terminal_in.db import DB
+        db = DB(load_config().sqlite_path)
+    from terminal_in.data_ingest.instruments import KNOWN_TOKENS, registry
+    registry.load_stubs()
+    n_years = max(days / 252.0, 1e-9)
+    ppy = 252 / horizon
+
+    eq_tokens = {t: s for s, t in KNOWN_TOKENS.items() if registry.sector(t) not in ('index',)}
+    nifty_tok, vix_tok = KNOWN_TOKENS.get('NIFTY 50'), KNOWN_TOKENS.get('INDIA VIX')
+    all_1d = db.get_ohlcv_1d_all(list(eq_tokens) + [t for t in (nifty_tok, vix_tok) if t], limit=days + 320)
+    regimes = engine._regime_series(all_1d.get(nifty_tok), all_1d.get(vix_tok))
+
+    closes, dollarvol = {}, {}
+    for t, s in eq_tokens.items():
+        df = all_1d.get(t)
+        if df is None or len(df) < 300:
+            continue
+        closes[s] = df['close']
+        dollarvol[s] = (df['close'] * df['volume']) if 'volume' in df else df['close'] * 0.0
+    dates = sorted(set().union(*[set(c.index) for c in closes.values()]))[-days:]
+    M = pd.DataFrame({s: closes[s].reindex(dates) for s in closes}).astype(float)
+    DV = pd.DataFrame({s: dollarvol[s].reindex(dates) for s in dollarvol}).astype(float)
+    advM = DV.rolling(20, min_periods=5).mean()
+    vol20 = np.log(M).diff().rolling(20, min_periods=5).std()
+    idx = list(range(252, len(M) - horizon, horizon))
+
+    # per-horizon books + IC (for DSR cross-trial variance + the dynamic pick)
+    per_h, srs = {}, []
+    for k in _REV_HORIZONS:
+        recs = _ls_records(M, vol20, advM, regimes, dates, idx, k, quantile)
+        base = _net_series(recs, impact=False)            # explicit-cost only (per-period SR)
+        ic = []
+        for i in idx:
+            sig = -(M.iloc[i] / M.iloc[i - k] - 1.0); fwd = M.iloc[i + horizon] / M.iloc[i] - 1.0
+            ok = sig.notna() & fwd.notna()
+            if ok.sum() >= 10:
+                c = spearmanr(sig[ok], fwd[ok]).correlation
+                if c == c:
+                    ic.append((str(dates[i])[:10], float(c)))
+        per_h[k] = {'recs': recs, 'net': base, 'ic': ic,
+                    'sr': (base.mean() / base.std()) if base.std() else 0.0,
+                    'ic_ir': round(float(np.mean([v for _, v in ic]) / np.std([v for _, v in ic]) * np.sqrt(len(ic))), 3) if len(ic) > 2 else 0.0}
+        srs.append(per_h[k]['sr'])
+
+    best_k = max(_REV_HORIZONS, key=lambda k: per_h[k]['ic_ir'])
+    best = per_h[best_k]
+
+    # capacity curve: net Sharpe vs assumed AUM (sqrt impact)
+    capacity = {}
+    for cap in (1e6, 1e7, 1e8, 1e9):
+        nets = _net_series(best['recs'], capital=cap, impact=True)
+        capacity[f'{cap:.0e}'] = {'net_sharpe': round(_sharpe(nets, ppy), 3),
+                                  'total_return_pct': round((np.prod(1 + nets) - 1) * 100, 1)}
+
+    # deflated Sharpe for the best horizon (deflated for the 5-horizon search)
+    dsr = _dsr_single(best['net'], srs, n_trials=len(_REV_HORIZONS))
+
+    # DYNAMIC 1 — walk-forward horizon selection (pick best IC-IR over prior years)
+    rebal_dates = [str(dates[i])[:10] for i in idx]
+    dyn = []
+    for j, d in enumerate(rebal_dates):
+        yr = d[:4]
+        # train = horizons' IC over rebalances strictly before this year
+        best_train, best_ir = best_k, -1e9
+        for k in _REV_HORIZONS:
+            past = [v for dd, v in per_h[k]['ic'] if dd[:4] < yr]
+            if len(past) > 3:
+                ir = np.mean(past) / (np.std(past) + 1e-9) * np.sqrt(len(past))
+                if ir > best_ir:
+                    best_ir, best_train = ir, k
+        dyn.append(per_h[best_train]['net'][j] if j < len(per_h[best_train]['net']) else 0.0)
+    dyn = np.array(dyn[:len(best['net'])])
+
+    # DYNAMIC 2 — regime-conditioned (a-priori: trade only in non-strong-bull tape)
+    regime_nets = _net_series(best['recs'], impact=False, regime_filter=_REVERSAL_REGIMES)
+    traded = float(np.mean([1.0 if r['regime'] in _REVERSAL_REGIMES else 0.0 for r in best['recs']]))
+
+    return {'ts': int(time.time() * 1000), 'days': days, 'n_years': round(n_years, 2),
+            'n_symbols': int(M.shape[1]), 'horizon': horizon, 'best_horizon': best_k,
+            'per_horizon_ic_ir': {k: per_h[k]['ic_ir'] for k in _REV_HORIZONS},
+            'costs': {'long_cnc_rt': round(_RT_FRAC, 5), 'short_fut_rt': _FUT_RT_FRAC,
+                      'borrow_per_reb': _BORROW_FRAC, 'impact_c': _IMPACT_C},
+            'base_net_sharpe_at_1M': round(_sharpe(_net_series(best['recs'], 1e6, impact=True), ppy), 3),
+            'capacity_curve': capacity,
+            'deflated_sharpe': dsr, 'dsr_survives': bool(dsr > 0.95),
+            'dynamic_walkforward': {'net_sharpe': round(_sharpe(dyn, ppy), 3),
+                                    'total_return_pct': round((np.prod(1 + dyn) - 1) * 100, 1)},
+            'regime_conditioned': {'net_sharpe': round(_sharpe(regime_nets, ppy), 3),
+                                   'total_return_pct': round((np.prod(1 + regime_nets) - 1) * 100, 1),
+                                   'fraction_in_market': round(traded, 2)},
+            'note': 'Long cash CNC + short single-stock futures (+borrow). Impact = '
+                    '0.5·σ·√(notional/ADV). Benchmark = 0. DSR deflates for the 5-horizon search.'}
+
+
+def _print_longshort_hardened(r: dict):
+    P = print
+    P('\n' + '=' * 78)
+    P(f'REVERSAL BOOK — HARDENED ({r["days"]}d / {r["n_years"]}y / {r["n_symbols"]} names, '
+      f'best horizon {r["best_horizon"]}d)')
+    P('=' * 78)
+    P(f'  costs: long {r["costs"]["long_cnc_rt"]*100:.3f}%/rt · short {r["costs"]["short_fut_rt"]*100:.3f}%'
+      f'+borrow {r["costs"]["borrow_per_reb"]*100:.3f}%/reb · impact c={r["costs"]["impact_c"]}')
+    P(f'  per-horizon IC-IR: ' + '  '.join(f'{k}d:{v:+.2f}' for k, v in r['per_horizon_ic_ir'].items()))
+    P(f'\n  CAPACITY (net Sharpe vs assumed AUM, sqrt-impact):')
+    for cap, v in r['capacity_curve'].items():
+        P(f'    {cap:>7}  net Sharpe {v["net_sharpe"]:+.2f}   total {v["total_return_pct"]:+.1f}%')
+    P(f'\n  DEFLATED SHARPE (best-of-{len(r["per_horizon_ic_ir"])} horizons): {r["deflated_sharpe"]:.3f}  '
+      f'→ {"SURVIVES" if r["dsr_survives"] else "DIES (best-of-search not significant)"}')
+    d, rg = r['dynamic_walkforward'], r['regime_conditioned']
+    P(f'  DYNAMIC walk-forward horizon pick: net Sharpe {d["net_sharpe"]:+.2f}  total {d["total_return_pct"]:+.1f}%')
+    P(f'  REGIME-conditioned ({rg["fraction_in_market"]*100:.0f}% in-market): '
+      f'net Sharpe {rg["net_sharpe"]:+.2f}  total {rg["total_return_pct"]:+.1f}%')
+    P('=' * 78 + '\n')
+
+
 def _print_longshort(r: dict):
     P = print
     P('\n' + '=' * 78)
@@ -1071,11 +1278,15 @@ if __name__ == '__main__':
     ap.add_argument('--m6', action='store_true', help='run the Module 6 (Phase C + D₀) validation')
     ap.add_argument('--events', action='store_true', help='run the event-plane (PEAD) ablation')
     ap.add_argument('--longshort', action='store_true', help='run the cross-sectional market-neutral test (A1 IC + A2 L/S)')
+    ap.add_argument('--hard', action='store_true', help='with --longshort: hardened costs + impact/capacity + DSR + dynamic variants')
     ap.add_argument('--horizon', type=int, default=20, help='m6 label horizon (trading days)')
     ap.add_argument('--competence-mode', choices=['veto', 'weight'], default='veto')
     ap.add_argument('--json', action='store_true', help='dump full JSON instead of the report')
     args = ap.parse_args()
-    if args.longshort:
+    if args.longshort and args.hard:
+        r = validate_longshort_hardened(days=args.days, horizon=args.horizon)
+        print(json.dumps(r, indent=1, default=str)) if args.json else _print_longshort_hardened(r)
+    elif args.longshort:
         r = validate_longshort(days=args.days, horizon=args.horizon)
         print(json.dumps(r, indent=1, default=str)) if args.json else _print_longshort(r)
     elif args.events:

@@ -389,14 +389,19 @@ not directional. So we built and ran that test (`validation.py --longshort`):
   shorts, so the short leg is a **single-stock future** (F&O-eligible names only; ~6 bps
   round-trip estimate, flagged), long leg is cash CNC, benchmark is **cash/0** (a neutral
   book's bar — not NIFTY).
-- **Result:** 12-1 momentum is null (IC-IR 0.88, crashes at regime turns). **1-month
-  reversal is the only non-null in six experiments** — IC-IR ≈ +1.96 (borderline
-  significant, positive 8/10 years), market-neutral net **+58% / Sharpe 0.39** over 10y —
-  but **−31% drawdown, 80% turnover, cost-sensitive**, and needs a futures short book the
-  system doesn't run. **A lead to develop carefully, not a deployable edge.**
+- **Result:** 12-1 momentum is null (IC-IR 0.88). 1-month reversal *looked* like a pulse
+  (IC-IR +1.96) — so it was **hardened before any engine work** (`--longshort --hard`:
+  realistic futures+borrow cost, sqrt market-impact + capacity curve, deflated Sharpe over
+  the 5-horizon search). **It does not survive: Deflated Sharpe 0.72 < 0.95** (undeflated
+  per-period Sharpe ~0.12), and the fenced **dynamic** variants are *worse* than the
+  in-sample static pick (walk-forward horizon 0.24, regime-conditioned 0.28, vs 0.44).
+  Capacity is fine at retail scale (Sharpe ~0.44 to ₹10cr; 0.23 at ₹100cr). **Verdict: not
+  a deployable edge — no engine sleeve.** Hardening-before-engine did its job.
 
 **Forward plan (sequenced, each behind the same walk-forward gate):**
-1. **A1/A2 — DONE** (this build). The reversal pulse is the first thing worth pursuing.
+1. **A1/A2 + hardening — DONE** (this build). Reversal failed the hardened gate; the
+   "harden before you build the engine" discipline saved the futures-execution work. No
+   engine sleeve until something clears the hardened gate (DSR > 0.95 net of impact).
 2. **Firm Intelligence Graph (`/firm`, see §4 P3)** — the relational data plane: clean
    edges first (sector map + rolling price co-movement/correlation + factor exposure),
    force-directed UI (codebase-memory MCP graph is the visual seed), then **relational

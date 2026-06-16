@@ -9,14 +9,16 @@
 
 ## Headline
 
-**No LONG-ONLY configuration beats buy-and-hold NIFTY, net of costs.** Across the
-directional experiments, every price- and event-derived signal is indistinguishable
-from noise / passive ownership — the bottleneck is **signal, not model or reasoning.**
-The one exception, and it is a *lead* not an edge: a **market-neutral 1-month
-cross-sectional reversal** book shows a borderline pulse (IC-IR ≈ 2, net Sharpe ~0.4,
-but −31% DD, 80% turnover, needs a futures short book we don't run). See the
-cross-sectional section below — this is the structure the literature points to, and
-the only non-null in six experiments.
+**Nothing tested survives proper scrutiny.** Long-only directional signals are
+indistinguishable from passive (five negatives). The one apparent exception — a
+market-neutral 1-month cross-sectional **reversal** — looked like a pulse (IC-IR ≈ 2)
+but, when **hardened** (realistic futures+borrow cost, square-root market impact, and a
+**deflated Sharpe that corrects for searching 5 horizons**), **DIES: Deflated Sharpe
+0.72 < 0.95**, and the fenced *dynamic* variants (walk-forward horizon pick 0.24,
+regime-conditioning 0.28) are **worse** than the in-sample static pick (0.44). The
+reversal IC is marginally real, but the tradeable net-of-cost return is not
+statistically distinguishable from zero after multiple-testing. The bottleneck is
+**signal, not model or reasoning** — confirmed six ways now.
 
 The single most important number: over 10 years (67 symbols, 1,484 trades), the
 full decision stack returns **~3% CAGR net** while **buy-and-hold NIFTY returns
@@ -58,8 +60,23 @@ Why this is a *lead*, not a green light — read every caveat:
    assumes every bottom-quintile name is F&O-eligible (not always true).
 
 Honest status: this is the *structure the literature points to* (cross-sectional +
-market-neutral), and it is the only thing in six experiments that isn't flat — worth
-developing carefully, but it is **not** a deployable edge as measured.
+market-neutral), and it was the only thing that wasn't flat at first look — so we
+**hardened it before any engine work** (`validation.py --longshort --hard`):
+
+- **Capacity (sqrt market-impact vs AUM):** net Sharpe +0.44 at ₹10L, +0.43 at ₹1cr,
+  +0.38 at ₹10cr, +0.23 at ₹100cr. At retail scale impact is *not* the killer.
+- **Deflated Sharpe (corrects for the 5-horizon search): 0.724 → FAILS** (<0.95). The
+  undeflated per-period Sharpe is only ~0.12 (PSR ≈ 0.90, already borderline); after
+  deflation the tradeable edge is not significant. The IC-IR 1.96 was largely
+  best-of-five selection.
+- **Fenced dynamic reversal makes it worse:** walk-forward horizon selection → Sharpe
+  0.24; a-priori regime-conditioning (trade only non-strong-bull tape, 61% in-market) →
+  0.28. Both below the static 0.44 — i.e. the static 21d only looked best in hindsight,
+  and adapting OOS doesn't recover it.
+
+**Verdict: the reversal is not a deployable edge** — do NOT build an engine sleeve for
+it. This is precisely why hardening precedes engine integration: we spent a few CPU
+seconds instead of weeks of futures-execution plumbing to learn it.
 
 ## Universe capacity — adding mid / small caps (evaluation)
 
