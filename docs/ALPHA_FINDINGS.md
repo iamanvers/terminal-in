@@ -78,6 +78,34 @@ market-neutral), and it was the only thing that wasn't flat at first look — so
 it. This is precisely why hardening precedes engine integration: we spent a few CPU
 seconds instead of weeks of futures-execution plumbing to learn it.
 
+### Decomposition — where the reversal "edge" actually lived (and why it's not alpha)
+
+Because a market-neutral single-stock-futures book is **not fundable at ₹10L** (lot
+sizes ≈ ₹5–10L notional, ~₹1–2L margin each; a diversified 13×13 book needs ₹30L+), we
+checked the only retail-fundable form — **long-only "buy recent losers" (cash CNC)** —
+and decomposed the spread:
+
+| 10y, net | total | Sharpe | beta |
+|---|--:|--:|--:|
+| Long-only reversal (buy losers) | +513% | 1.01 | 1.10 |
+| **Equal-weight universe** (correct long-only benchmark) | +410% | **1.11** | — |
+| NIFTY (cap-weighted) | +148% | 0.68 | — |
+
+- The reversal spread came **entirely from the long leg** (losers − market +0.0045/reb);
+  the **short leg was a drag** (market − winners **−0.0012/reb** — recent winners kept
+  winning). So shorting *hurts* — there is no short-side edge to fund.
+- Long-only "buy losers" makes more *raw* return than equal-weight but at a **lower
+  Sharpe (1.01 < 1.11)** — it merely takes more beta (1.10) and vol. **Not risk-adjusted
+  alpha.** The beta-stripped (market-neutral) version is ~0 and fails the DSR.
+- The one robust outperformance anywhere is **not a signal**: equal-weight (Sharpe 1.11)
+  ≫ cap-weighted NIFTY (0.68) — a **weighting/size effect**, and even that is
+  **survivorship-inflated** (equal-weighting *today's* index back to 2016 overweights the
+  smaller names that survived/were promoted). It is not skill this system adds.
+
+Net: the one-month reversal does **not** work as risk-adjusted alpha in any fundable
+form. The only thing beating the index is passive equal-weighting — a portfolio
+construction choice, not selection — and it is biased upward by survivorship.
+
 ## Universe capacity — adding mid / small caps (evaluation)
 
 Would a broader universe help? Cross-sectional alpha (especially reversal) is documented
