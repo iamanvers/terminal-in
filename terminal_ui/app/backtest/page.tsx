@@ -12,7 +12,7 @@ import { THEME } from '@/lib/theme'
  * LightGBM edge model + the M6 world-model, is gated by walk-forward here.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, BacktestResult, BacktestStat, BacktestProgress } from '@/lib/api'
+import { api, BacktestResult, BacktestStat, BacktestProgress, BacktestCurveMetrics, BacktestCosts } from '@/lib/api'
 import { usePersistedState } from '@/hooks/usePersistedState'
 
 const C = THEME
@@ -82,8 +82,8 @@ function EquityCurve({ data, capital }: { data: { date: string; equity: number }
 }
 
 // ── Diverging horizontal-bar attribution (losses left, profits right) ─────────
-function HBarAttribution({ title, rows, colorFor }: {
-  title: string; rows: [string, BacktestStat][]; colorFor?: (k: string) => string
+function HBarAttribution({ title, rows, colorFor, showSharpe }: {
+  title: string; rows: [string, BacktestStat][]; colorFor?: (k: string) => string; showSharpe?: boolean
 }) {
   const ordered = rows.filter(([, s]) => s.n > 0).sort((a, b) => (b[1].total_pnl ?? 0) - (a[1].total_pnl ?? 0))
   const maxAbs = Math.max(1, ...ordered.map(([, s]) => Math.abs(s.total_pnl ?? 0)))
@@ -107,6 +107,12 @@ function HBarAttribution({ title, rows, colorFor }: {
                     left: pnl >= 0 ? '50%' : `${50 - frac * 50}%`, width: `${frac * 50}%` }} />
                 </div>
                 <span style={{ width: 56, flexShrink: 0, textAlign: 'right', color: pnlColor(pnl), fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtINR(pnl)}</span>
+                {showSharpe && (
+                  <span style={{ width: 48, flexShrink: 0, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: (s.net_sharpe ?? 0) >= 1 ? C.green : (s.net_sharpe ?? 0) >= 0 ? C.sub : C.red }}
+                    title={`net Sharpe ${(s.net_sharpe ?? 0).toFixed(2)} (gross ${(s.gross_sharpe ?? 0).toFixed(2)}) — trade-level`}>
+                    {(s.net_sharpe ?? 0).toFixed(2)}<span style={{ color: C.dim }}>SR</span>
+                  </span>
+                )}
                 <span style={{ width: 56, flexShrink: 0, textAlign: 'right', color: C.muted, fontVariantNumeric: 'tabular-nums' }}>{s.n}t·{((s.win_rate ?? 0) * 100).toFixed(0)}%</span>
               </div>
             )
@@ -207,6 +213,44 @@ function JudgeCompare({ perJudge, planner }: {
             {edge >= 0
               ? `the LLM judge's picks averaged ${fmtINR(Math.abs(edge))} more per trade (${(llmWR * 100).toFixed(0)}% vs ${(degWR * 100).toFixed(0)}% WR)`
               : `the degraded bar beat the LLM here by ${fmtINR(Math.abs(edge))}/trade — sample is small, not conclusive`}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Gross-vs-Net cost impact: what transaction costs do to the headline metrics ─
+function CostImpact({ gross, net, costs, capital }: {
+  gross: BacktestCurveMetrics; net: BacktestCurveMetrics; costs: BacktestCosts; capital: number
+}) {
+  const rows: [string, number, number, (v: number) => string][] = [
+    ['total return', gross.return_pct, net.return_pct, v => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`],
+    ['CAGR', gross.cagr_pct, net.cagr_pct, v => `${v.toFixed(2)}%`],
+    ['max DD', gross.max_drawdown_pct, net.max_drawdown_pct, v => `${v.toFixed(2)}%`],
+    ['Sharpe', gross.sharpe, net.sharpe, v => v.toFixed(2)],
+  ]
+  return (
+    <div className="panel" style={{ flexShrink: 0, height: 'auto', borderColor: C.warn + '40' }}>
+      <div className="panel-header" style={{ color: C.warn }}>COST IMPACT · GROSS vs NET
+        <span style={{ marginLeft: 'auto', color: C.dim, fontWeight: 400, fontSize: 9.5 }}>
+          after STT · brokerage · exchange · SEBI · stamp · GST
+        </span>
+      </div>
+      <div className="panel-body" style={{ padding: '12px 14px', display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 12 }}>
+        {rows.map(([label, g, n, fmt]) => (
+          <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 12px', background: C.card, borderRadius: 4 }}>
+            <span style={{ fontSize: 9, color: C.dim, letterSpacing: '.07em', fontWeight: 700 }}>{label.toUpperCase()}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}><span style={{ color: C.muted }}>gross</span><span style={{ color: C.sub, fontVariantNumeric: 'tabular-nums' }}>{fmt(g)}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700 }}><span style={{ color: C.muted, fontWeight: 400, fontSize: 10.5, alignSelf: 'center' }}>net</span><span style={{ color: pnlColor(label === 'max DD' ? n + 100 : n), fontVariantNumeric: 'tabular-nums' }}>{fmt(n)}</span></div>
+          </div>
+        ))}
+        {/* cost drag summary */}
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4, padding: '8px 12px' }}>
+          <span style={{ fontSize: 9, color: C.warn, letterSpacing: '.07em', fontWeight: 700 }}>COST DRAG</span>
+          <span style={{ fontSize: 20, fontWeight: 700, color: C.warn, fontVariantNumeric: 'tabular-nums' }}>{fmtINR(costs.total_costs)}</span>
+          <span style={{ fontSize: 9.5, color: C.muted, lineHeight: 1.5 }}>
+            {costs.pct_of_capital}% of {fmtINR(capital)} · {costs.avg_roundtrip_bps} bps avg/round-trip · {costs.n_round_trips} trips
           </span>
         </div>
       </div>
@@ -420,6 +464,9 @@ export default function BacktestPage() {
             </div>
           </div>
 
+          {/* Cost impact — what STT/brokerage/GST do to the headline (always shown) */}
+          {r.gross && r.net && r.costs && <CostImpact gross={r.gross} net={r.net} costs={r.costs} capital={r.capital} />}
+
           {/* Judge comparison (LLM runs only) — the v3 headline */}
           {r.per_judge && <JudgeCompare perJudge={r.per_judge} planner={r.planner} />}
 
@@ -444,7 +491,7 @@ export default function BacktestPage() {
 
               {/* Attribution: lens | regime | walk-forward — flexes + scrolls */}
               <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                <HBarAttribution title="PER-LENS" rows={lensRows} />
+                <HBarAttribution title="PER-LENS · NET SHARPE" rows={lensRows} showSharpe />
                 <HBarAttribution title="PER-REGIME" rows={regimeRows} colorFor={(k) => REGIME_C[k] ?? C.steel} />
                 <YearBars rows={wfRows} />
               </div>
@@ -483,7 +530,7 @@ export default function BacktestPage() {
 
           {/* Honesty footnote — scope of the v3 engine */}
           <div style={{ fontSize: 9.5, color: C.dim, padding: '0 4px', flexShrink: 0, lineHeight: 1.4 }}>
-            v3 scope: orchestrator EV bar (≥1.2) + ≥2-scan persistence, then the <strong>real TradePlanner</strong> rules each batch — <em>LLM JUDGE</em> puts Ollama in the loop (sampled; degraded past budget / when offline), <em>DEGRADED</em> = deterministic bar (EV ≥ 1.5, conf ≥ 0.50, ≤3/scan). Long-only cash; heuristic-mode regime; NEWS excluded. Signals on bar <em>t</em> fill at <em>t+1</em> open.
+            v3 scope: orchestrator EV bar (≥1.2) + ≥2-scan persistence, then the <strong>real TradePlanner</strong> rules each batch — <em>LLM JUDGE</em> puts Ollama in the loop (sampled; degraded past budget / when offline), <em>DEGRADED</em> = deterministic bar (EV ≥ 1.5, conf ≥ 0.50, ≤3/scan). Long-only cash; heuristic-mode regime; NEWS excluded. Signals on bar <em>t</em> fill at <em>t+1</em> open. All P&L is <strong>net of the full Indian-equity cost stack</strong> (STT, brokerage, exchange, SEBI, stamp, GST — shared <code>execution/costs.py</code>); slippage modelled separately on the fill price.
           </div>
         </div>
       )}

@@ -1,0 +1,828 @@
+"""
+Alpha-validation harness — is the backtest's apparent edge real, or an artifact?
+
+This module does NOT try to make the numbers look good. It is built to FALSIFY the
+edge: benchmark it against passive + random, correct for the fact that 8 strategies
+were tried on ONE history, test per-strategy statistical significance, isolate the
+LLM/training contribution, perturb every hand-tuned parameter, and measure how
+concentrated the P&L is in one year / one regime.
+
+HONEST SCOPE (read first):
+  - The live backtest has NO out-of-sample period. Every gate (MIN_EV, MIN_CONF,
+    PERSIST_N, RSI/EMA/ATR levels) is a hand-set constant chosen by a human over
+    THIS SAME 10y history. So everything here is IN-SAMPLE; these tests are the
+    only honest signal available without re-architecting data into point-in-time.
+  - The 72-symbol universe is today's large-cap list backtested to 2016 →
+    survivorship + selection bias. yfinance auto_adjust=True is retroactive, NOT
+    point-in-time. We REPORT the late-listers rather than silently include them.
+  - The fine-tuned-adapter-vs-base OOS test CANNOT be run here (no point-in-time
+    data; the adapter trains partly on its own recent trades; the backtest never
+    loads the adapter). We say so plainly instead of faking a number.
+
+CLI:
+  .venv/Scripts/python.exe -m terminal_in.backtest.validation --days 2470
+  .venv/Scripts/python.exe -m terminal_in.backtest.validation --days 2470 --llm
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import time
+from statistics import NormalDist
+
+import numpy as np
+
+from terminal_in.backtest import engine
+from terminal_in.backtest.engine import run_backtest, CAPITAL
+from terminal_in.execution.costs import cost_breakdown
+
+log = logging.getLogger(__name__)
+_N = NormalDist()
+
+# Round-trip CNC cost as a fraction of notional (constant — CNC brokerage is 0 and
+# every other component is linear in turnover). Used for the passive/random nulls.
+_BUY_FRAC  = cost_breakdown(1.0, 'BUY',  'CNC')['total']
+_SELL_FRAC = cost_breakdown(1.0, 'SELL', 'CNC')['total']
+_RT_FRAC   = _BUY_FRAC + _SELL_FRAC
+
+# Hand-tuned parameters to perturb in the robustness test (engine global → ±20%).
+# PERSIST_N is integer; ±20% of 2 rounds back to 2, so we step it 1/3 explicitly.
+_PERTURB = {
+    'MIN_EV':       (engine.MIN_EV,       0.20),
+    'MIN_CONF':     (engine.MIN_CONF,     0.20),
+    'ATR_SL_MULT':  (engine.ATR_SL_MULT,  0.20),
+    'ATR_TGT_MULT': (engine.ATR_TGT_MULT, 0.20),
+    'RSI_OVERSOLD': (engine.RSI_OVERSOLD, 0.20),
+    'EMA_FAST':     (engine.EMA_FAST,     0.20),
+    'EMA_SLOW':     (engine.EMA_SLOW,     0.20),
+}
+
+
+# ── metrics ──────────────────────────────────────────────────────────────────
+
+def _curve_stats(eq: np.ndarray, n_years: float) -> dict:
+    """CAGR / Sharpe / Sortino / max-DD / Calmar from an equity array (₹)."""
+    eq = np.asarray(eq, dtype=float)
+    if len(eq) < 3 or eq[0] <= 0:
+        return {'cagr': 0.0, 'sharpe': 0.0, 'sortino': 0.0, 'max_dd': 0.0, 'calmar': 0.0}
+    rets = np.diff(eq) / eq[:-1]
+    sd = rets.std()
+    downside = rets[rets < 0].std() if (rets < 0).any() else 0.0
+    sharpe = float(rets.mean() / sd * np.sqrt(252)) if sd > 0 else 0.0
+    sortino = float(rets.mean() / downside * np.sqrt(252)) if downside > 0 else 0.0
+    peak = np.maximum.accumulate(eq)
+    max_dd = float((eq / peak - 1).min())
+    cagr = float((eq[-1] / eq[0]) ** (1 / max(n_years, 1e-9)) - 1)
+    calmar = float(cagr / abs(max_dd)) if max_dd < 0 else 0.0
+    return {'cagr': cagr, 'sharpe': sharpe, 'sortino': sortino,
+            'max_dd': max_dd, 'calmar': calmar}
+
+
+def _trade_sharpe(rets: np.ndarray, n_years: float) -> float:
+    """Annualised trade-level Sharpe (matches engine._trade_sharpe)."""
+    rets = np.asarray(rets, dtype=float)
+    if len(rets) < 2 or rets.std() == 0 or n_years <= 0:
+        return 0.0
+    tpy = len(rets) / n_years
+    return float(rets.mean() / rets.std() * np.sqrt(tpy))
+
+
+# ── data load (mirror the engine's universe + window) ────────────────────────
+
+def _load(db, days: int):
+    from terminal_in.data_ingest.instruments import KNOWN_TOKENS, registry
+    registry.load_stubs()
+    eq_tokens = {t: s for s, t in KNOWN_TOKENS.items() if registry.sector(t) not in ('index',)}
+    nifty_tok = KNOWN_TOKENS.get('NIFTY 50')
+    all_1d = db.get_ohlcv_1d_all(list(eq_tokens) + ([nifty_tok] if nifty_tok else []),
+                                 limit=days + 300)
+    uni, first_listing = {}, {}
+    for t, s in eq_tokens.items():
+        df = all_1d.get(t)
+        if df is None or len(df) < 250:
+            continue
+        uni[s] = df['close']
+        first_listing[s] = str(df.index[0])[:10]
+    nifty = all_1d.get(nifty_tok)
+    dates = sorted(set().union(*[set(c.index) for c in uni.values()]))[-days:]
+    return uni, nifty, dates, first_listing
+
+
+# ── 1. BENCHMARKS ────────────────────────────────────────────────────────────
+
+def benchmarks(uni, nifty, dates, all_trades, n_years, null_runs, rng):
+    win = [d for d in dates]
+    out = {}
+
+    # buy-and-hold NIFTY (one-time round-trip cost; one-time cost ≈ no Sharpe effect)
+    if nifty is not None and len(nifty) > 10:
+        s = nifty['close'].reindex(win).ffill().dropna()
+        eq = CAPITAL * (s.values / s.values[0])
+        st = _curve_stats(eq, n_years)
+        st['net_total_return'] = float((1 - _BUY_FRAC) * (eq[-1] / eq[0]) * (1 - _SELL_FRAC) - 1)
+        out['buy_hold_nifty'] = st
+    else:
+        out['buy_hold_nifty'] = {'note': 'NIFTY series unavailable — cannot benchmark'}
+
+    # equal-weight buy-and-hold of the universe (symbols present at window start)
+    start = win[0]
+    present = {s: c for s, c in uni.items() if start in c.index}
+    if present:
+        cols = []
+        for s, c in present.items():
+            r = c.reindex(win).ffill()
+            r = r / r.loc[start]
+            cols.append(r.values)
+        eqw = CAPITAL * np.nanmean(np.vstack(cols), axis=0)
+        eqw = eqw[~np.isnan(eqw)]
+        st = _curve_stats(eqw, n_years)
+        st['net_total_return'] = float((1 - _BUY_FRAC) * (eqw[-1] / eqw[0]) * (1 - _SELL_FRAC) - 1)
+        st['n_symbols'] = len(present)
+        out['equal_weight_universe'] = st
+
+    # null: same entry dates + holding lengths, RANDOM symbol from the universe.
+    # Tests whether the lens SELECTION beats random selection on identical timing.
+    syms = list(uni.keys())
+    arrs = {s: uni[s].values.astype(float) for s in syms}
+    pos = {s: {str(dd)[:10]: i for i, dd in enumerate(uni[s].index)} for s in syms}
+    dpos = {str(dd)[:10]: i for i, dd in enumerate(win)}
+    strat_rets = np.array([t['ret'] for t in all_trades], dtype=float)
+    strat_ts = _trade_sharpe(strat_rets, n_years)
+    strat_mean = float(strat_rets.mean()) if len(strat_rets) else 0.0
+
+    # Candidate symbols for each (entry_date, holding_len) are identical across all
+    # null runs, so resolve them ONCE: per spec, the array of achievable net returns
+    # (one per eligible symbol). Each run then just samples one return per spec.
+    spec_returns = []
+    for t in all_trades:
+        ed, xd = t['entry_date'], t['exit_date']
+        if ed not in dpos or xd not in dpos:
+            continue
+        L = max(1, dpos[xd] - dpos[ed])
+        rets = [arrs[s][pos[s][ed] + L] / arrs[s][pos[s][ed]] - 1 - _RT_FRAC
+                for s in syms if ed in pos[s] and pos[s][ed] + L < len(arrs[s])]
+        if rets:
+            spec_returns.append(np.array(rets))
+
+    null_ts, null_mean = [], []
+    for _ in range(null_runs):
+        rr = np.array([sr[rng.integers(len(sr))] for sr in spec_returns])
+        if len(rr) > 1:
+            null_ts.append(_trade_sharpe(rr, n_years))
+            null_mean.append(float(rr.mean()))
+    null_ts = np.array(null_ts) if null_ts else np.array([0.0])
+    out['null_random'] = {
+        'runs': len(null_ts),
+        'strategy_trade_sharpe': round(strat_ts, 3),
+        'null_sharpe_mean': round(float(null_ts.mean()), 3),
+        'null_sharpe_p95': round(float(np.percentile(null_ts, 95)), 3),
+        'strategy_percentile_vs_null': round(float((null_ts < strat_ts).mean() * 100), 1),
+        'strategy_mean_ret': round(strat_mean, 5),
+        'null_mean_ret_mean': round(float(np.mean(null_mean)) if null_mean else 0.0, 5),
+        'note': 'null = same entry dates + holding lengths, random symbol; close-to-close, '
+                'no SL/target (random entries have none); net of CNC round-trip cost.',
+    }
+    return out, strat_ts
+
+
+# ── 2. MULTIPLE-TESTING CORRECTION ───────────────────────────────────────────
+
+def _per_lens_returns(all_trades) -> dict:
+    """lens → per-trade net return array (convergence trade credits each member)."""
+    out: dict[str, list] = {}
+    for t in all_trades:
+        for l in t['lens'].split('+'):
+            out.setdefault(l, []).append(t['ret'])
+    return {l: np.array(v, dtype=float) for l, v in out.items() if len(v) >= 2}
+
+
+def deflated_sharpe(per_lens, n_trials: int) -> dict:
+    """Deflated Sharpe Ratio (Bailey & López de Prado 2014).
+
+    For each lens treated as the selected one out of `n_trials`, compute the
+    probability its TRUE per-trade Sharpe > 0 after deflating for (a) the number
+    of trials, (b) non-normal returns (skew/kurtosis), (c) sample length.
+    DSR > 0.95 ⇒ survives at 5%.
+    """
+    # per-trade (non-annualised) Sharpe of each lens — DSR works in return units
+    sr = {l: (r.mean() / r.std()) for l, r in per_lens.items() if r.std() > 0}
+    if len(sr) < 2:
+        return {'note': 'need ≥2 lenses for the cross-trial variance term'}
+    var_sr = float(np.var(list(sr.values()), ddof=1))
+    euler = 0.5772156649
+    # expected max Sharpe under the null of zero true skill across n_trials
+    z1 = _N.inv_cdf(1 - 1.0 / n_trials)
+    z2 = _N.inv_cdf(1 - 1.0 / (n_trials * np.e))
+    sr0 = np.sqrt(var_sr) * ((1 - euler) * z1 + euler * z2)
+
+    res = {}
+    for l, r in per_lens.items():
+        n = len(r)
+        s = r.std()
+        if s == 0 or n < 3:
+            res[l] = {'dsr': 0.0, 'n': n, 'survives': False}
+            continue
+        srl = r.mean() / s
+        g3 = float(((r - r.mean()) ** 3).mean() / s ** 3)            # skew
+        g4 = float(((r - r.mean()) ** 4).mean() / s ** 4)            # kurtosis (raw)
+        denom = np.sqrt(max(1e-12, 1 - g3 * srl + (g4 - 1) / 4 * srl ** 2))
+        dsr = _N.cdf((srl - sr0) * np.sqrt(n - 1) / denom)
+        res[l] = {'dsr': round(float(dsr), 4), 'sharpe_per_trade': round(float(srl), 4),
+                  'n': n, 'survives': bool(dsr > 0.95)}
+    return {'n_trials': n_trials, 'sr0_haircut_per_trade': round(float(sr0), 4),
+            'per_lens': res}
+
+
+def white_reality_check(per_lens, n_boot: int, rng) -> dict:
+    """Single-step max-statistic bootstrap (White's Reality Check flavour).
+
+    Null: no lens has mean return > 0. Statistic = max over lenses of the
+    studentised mean t = mean/(std/√n). Resample each lens's own returns with
+    replacement, RECENTRE to impose the null, recompute max-t → null dist of the
+    family-wise maximum. p = P(max_t* ≥ observed max_t).
+
+    Limitation (stated, not hidden): lenses are resampled independently (iid), not
+    block-bootstrapped on a shared timeline, so cross-lens contemporaneous
+    correlation is not modelled. It is a family-wise screen, not a timeline RC.
+    """
+    obs, centred = {}, {}
+    for l, r in per_lens.items():
+        n = len(r); s = r.std()
+        obs[l] = (r.mean() / (s / np.sqrt(n))) if s > 0 else 0.0
+        centred[l] = r - r.mean()
+    obs_max = max(obs.values()) if obs else 0.0
+    maxes = np.empty(n_boot)
+    for b in range(n_boot):
+        m = -np.inf
+        for l, c in centred.items():
+            n = len(c); s = c.std()
+            if s == 0:
+                continue
+            samp = c[rng.integers(0, n, n)]
+            t = samp.mean() / (s / np.sqrt(n))
+            if t > m:
+                m = t
+        maxes[b] = m if np.isfinite(m) else 0.0
+    p_family = float((maxes >= obs_max).mean())
+    per = {l: {'t': round(float(obs[l]), 3),
+               'p_familywise': round(float((maxes >= obs[l]).mean()), 4),
+               'survives': bool((maxes >= obs[l]).mean() < 0.05)}
+           for l in obs}
+    return {'observed_max_t': round(obs_max, 3), 'p_familywise_best': round(p_family, 4),
+            'n_boot': n_boot, 'per_lens': per}
+
+
+# ── 3. PER-STRATEGY SIGNIFICANCE ─────────────────────────────────────────────
+
+def significance(per_lens, n_years: float) -> dict:
+    res = {}
+    for l, r in per_lens.items():
+        n = len(r); s = r.std()
+        mean = float(r.mean())
+        tstat = float(mean / (s / np.sqrt(n))) if s > 0 else 0.0
+        sr_pt = (mean / s) if s > 0 else 0.0                       # per-trade Sharpe
+        se_sr = np.sqrt((1 + 0.5 * sr_pt ** 2) / n)                # Lo (2002) SE
+        z = sr_pt / se_sr if se_sr > 0 else 0.0
+        res[l] = {'n': n, 'mean_ret': round(mean, 5), 't_stat': round(tstat, 2),
+                  'sharpe_annual': round(_trade_sharpe(r, n_years), 3),
+                  'sharpe_per_trade': round(sr_pt, 4), 'se_sharpe': round(float(se_sr), 4),
+                  'sharpe_z': round(float(z), 2), 'noise': bool(abs(z) < 2)}
+    return res
+
+
+# ── 4. LLM / planner marginal value ──────────────────────────────────────────
+
+def planner_isolation(db, days, run_llm, max_llm_calls, n_years):
+    out = {}
+    modes = [('lenses_only', 'none'), ('planner_degraded', 'degraded')]
+    if run_llm:
+        modes.append(('planner_llm', 'llm'))
+    rets = {}
+    for label, mode in modes:
+        r = run_backtest(db=db, days=days, planner=mode, max_llm_calls=max_llm_calls,
+                         full_trades=True)
+        arr = np.array([t['ret'] for t in r['all_trades']], dtype=float)
+        rets[label] = arr
+        out[label] = {'net_sharpe': r['sharpe'], 'net_return_pct': r['return_pct'],
+                      'trade_sharpe': round(_trade_sharpe(arr, n_years), 3),
+                      'n_trades': r['trades']['n'],
+                      'planner_mode': r['planner']['mode']}
+    # marginal value vs lenses-only, with a noise band (SE of Sharpe difference)
+    base = rets.get('lenses_only')
+    if base is not None and len(base) > 2:
+        sr_b = base.mean() / base.std() if base.std() > 0 else 0.0
+        se_b = np.sqrt((1 + 0.5 * sr_b ** 2) / len(base))
+        for label in ('planner_degraded', 'planner_llm'):
+            if label not in rets:
+                continue
+            a = rets[label]
+            sr_a = a.mean() / a.std() if a.std() > 0 else 0.0
+            se_a = np.sqrt((1 + 0.5 * sr_a ** 2) / len(a))
+            band = 2 * np.sqrt(se_a ** 2 + se_b ** 2)              # ~2σ of the diff
+            delta = sr_a - sr_b
+            out[label]['delta_sharpe_vs_lenses_per_trade'] = round(float(delta), 4)
+            out[label]['noise_band_2se'] = round(float(band), 4)
+            out[label]['beats_noise'] = bool(abs(delta) > band)
+    out['_training_loop'] = (
+        'NOT TESTABLE here. The fine-tuned adapter is never loaded by the backtest, '
+        'there is no point-in-time data, and the SFT set includes the system\'s OWN '
+        'recent trades + hindsight labels — so any in-sample "improvement" would be '
+        'circular. Adapter-vs-base must be judged on a held-out FORWARD window with '
+        'frozen weights; that harness does not exist yet. Highest overfit risk.')
+    return out
+
+
+# ── 5. ROBUSTNESS / OVERFIT FRAGILITY ────────────────────────────────────────
+
+def robustness(db, days, base_sharpe):
+    out = {'baseline_net_sharpe': base_sharpe, 'params': {}}
+    originals = {k: getattr(engine, k) for k in _PERTURB}
+    try:
+        for name, (val, frac) in _PERTURB.items():
+            row = {}
+            for tag, mult in (('minus20', 1 - frac), ('plus20', 1 + frac)):
+                newv = val * mult
+                newv = type(val)(round(newv)) if isinstance(val, int) else newv
+                setattr(engine, name, newv)
+                r = run_backtest(db=db, days=days, planner='degraded')
+                row[tag] = {'value': newv, 'net_sharpe': r['sharpe'],
+                            'return_pct': r['return_pct']}
+            setattr(engine, name, val)
+            sharpes = [base_sharpe, row['minus20']['net_sharpe'], row['plus20']['net_sharpe']]
+            row['spread'] = round(max(sharpes) - min(sharpes), 3)
+            # fragile = a ±20% nudge erases most of the baseline edge or flips it
+            row['fragile'] = bool(min(row['minus20']['net_sharpe'],
+                                      row['plus20']['net_sharpe']) < base_sharpe * 0.5)
+            out['params'][name] = row
+    finally:
+        for k, v in originals.items():
+            setattr(engine, k, v)
+    # PERSIST_N stepped explicitly (±20% of 2 rounds back to 2)
+    pn = engine.PERSIST_N
+    row = {}
+    for tag, nv in (('to_1', max(1, pn - 1)), ('to_3', pn + 1)):
+        engine.PERSIST_N = nv
+        r = run_backtest(db=db, days=days, planner='degraded')
+        row[tag] = {'value': nv, 'net_sharpe': r['sharpe'], 'return_pct': r['return_pct']}
+    engine.PERSIST_N = pn
+    out['params']['PERSIST_N'] = row
+    return out
+
+
+# ── 6. REGIME & TIME CONCENTRATION ───────────────────────────────────────────
+
+def concentration(result) -> dict:
+    def share(by: dict) -> tuple[str, float, float]:
+        pos = {k: v.get('total_pnl', 0) for k, v in by.items() if v.get('n', 0) > 0}
+        tot = sum(pos.values())
+        if not pos or tot <= 0:
+            return ('—', 0.0, tot)
+        best = max(pos, key=pos.get)
+        return (best, pos[best] / tot, tot)
+
+    by_year, by_reg = result.get('walk_forward_years', {}), result.get('per_regime', {})
+    yb, yshare, ytot = share(by_year)
+    rb, rshare, rtot = share(by_reg)
+
+    # worst rolling 12-month return off the (downsampled) equity curve
+    curve = result.get('equity_curve', [])
+    worst_12m = None
+    if len(curve) > 5:
+        eq = np.array([p['equity'] for p in curve], dtype=float)
+        pts_per_year = max(2, int(len(eq) / max(result['days'] / 252, 1)))
+        worst = 1e9
+        for i in range(len(eq) - pts_per_year):
+            worst = min(worst, eq[i + pts_per_year] / eq[i] - 1)
+        worst_12m = round(float(worst), 4) if worst < 1e9 else None
+    return {
+        'best_year': yb, 'best_year_pnl_share': round(yshare, 3),
+        'best_regime': rb, 'best_regime_pnl_share': round(rshare, 3),
+        'best_year_dominates': bool(yshare > 0.5),
+        'best_regime_dominates': bool(rshare > 0.5),
+        'worst_rolling_12m_return': worst_12m,
+        'note': 'rolling-12m off the ≤300-pt downsampled curve (approximate).',
+    }
+
+
+# ── survivorship: which symbols did not exist / trade in 2016 ────────────────
+
+def survivorship(first_listing: dict, cutoff: str | None = None) -> dict:
+    """Flag symbols that first traded materially after the data floor.
+
+    The DB's deepest bar (~10y backfill) is itself a floor: blue-chips all show
+    that date because that's where history was fetched from, NOT their listing.
+    So we anchor the cutoff to floor + ~90d and flag only symbols that begin
+    clearly later — those are genuine late-listers (post-floor IPOs). The deeper,
+    UNquantifiable bias is that the universe is today's survivors: names relegated
+    or delisted from the index over the window are absent and invisible here.
+    """
+    if not first_listing:
+        return {'note': 'no symbols'}
+    floor = min(first_listing.values())
+    if cutoff is None:
+        fy, fm = int(floor[:4]), int(floor[5:7])             # first day of next month
+        cutoff = f'{fy}-{fm + 1:02d}-01' if fm < 12 else f'{fy + 1}-01-01'
+    late = {s: d for s, d in first_listing.items() if d > cutoff}
+    return {'data_floor': floor, 'cutoff': cutoff, 'n_universe': len(first_listing),
+            'n_at_data_floor': sum(1 for d in first_listing.values() if d <= cutoff),
+            'n_listed_after_floor': len(late),
+            'late_listers': dict(sorted(late.items(), key=lambda kv: kv[1], reverse=True)),
+            'note': 'first DB bar per symbol; cutoff anchored ~1 month past the data '
+                    'floor to separate true post-floor IPOs from the backfill boundary. '
+                    'yfinance auto_adjust=True (retroactive) — NOT point-in-time. '
+                    'Index-exit/delisted names are absent entirely (unmeasurable here).'}
+
+
+# ── orchestration ────────────────────────────────────────────────────────────
+
+def validate(db=None, days: int = 2470, run_llm: bool = False, max_llm_calls: int = 150,
+             null_runs: int = 1000, n_boot: int = 2000, n_trials: int = 8,
+             seed: int = 7) -> dict:
+    if db is None:
+        from terminal_in.config import load_config
+        from terminal_in.db import DB
+        db = DB(load_config().sqlite_path)
+    rng = np.random.default_rng(seed)
+    t0 = time.time()
+
+    log.info('validation: baseline run (degraded) …')
+    base = run_backtest(db=db, days=days, planner='degraded', full_trades=True)
+    all_trades = base['all_trades']
+    n_years = max(base['days'] / 252.0, 1e-9)
+    base_sharpe = base['sharpe']
+    # strategy curve stats on the FULL daily curve — same basis as the benchmarks
+    strat_eq = np.array([v for _, v in base['daily_equity_full']], dtype=float)
+    strat_stats = _curve_stats(strat_eq, n_years)
+
+    uni, nifty, dates, _windowed = _load(db, days)
+    # true first-listing dates (full history, NOT the windowed load) for survivorship
+    from terminal_in.data_ingest.instruments import KNOWN_TOKENS, registry
+    eq_tokens = {t: s for s, t in KNOWN_TOKENS.items() if registry.sector(t) not in ('index',)}
+    firsts = db.get_ohlcv_first_dates(list(eq_tokens))
+    first_listing = {eq_tokens[t]: str(d)[:10] for t, d in firsts.items() if d}
+    per_lens = _per_lens_returns(all_trades)
+
+    log.info('validation: benchmarks + %d null runs …', null_runs)
+    bench, strat_ts = benchmarks(uni, nifty, dates, all_trades, n_years, null_runs, rng)
+    bh = bench.get('buy_hold_nifty', {})
+    beats_bh = (isinstance(bh, dict) and 'sharpe' in bh and base_sharpe > bh['sharpe'])
+
+    report = {
+        'ts': int(time.time() * 1000), 'days': days, 'n_years': round(n_years, 2),
+        'n_trades': base['trades']['n'], 'symbols': base['symbols_tested'],
+        'headline': _headline(base, bh, beats_bh),
+        'strategy_net': {'cagr_pct': base.get('cagr_pct'), 'sharpe': base_sharpe,
+                         'sortino': round(strat_stats['sortino'], 3),
+                         'calmar': round(strat_stats['calmar'], 3),
+                         'max_dd_pct': base['max_drawdown_pct'],
+                         'return_pct': base['return_pct'],
+                         'gross': base.get('gross'), 'costs': base.get('costs')},
+        'benchmarks': bench,
+        'beats_buy_hold_nifty': beats_bh,
+        'multiple_testing': {
+            'deflated_sharpe': deflated_sharpe(per_lens, n_trials),
+            'reality_check': white_reality_check(per_lens, n_boot, rng),
+        },
+        'significance': significance(per_lens, n_years),
+        'planner_isolation': planner_isolation(db, days, run_llm, max_llm_calls, n_years),
+        'robustness': robustness(db, days, base_sharpe),
+        'concentration': concentration(base),
+        'survivorship': survivorship(first_listing),
+        'elapsed_s': round(time.time() - t0, 1),
+    }
+    return report
+
+
+def _headline(base, bh, beats_bh) -> str:
+    if not isinstance(bh, dict) or 'sharpe' not in bh:
+        return 'NO BENCHMARK: NIFTY series unavailable — cannot judge alpha.'
+    d = base['sharpe'] - bh['sharpe']
+    if beats_bh:
+        return (f"Strategy net Sharpe {base['sharpe']:.2f} vs buy-hold NIFTY "
+                f"{bh['sharpe']:.2f} (+{d:.2f}). Beats passive — but see deflation/"
+                f"significance/concentration before calling it alpha.")
+    return (f"NO ALPHA: strategy net Sharpe {base['sharpe']:.2f} does NOT beat "
+            f"buy-and-hold NIFTY {bh['sharpe']:.2f} ({d:+.2f}) net of costs.")
+
+
+def _print(r: dict):
+    P = print
+    P('\n' + '=' * 78)
+    P('ALPHA VALIDATION —', r['days'], 'days /', r['n_years'], 'y /', r['n_trades'],
+      'trades /', r['symbols'], 'symbols')
+    P('=' * 78)
+    P('\n>>> ' + r['headline'] + '\n')
+
+    bh = r['benchmarks'].get('buy_hold_nifty', {})
+    ew = r['benchmarks'].get('equal_weight_universe', {})
+    s = r['strategy_net']
+    P('BENCHMARKS (net of costs)        CAGR    Sharpe   Sortino   MaxDD    Calmar')
+    def line(name, m):
+        if 'sharpe' not in m:
+            P(f'  {name:<28}{m.get("note","n/a")}'); return
+        P(f'  {name:<28}{m.get("cagr",0)*100:6.2f}%  {m["sharpe"]:6.2f}  '
+          f'{m["sortino"]:7.2f}  {m["max_dd"]*100:6.2f}%  {m["calmar"]:6.2f}')
+    line('STRATEGY (net)', {'cagr': (s.get('cagr_pct') or 0)/100, 'sharpe': s['sharpe'],
+                            'sortino': s.get('sortino', 0.0), 'max_dd': s['max_dd_pct']/100,
+                            'calmar': s.get('calmar', 0.0)})
+    line('Buy-hold NIFTY', bh)
+    line('Equal-weight universe', ew)
+    nr = r['benchmarks'].get('null_random', {})
+    P(f'\nNULL (random symbols, same timing, {nr.get("runs",0)} runs):')
+    P(f'  strategy trade-Sharpe {nr.get("strategy_trade_sharpe")} vs null mean '
+      f'{nr.get("null_sharpe_mean")} (p95 {nr.get("null_sharpe_p95")}) -> '
+      f'{nr.get("strategy_percentile_vs_null")}th percentile')
+
+    P('\nMULTIPLE TESTING')
+    dsr = r['multiple_testing']['deflated_sharpe']
+    P(f'  Deflated Sharpe (N={dsr.get("n_trials")} trials, haircut '
+      f'{dsr.get("sr0_haircut_per_trade")}/trade):')
+    for l, v in (dsr.get('per_lens') or {}).items():
+        P(f'    {l:<6} DSR={v["dsr"]:.3f}  n={v["n"]:<5} '
+          f'{"SURVIVES" if v["survives"] else "dies"}')
+    rc = r['multiple_testing']['reality_check']
+    P(f'  Reality-Check family-wise p(best) = {rc.get("p_familywise_best")} '
+      f'(max-t {rc.get("observed_max_t")})')
+    for l, v in (rc.get('per_lens') or {}).items():
+        P(f'    {l:<6} t={v["t"]:<7} p_fw={v["p_familywise"]:.3f} '
+          f'{"survives" if v["survives"] else "dies"}')
+
+    P('\nPER-STRATEGY SIGNIFICANCE (flag: Sharpe < 2 SE from zero)')
+    for l, v in r['significance'].items():
+        P(f'  {l:<6} n={v["n"]:<5} mean={v["mean_ret"]:+.4f} t={v["t_stat"]:+6.2f} '
+          f'SR={v["sharpe_annual"]:+.2f} z={v["sharpe_z"]:+.2f} '
+          f'{"** NOISE **" if v["noise"] else "ok"}')
+
+    P('\nPLANNER ISOLATION (net Sharpe; marginal vs lenses-only)')
+    pi = r['planner_isolation']
+    for label in ('lenses_only', 'planner_degraded', 'planner_llm'):
+        if label not in pi:
+            continue
+        v = pi[label]
+        extra = ''
+        if 'delta_sharpe_vs_lenses_per_trade' in v:
+            extra = (f"  d={v['delta_sharpe_vs_lenses_per_trade']:+.4f} "
+                     f"band+/-{v['noise_band_2se']:.4f} "
+                     f"{'REAL' if v['beats_noise'] else 'within noise'}")
+        P(f'  {label:<18} net_sharpe={v["net_sharpe"]:+.2f} '
+          f'ret={v["net_return_pct"]:+.1f}% n={v["n_trades"]}{extra}')
+    P('  training-loop: ' + pi['_training_loop'][:96] + '...')
+
+    P('\nROBUSTNESS (±20% one-at-a-time; baseline net Sharpe '
+      f'{r["robustness"]["baseline_net_sharpe"]:+.2f})')
+    for name, row in r['robustness']['params'].items():
+        keys = [k for k in row if isinstance(row[k], dict)]
+        cells = '  '.join(f'{k}={row[k]["net_sharpe"]:+.2f}' for k in keys)
+        flag = ' << FRAGILE' if row.get('fragile') else ''
+        P(f'  {name:<14} {cells}{flag}')
+
+    c = r['concentration']
+    P('\nCONCENTRATION')
+    P(f'  best year {c["best_year"]} = {c["best_year_pnl_share"]*100:.0f}% of net P&L'
+      f'{"  << >50%" if c["best_year_dominates"] else ""}')
+    P(f'  best regime {c["best_regime"]} = {c["best_regime_pnl_share"]*100:.0f}% of net P&L'
+      f'{"  << >50%" if c["best_regime_dominates"] else ""}')
+    P(f'  worst rolling 12m return = '
+      f'{c["worst_rolling_12m_return"]*100 if c["worst_rolling_12m_return"] is not None else float("nan"):.1f}%')
+
+    sv = r['survivorship']
+    P('\nSURVIVORSHIP / DATA HONESTY')
+    P(f'  data floor {sv.get("data_floor")} ({sv.get("n_at_data_floor")} symbols start here '
+      f'= backfill boundary, not listing).')
+    P(f'  {sv.get("n_listed_after_floor")}/{sv["n_universe"]} first traded AFTER the floor '
+      f'(true late-listers). Universe = today\'s survivors; delisted/relegated names absent.')
+    if sv['late_listers']:
+        items = list(sv['late_listers'].items())[:14]
+        P('   ' + ', '.join(f'{s}({d})' for s, d in items))
+    P('=' * 78 + '\n')
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# MODULE 6 — Phase C (competence) + Phase D₀ (GBT EV head) OOS validation
+# ════════════════════════════════════════════════════════════════════════════
+
+def _judge_stats(result: dict, n_years: float) -> dict:
+    eq = np.array([v for _, v in result['daily_equity_full']], dtype=float)
+    st = _curve_stats(eq, n_years)
+    rets = np.array([t['ret'] for t in result['all_trades']], dtype=float)
+    st['net_sharpe'] = result['sharpe']           # daily-curve Sharpe (headline)
+    st['return_pct'] = result['return_pct']
+    st['n'] = result['trades']['n']
+    st['trade_sharpe'] = _trade_sharpe(rets, n_years)
+    st['ev_source'] = result.get('planner', {}).get('ev_source', 'heuristic')
+    st['_rets'] = rets
+    return st
+
+
+def _regime_regression(flat: dict, cand: dict) -> dict:
+    """Per-regime mean net trade-return: flat vs candidate. Reports the worst
+    regression in percentage points (gate: no >5pt category regression)."""
+    def by_regime(res):
+        d: dict[str, list] = {}
+        for t in res['all_trades']:
+            d.setdefault(t['regime'], []).append(t['ret'])
+        return {k: float(np.mean(v)) for k, v in d.items() if v}
+    a, b = by_regime(flat), by_regime(cand)
+    rows, worst = {}, 0.0
+    for reg in sorted(set(a) | set(b)):
+        fa, fb = a.get(reg, 0.0), b.get(reg, 0.0)
+        reg_pp = (fa - fb) * 100        # positive = candidate regressed
+        rows[reg] = {'flat': round(fa, 4), 'cand': round(fb, 4), 'regress_pp': round(reg_pp, 2)}
+        worst = max(worst, reg_pp)
+    return {'per_regime': rows, 'worst_regression_pp': round(worst, 2),
+            'passes_5pt': bool(worst <= 5.0)}
+
+
+def validate_m6(db=None, days: int = 2470, horizon: int = 20, n_trials: int = 8,
+                competence_mode: str = 'veto', seed: int = 7) -> dict:
+    """Phase C + D₀ out-of-sample validation, gated through this harness."""
+    from terminal_in.m6.dataset import build_candidate_dataset, LENS_COLS
+    from terminal_in.m6.competence import CompetenceTable, THRESHOLD_DEFAULT
+    from terminal_in.m6 import ev_head as EV
+
+    if db is None:
+        from terminal_in.config import load_config
+        from terminal_in.db import DB
+        db = DB(load_config().sqlite_path)
+    t0 = time.time()
+    n_years = max(days / 252.0, 1e-9)
+
+    log.info('m6: building candidate dataset …')
+    ds = build_candidate_dataset(db=db, days=days, horizon=horizon)
+
+    # ── baselines + judges, all same data/costs ──
+    log.info('m6: baseline (flat heuristic) …')
+    flat = run_backtest(db=db, days=days, planner='none', full_trades=True)
+    ct = CompetenceTable(ds, threshold=THRESHOLD_DEFAULT)
+    log.info('m6: competence-gated backtest …')
+    comp = run_backtest(db=db, days=days, planner='none', full_trades=True,
+                        competence_gate=ct.gate(competence_mode))
+    log.info('m6: walk-forward EV-head training …')
+    wf = EV.WalkForwardEV(ds, seed=seed)
+    folds = wf.train_folds()
+    log.info('m6: GBT-EV-head backtest …')
+    gbt = run_backtest(db=db, days=days, planner='none', full_trades=True,
+                       ev_override=wf.ev_override())
+
+    s_flat, s_comp, s_gbt = (_judge_stats(flat, n_years), _judge_stats(comp, n_years),
+                             _judge_stats(gbt, n_years))
+
+    # benchmark: buy-and-hold NIFTY (same loader as the main harness)
+    uni, nifty, dates, _ = _load(db, days)
+    bh = benchmarks(uni, nifty, dates, flat['all_trades'], n_years, 1, np.random.default_rng(seed))[0]
+    bh_sharpe = bh.get('buy_hold_nifty', {}).get('sharpe', float('nan'))
+
+    # ── Phase C: abstention attribution (point-in-time competence on the dataset) ──
+    ann = ct.annotate(ds)
+    fired = ann[ann['fired'] == 1]
+    kept = fired[~fired['comp_abstain']]
+    abst = fired[fired['comp_abstain']]
+    def blk(g):
+        r = g['ret_net'].to_numpy(float)
+        return {'n': int(len(r)), 'mean_ret': round(float(r.mean()), 5) if len(r) else 0.0,
+                'trade_sharpe': _trade_sharpe(r, n_years), 'win_rate': round(float((r > 0).mean()), 3) if len(r) else 0.0}
+    phase_c = {
+        'threshold': THRESHOLD_DEFAULT, 'mode': competence_mode,
+        'flat': {'net_sharpe': s_flat['net_sharpe'], 'return_pct': s_flat['return_pct'],
+                 'sortino': round(s_flat['sortino'], 3), 'max_dd': round(s_flat['max_dd'], 4),
+                 'calmar': round(s_flat['calmar'], 3), 'n': s_flat['n']},
+        'competence': {'net_sharpe': s_comp['net_sharpe'], 'return_pct': s_comp['return_pct'],
+                       'sortino': round(s_comp['sortino'], 3), 'max_dd': round(s_comp['max_dd'], 4),
+                       'calmar': round(s_comp['calmar'], 3), 'n': s_comp['n']},
+        'abstention': {
+            'abstain_rate_of_fired': round(float(len(abst) / max(len(fired), 1)), 3),
+            'all_fired': blk(fired), 'kept': blk(kept), 'abstained': blk(abst)},
+        'beats_flat_sharpe': bool(s_comp['net_sharpe'] >= s_flat['net_sharpe']),
+        'abstention_value_additive': bool(len(abst) > 0 and abst['ret_net'].mean() < kept['ret_net'].mean()),
+    }
+
+    # ── Phase D₀: feature importance, echo guard, calibration, gates ──
+    last_fold = max((f for f in folds if f['trained']), key=lambda f: f['n_train'], default=None)
+    feat_imp, echo, calib = {}, {}, []
+    if last_fold is not None:
+        year = last_fold['fold']; start = last_fold['train_cutoff']
+        train = ds[ds['outcome_date'] < start]
+        test = ds[(ds['date'] >= start) & (ds['date'] < f'{int(year) + 1}-01-01')]
+        all_head, fired_head = EV.fit_echo_pair(train, seed=seed)
+        if all_head is not None:
+            feat_imp = all_head.feature_importance()
+            calib = all_head.calibration(test) if len(test) else []
+        if all_head is not None and fired_head is not None and len(test):
+            pa = np.array([all_head.predict(r)[0] for r in test.to_dict('records')])
+            pf = np.array([fired_head.predict(r)[0] for r in test.to_dict('records')])
+            corr = float(np.corrcoef(pa, pf)[0, 1]) if pa.std() and pf.std() else 0.0
+            echo = {'fold': year, 'pred_corr_all_vs_fired': round(corr, 3),
+                    'mean_abs_diff': round(float(np.abs(pa - pf).mean()), 4),
+                    'diverges': bool(corr < 0.8)}
+    top2 = list(feat_imp)[:2]
+    relearned_heuristic = bool(set(top2) <= {'ev', 'confidence'})
+
+    # gate (c): deflated Sharpe on the GBT judge's per-lens trades
+    gbt_per_lens = _per_lens_returns(gbt['all_trades'])
+    dsr = deflated_sharpe(gbt_per_lens, n_trials)
+    dsr_survivors = [l for l, v in (dsr.get('per_lens') or {}).items() if v.get('survives')]
+    reg_reg = _regime_regression(flat, gbt)
+
+    phase_d0 = {
+        'folds': folds,
+        'fallback_candidate_frac': round(gbt['planner']['ev_source_counts'].get('heuristic', 0) /
+                                         max(sum(gbt['planner']['ev_source_counts'].values()), 1), 3),
+        'heuristic': {'net_sharpe': s_flat['net_sharpe'], 'return_pct': s_flat['return_pct'],
+                      'sortino': round(s_flat['sortino'], 3), 'calmar': round(s_flat['calmar'], 3)},
+        'gbt': {'net_sharpe': s_gbt['net_sharpe'], 'return_pct': s_gbt['return_pct'],
+                'sortino': round(s_gbt['sortino'], 3), 'max_dd': round(s_gbt['max_dd'], 4),
+                'calmar': round(s_gbt['calmar'], 3), 'n': s_gbt['n'], 'ev_source': s_gbt['ev_source']},
+        'feature_importance': feat_imp, 'relearned_heuristic': relearned_heuristic,
+        'echo_guard': echo, 'calibration': calib,
+        'regime_regression': reg_reg,
+        'deflated_sharpe': dsr, 'dsr_survivors': dsr_survivors,
+        'gate_a_beats_heuristic': bool(s_gbt['net_sharpe'] > s_flat['net_sharpe'] and reg_reg['passes_5pt']),
+        'gate_b_beats_buyhold': bool(s_gbt['net_sharpe'] > bh_sharpe),
+        'gate_c_survives_dsr': bool(len(dsr_survivors) > 0),
+    }
+    return {'ts': int(time.time() * 1000), 'days': days, 'n_years': round(n_years, 2),
+            'dataset_rows': int(len(ds)), 'horizon': horizon,
+            'buy_hold_nifty_sharpe': round(float(bh_sharpe), 3) if bh_sharpe == bh_sharpe else None,
+            'phase_c': phase_c, 'phase_d0': phase_d0, 'elapsed_s': round(time.time() - t0, 1)}
+
+
+def _print_m6(r: dict):
+    P = print
+    P('\n' + '=' * 78)
+    P(f'MODULE 6 VALIDATION — Phase C + D₀ — {r["days"]}d / {r["n_years"]}y / '
+      f'{r["dataset_rows"]} candidate rows / horizon {r["horizon"]}d')
+    P('=' * 78)
+    bh = r['buy_hold_nifty_sharpe']
+
+    c = r['phase_c']
+    P(f'\nPHASE C — competence (threshold {c["threshold"]}, mode={c["mode"]})')
+    P(f'  FLAT        net_sharpe {c["flat"]["net_sharpe"]:+.2f}  ret {c["flat"]["return_pct"]:+.1f}%  '
+      f'sortino {c["flat"]["sortino"]:+.2f}  calmar {c["flat"]["calmar"]:+.2f}  n={c["flat"]["n"]}')
+    P(f'  COMPETENCE  net_sharpe {c["competence"]["net_sharpe"]:+.2f}  ret {c["competence"]["return_pct"]:+.1f}%  '
+      f'sortino {c["competence"]["sortino"]:+.2f}  calmar {c["competence"]["calmar"]:+.2f}  n={c["competence"]["n"]}')
+    a = c['abstention']
+    P(f'  abstain rate (of fired) {a["abstain_rate_of_fired"]*100:.0f}%  | mean net-ret  '
+      f'all-fired {a["all_fired"]["mean_ret"]:+.4f}  kept {a["kept"]["mean_ret"]:+.4f}  '
+      f'ABSTAINED {a["abstained"]["mean_ret"]:+.4f}')
+    P(f'  GATE: beats-flat-Sharpe={c["beats_flat_sharpe"]}  '
+      f'abstention-removes-net-negative={c["abstention_value_additive"]}')
+
+    d = r['phase_d0']
+    P(f'\nPHASE D₀ — GBT forward-EV head (OOS, {d["fallback_candidate_frac"]*100:.0f}% heuristic-fallback candidates)')
+    P('  per-fold fences (train cutoff must precede test span):')
+    for f in d['folds']:
+        P(f'    {f["fold"]}  train<{f["train_cutoff"]}  n_train={f["n_train"]:<6} '
+          f'trained={f["trained"]}  test {f["test_span"]}  leak_ok={f["cutoff_ok"]}')
+    P(f'  HEURISTIC   net_sharpe {d["heuristic"]["net_sharpe"]:+.2f}  ret {d["heuristic"]["return_pct"]:+.1f}%  '
+      f'sortino {d["heuristic"]["sortino"]:+.2f}  calmar {d["heuristic"]["calmar"]:+.2f}')
+    P(f'  GBT-EV      net_sharpe {d["gbt"]["net_sharpe"]:+.2f}  ret {d["gbt"]["return_pct"]:+.1f}%  '
+      f'sortino {d["gbt"]["sortino"]:+.2f}  calmar {d["gbt"]["calmar"]:+.2f}  n={d["gbt"]["n"]}')
+    P(f'  buy-hold NIFTY net_sharpe {bh:+.2f}' if bh is not None else '  buy-hold NIFTY n/a')
+    fi = d['feature_importance']
+    P('  feature importance (top): ' + ', '.join(f'{k}={v}' for k, v in list(fi.items())[:6]))
+    if d['relearned_heuristic']:
+        P('    ** ev/conf dominate — head largely RELEARNED the heuristic; little added **')
+    if d['echo_guard']:
+        e = d['echo_guard']
+        P(f"  echo guard (fold {e['fold']}): corr(all,fired)={e['pred_corr_all_vs_fired']} "
+          f"|Δ|={e['mean_abs_diff']}  {'DIVERGES (selection bias)' if e['diverges'] else 'consistent'}")
+    if d['calibration']:
+        P('  calibration (pred->realized): ' +
+          '  '.join(f'{b["pred"]}->{b["realized"]}(n{b["n"]})' for b in d['calibration']))
+    rr = d['regime_regression']
+    P(f'  worst per-regime regression {rr["worst_regression_pp"]:+.2f}pp (<=5pt: {rr["passes_5pt"]})')
+    P(f'  deflated-Sharpe survivors: {d["dsr_survivors"] or "NONE"}')
+    P(f'  GATES: (a) beats heuristic + no>5pt regress = {d["gate_a_beats_heuristic"]}  | '
+      f'(b) beats buy-hold = {d["gate_b_beats_buyhold"]}  | (c) survives DSR = {d["gate_c_survives_dsr"]}')
+    P('=' * 78 + '\n')
+
+
+if __name__ == '__main__':
+    import sys
+    try:                                  # Windows console is cp1252; force UTF-8
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
+    ap = argparse.ArgumentParser(description='Alpha-validation harness for the backtest.')
+    ap.add_argument('--days', type=int, default=2470)
+    ap.add_argument('--llm', action='store_true', help='also run the LLM judge isolation (slow)')
+    ap.add_argument('--max-llm-calls', type=int, default=150)
+    ap.add_argument('--null-runs', type=int, default=1000)
+    ap.add_argument('--boot', type=int, default=2000)
+    ap.add_argument('--trials', type=int, default=8, help='strategies tried (DSR deflation)')
+    ap.add_argument('--m6', action='store_true', help='run the Module 6 (Phase C + D₀) validation')
+    ap.add_argument('--horizon', type=int, default=20, help='m6 label horizon (trading days)')
+    ap.add_argument('--competence-mode', choices=['veto', 'weight'], default='veto')
+    ap.add_argument('--json', action='store_true', help='dump full JSON instead of the report')
+    args = ap.parse_args()
+    if args.m6:
+        r = validate_m6(days=args.days, horizon=args.horizon, n_trials=args.trials,
+                        competence_mode=args.competence_mode)
+        print(json.dumps(r, indent=1, default=str)) if args.json else _print_m6(r)
+    else:
+        r = validate(days=args.days, run_llm=args.llm, max_llm_calls=args.max_llm_calls,
+                     null_runs=args.null_runs, n_boot=args.boot, n_trials=args.trials)
+        print(json.dumps(r, indent=1, default=str)) if args.json else _print(r)

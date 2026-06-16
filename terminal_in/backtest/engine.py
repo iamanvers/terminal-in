@@ -39,6 +39,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from terminal_in.execution.costs import cost_breakdown
+
 log = logging.getLogger(__name__)
 
 OUT_DIR = Path('./data/backtests')
@@ -50,10 +52,18 @@ PERSIST_N      = 2
 MAX_POSITIONS  = 10
 SECTOR_CAP     = 0.40
 SECTOR_FLOOR   = 2
-SLIPPAGE       = 0.0003
-COST_PER_TRADE = 20.0
+SLIPPAGE       = 0.0003        # price adjustment on the fill — NOT a fee (see costs.py)
 CAPITAL        = 1_000_000.0
 RISK_PER_TRADE = 0.05          # 5% of equity notional per position (live default)
+
+# Hand-tuned lens/exit parameters (NOT fit out-of-sample — see validation.py
+# robustness test). Promoted to module globals so the alpha-validation harness
+# can perturb them ±20% one at a time and map the net-Sharpe surface.
+EMA_FAST     = 20              # fast EMA span (S5 pullback proximity, MOM trigger)
+EMA_SLOW     = 50             # slow EMA span (S5 uptrend filter)
+RSI_OVERSOLD = 38             # S4 oversold reversion threshold
+ATR_SL_MULT  = 1.5           # stop-loss = entry - ATR_SL_MULT × ATR
+ATR_TGT_MULT = 2.5           # target    = entry + ATR_TGT_MULT × ATR
 
 # orchestrator._REGIME_MULT — confidence multiplier, not a gate
 REGIME_MULT = {'strong_bull': 1.20, 'bull': 1.10, 'sideways': 0.90,
@@ -75,15 +85,35 @@ class Trade:
     exit_date: str = ''
     exit_price: float = 0.0
     exit_reason: str = ''
-    pnl: float = 0.0
+    pnl: float = 0.0          # NET of all-in transaction costs (both legs)
     judge: str = 'degraded'   # which judge approved this entry: 'llm' | 'degraded'
     size_factor: float = 1.0  # planner size multiplier applied to Kelly qty
+    segment: str = 'CNC'      # CNC (delivery) | MIS (intraday) — drives cost model
+    cost: float = 0.0         # all-in round-trip transaction cost (entry + exit legs)
 
 
 @dataclass
 class Position:
     trade: Trade
     sector: str
+
+
+@dataclass
+class _Approve:
+    """Stand-in verdict for the lenses-only (planner='none') baseline — accept
+    the candidate at full size, no judge. Duck-types TradePlanner's Verdict
+    (symbol / action / size_factor) for the shared approval loop."""
+    symbol: str
+    action: str = 'approve'
+    size_factor: float = 1.0
+
+
+def _segment(strat: str) -> str:
+    """Cost segment for a backtest trade. Only S1 (opening-range breakout) is
+    intraday (MIS); every other lens / strategy here is positional delivery
+    (CNC) — the backtest carries positions overnight to SL/target, no EOD
+    square-off, so CNC is the honest default."""
+    return 'MIS' if 'S1' in strat.split('+') else 'CNC'
 
 
 def _indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -101,8 +131,8 @@ def _indicators(df: pd.DataFrame) -> pd.DataFrame:
     loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
     rs = gain / loss.replace(0, np.nan)
     out['rsi'] = (100 - 100 / (1 + rs)).fillna(50)
-    out['ema20'] = c.ewm(span=20, adjust=False).mean()
-    out['ema50'] = c.ewm(span=50, adjust=False).mean()
+    out['ema20'] = c.ewm(span=EMA_FAST, adjust=False).mean()
+    out['ema50'] = c.ewm(span=EMA_SLOW, adjust=False).mean()
     out['hh252'] = df['high'].rolling(252, min_periods=100).max()
     tr = pd.concat([df['high'] - df['low'],
                     (df['high'] - c.shift()).abs(),
@@ -180,8 +210,8 @@ def _lenses(row: pd.Series, regime: str) -> list[tuple[str, float]]:
         out.append(('S2', min(base * mult, 0.90)))
 
     # S4: RSI oversold reversion (fires in all regimes, like live)
-    if rsi < 38:
-        base = min(0.48 + (38 - rsi) / 38 * 0.38, 0.86)
+    if rsi < RSI_OVERSOLD:
+        base = min(0.48 + (RSI_OVERSOLD - rsi) / RSI_OVERSOLD * 0.38, 0.86)
         out.append(('S4', min(base * mult, 0.90)))
 
     # S5: EMA pullback in an uptrend
@@ -202,7 +232,9 @@ def _lenses(row: pd.Series, regime: str) -> list[tuple[str, float]]:
 
 def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
                  planner: str = 'degraded', max_llm_calls: int = 150,
-                 progress_cb=None, should_stop=None, signals: str = 'lenses') -> dict:
+                 progress_cb=None, should_stop=None, signals: str = 'lenses',
+                 full_trades: bool = False, ev_override=None, competence_gate=None,
+                 ev_min_override: float = 0.5) -> dict:
     """Replay the live decision core. `planner`:
       'degraded' — the deterministic planner bar (fast, reproducible; default)
       'llm'      — the REAL TradePlanner LLM judge in the loop (sampled up to
@@ -218,7 +250,7 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
     from terminal_in.data_ingest.instruments import KNOWN_TOKENS, registry
     registry.load_stubs()
 
-    planner = planner if planner in ('degraded', 'llm') else 'degraded'
+    planner = planner if planner in ('none', 'degraded', 'llm') else 'degraded'
 
     eq_tokens = {t: s for s, t in KNOWN_TOKENS.items()
                  if registry.sector(t) not in ('index',)}
@@ -257,9 +289,12 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
             idx_tokens, progress_cb, should_stop)
 
     # ── the judge: the actual TradePlanner, detached from the live bus ──
+    # planner='none' is the LENSES-ONLY baseline: skip the judge entirely and
+    # accept every eligible candidate (orchestrator EV bar already applied) —
+    # used by the validation harness to isolate the planner's marginal value.
     from terminal_in.config import load_config
     from terminal_in.agents.trade_planner import TradePlanner
-    judge = TradePlanner(db, load_config(), memory=None, attach_bus=False)
+    judge = None if planner == 'none' else TradePlanner(db, load_config(), memory=None, attach_bus=False)
     ollama_ok = False
     if planner == 'llm':
         ollama_ok = judge._ollama_available()
@@ -276,6 +311,7 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
     daily_equity: list[tuple[str, float]] = []
     llm_calls = 0                           # batches LLM-judged (sampling counter)
     degraded_calls = 0
+    ev_source_counts: dict[str, int] = {}   # M6: 'gbt' | 'heuristic' candidate counts
 
     n_steps = len(dates) - 1
     stopped = False
@@ -309,7 +345,8 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
             if exit_price is not None:
                 fill = exit_price * (1 - SLIPPAGE)
                 t.exit_price, t.exit_date = fill, str(d)[:10]
-                t.pnl = (fill - t.entry) * t.qty - COST_PER_TRADE
+                t.cost += cost_breakdown(fill * t.qty, 'SELL', t.segment)['total']
+                t.pnl = (fill - t.entry) * t.qty - t.cost
                 equity += t.pnl
                 closed.append(t)
                 del positions[sym]
@@ -337,14 +374,38 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
 
             avg_conf = sum(c for _, c in lenses) / len(lenses)
             conv_bonus = 1.0 + (len(lenses) - 1) * 0.10
-            sl, tgt = price - 1.5 * atr, price + 2.5 * atr      # live multiples
+            sl, tgt = price - ATR_SL_MULT * atr, price + ATR_TGT_MULT * atr   # live multiples
             rr = (tgt - price) / max(price - sl, 1e-9)
-            ev = avg_conf * rr * vol_factor * conv_bonus        # live formula
+            ev = avg_conf * rr * vol_factor * conv_bonus        # live (heuristic) formula
 
-            if ev < MIN_EV or avg_conf < MIN_CONF:              # orchestrator eligibility
+            # ── Module 6 hooks (forward-looking judge — Phase C/D₀) ──
+            # score/bar default to the heuristic EV; an EV head (D₀) replaces both
+            # the value AND the eligibility bar (P-scale, not EV-scale); a
+            # competence gate (C) down-weights or ABSTAINS. Never bypass M2 (later).
+            lens_names = [l for l, _ in lenses]
+            score, bar, ev_src = ev, MIN_EV, 'heuristic'
+            ds = str(d)[:10]
+            if competence_gate is not None:
+                w = competence_gate(lens_names, regime, ds)
+                if w is not None and w <= 0.0:
+                    continue                                    # abstain
+                if w is not None:
+                    score *= w
+            if ev_override is not None:
+                feat = {'ev': ev, 'confidence': avg_conf, 'persistence': persist[sym],
+                        'rr': rr, 'rsi': float(row['rsi']), 'vol_factor': vol_factor,
+                        'regime': regime, 'sector': sectors.get(sym, 'other'),
+                        'n_lenses': len(lenses),
+                        'lens_set': '+'.join(sorted(lens_names))}
+                ovr = ev_override(feat, ds)
+                if ovr is not None:
+                    score, bar, ev_src = float(ovr), ev_min_override, 'gbt'
+
+            if score < bar or avg_conf < MIN_CONF:              # eligibility
                 continue
+            ev_source_counts[ev_src] = ev_source_counts.get(ev_src, 0) + 1
             eligible.append({
-                'symbol': sym, 'side': 'BUY', 'ev': round(ev, 3),
+                'symbol': sym, 'side': 'BUY', 'ev': round(score, 3),
                 'confidence': round(avg_conf, 3), 'conf_smoothed': round(avg_conf, 3),
                 'persistence': persist[sym], 'rr': round(rr, 2), 'rsi': float(row['rsi']),
                 'vol_factor': round(vol_factor, 2), 'price': price,
@@ -354,29 +415,35 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
 
         # ── the judge rules on the batch (LLM sampled within budget, else degraded) ──
         if eligible:
-            use_llm = planner == 'llm' and ollama_ok and llm_calls < max_llm_calls
-            batch = {
-                'scan_id': i, 'regime': regime,
-                'india_vix': vix_by_date.get(d, 0.0), 'equity': equity, 'throttle': 0,
-                'open_positions': [
-                    {'symbol': s, 'side': p.trade.side, 'qty': p.trade.qty,
-                     'unrealized': (float(data[s].loc[d]['close']) - p.trade.entry) * p.trade.qty
-                                   if d in data[s].index else 0.0}
-                    for s, p in positions.items()],
-                'candidates': eligible,
-            }
-            # backtest LLM calls are tight + no-retry so a long horizon doesn't
-            # spend 2×60s per batch; verdicts are short so num_predict is small.
-            verdicts, mode, _lat = judge.judge_batch(
-                batch, use_llm=use_llm, timeout_s=25, retry=False, num_predict=220)
-            if mode == 'llm':
-                llm_calls += 1
-            else:
-                degraded_calls += 1
-
             by_sym = {c['symbol']: c for c in eligible}
-            approved = [v for v in verdicts if v.action == 'approve' and v.symbol in by_sym]
-            approved.sort(key=lambda v: by_sym[v.symbol]['ev'], reverse=True)
+            if planner == 'none':
+                # lenses-only: accept everything that cleared the EV bar, no judge.
+                mode = 'lenses'
+                approved = [_Approve(c['symbol']) for c in
+                            sorted(eligible, key=lambda c: c['ev'], reverse=True)]
+            else:
+                use_llm = planner == 'llm' and ollama_ok and llm_calls < max_llm_calls
+                batch = {
+                    'scan_id': i, 'regime': regime,
+                    'india_vix': vix_by_date.get(d, 0.0), 'equity': equity, 'throttle': 0,
+                    'open_positions': [
+                        {'symbol': s, 'side': p.trade.side, 'qty': p.trade.qty,
+                         'unrealized': (float(data[s].loc[d]['close']) - p.trade.entry) * p.trade.qty
+                                       if d in data[s].index else 0.0}
+                        for s, p in positions.items()],
+                    'candidates': eligible,
+                }
+                # backtest LLM calls are tight + no-retry so a long horizon doesn't
+                # spend 2×60s per batch; verdicts are short so num_predict is small.
+                verdicts, mode, _lat = judge.judge_batch(
+                    batch, use_llm=use_llm, timeout_s=25, retry=False, num_predict=220)
+                if mode == 'llm':
+                    llm_calls += 1
+                else:
+                    degraded_calls += 1
+                approved = [v for v in verdicts if v.action == 'approve' and v.symbol in by_sym]
+                approved.sort(key=lambda v: by_sym[v.symbol]['ev'], reverse=True)
+
             for v in approved:
                 c = by_sym[v.symbol]
                 if len(positions) >= MAX_POSITIONS:                  # gate-lite
@@ -387,12 +454,15 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
                     continue
                 entry = float(data[v.symbol].loc[nxt]['open']) * (1 + SLIPPAGE)
                 atr = c['atr']
-                sl_f, tgt_f = entry - 1.5 * atr, entry + 2.5 * atr   # re-anchored on fill
-                qty = max(1, int((equity * RISK_PER_TRADE) / entry * v.size_factor))
+                sl_f, tgt_f = entry - ATR_SL_MULT * atr, entry + ATR_TGT_MULT * atr   # re-anchored on fill
+                size_factor = getattr(v, 'size_factor', 1.0)
+                qty = max(1, int((equity * RISK_PER_TRADE) / entry * size_factor))
+                seg = _segment(c['strat'])
+                entry_cost = cost_breakdown(entry * qty, 'BUY', seg)['total']
                 t = Trade(v.symbol, c['strat'], 'BUY', str(nxt)[:10], entry, sl_f, tgt_f, qty,
-                          regime=regime, ev=c['ev'], judge=mode, size_factor=round(v.size_factor, 2))
+                          regime=regime, ev=c['ev'], judge=mode, size_factor=round(size_factor, 2),
+                          segment=seg, cost=entry_cost)
                 positions[v.symbol] = Position(t, sec)
-                equity -= COST_PER_TRADE
 
         # reset persistence for symbols that produced no candidate today
         for sym in list(persist):
@@ -407,10 +477,26 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
     if progress_cb is not None:
         progress_cb(1.0, {'day': n_steps, 'total': n_steps, 'llm_calls': llm_calls,
                           'trades': len(closed), 'open': len(positions)})
+    total_ev = sum(ev_source_counts.values()) or 1
     planner_meta = {'mode': planner, 'ollama_available': ollama_ok,
                     'llm_batches': llm_calls, 'degraded_batches': degraded_calls,
-                    'llm_budget': max_llm_calls, 'cancelled': stopped}
-    return _report(closed, daily_equity, days, regimes, dates, planner_meta)
+                    'llm_budget': max_llm_calls, 'cancelled': stopped,
+                    'ev_source': ('gbt' if ev_source_counts.get('gbt', 0) > total_ev / 2
+                                  else 'heuristic'),
+                    'ev_source_counts': ev_source_counts}
+    result = _report(closed, daily_equity, days, regimes, dates, planner_meta)
+    if full_trades:
+        # full daily equity curve (NOT downsampled) + per-trade stream for the
+        # validation harness; neither is persisted in the API payload. pnl is NET.
+        result['daily_equity_full'] = [(d, float(v)) for d, v in daily_equity]
+        result['all_trades'] = [
+            {'symbol': t.symbol, 'lens': t.strategy, 'regime': t.regime,
+             'entry_date': t.entry_date, 'exit_date': t.exit_date,
+             'entry': t.entry, 'exit': t.exit_price, 'qty': t.qty,
+             'pnl': t.pnl, 'cost': t.cost, 'ev': t.ev,
+             'ret': (t.pnl / (t.entry * t.qty)) if t.entry * t.qty else 0.0}
+            for t in closed]
+    return result
 
 
 class _FastContext:
@@ -535,7 +621,8 @@ def _strategy_engine_backtest(data, all_1d, eq_tokens, sectors, regimes, vix_by_
             if px is not None:
                 fill = px * (1 - SLIPPAGE)
                 t.exit_price, t.exit_date = fill, str(d)[:10]
-                t.pnl = (fill - t.entry) * t.qty - COST_PER_TRADE
+                t.cost += cost_breakdown(fill * t.qty, 'SELL', t.segment)['total']
+                t.pnl = (fill - t.entry) * t.qty - t.cost
                 equity += t.pnl; closed.append(t); del positions[sym]
 
         # advance the precomputed context to today (no lookahead — slices are <= d)
@@ -563,10 +650,12 @@ def _strategy_engine_backtest(data, all_1d, eq_tokens, sectors, regimes, vix_by_
             sl_dist = max(ref - sig.stop_loss, ref * 0.002)
             tgt_dist = max(sig.target - ref, ref * 0.003)
             qty = max(1, int((equity * RISK_PER_TRADE) / entry))
+            seg = _segment(strat.id)
+            entry_cost = cost_breakdown(entry * qty, 'BUY', seg)['total']
             t = Trade(sym, strat.id, 'BUY', str(nxt)[:10], entry, entry - sl_dist, entry + tgt_dist,
-                      qty, regime=regime, ev=round(float(sig.confidence), 3), judge='strategy')
+                      qty, regime=regime, ev=round(float(sig.confidence), 3), judge='strategy',
+                      segment=seg, cost=entry_cost)
             positions[sym] = Position(t, sec)
-            equity -= COST_PER_TRADE
 
         mark = equity + sum(
             (float(frames[s].loc[d]['close']) - p.trade.entry) * p.trade.qty
@@ -582,21 +671,68 @@ def _strategy_engine_backtest(data, all_1d, eq_tokens, sectors, regimes, vix_by_
     return _report(closed, daily_equity, days, regimes, dates, meta)
 
 
+def _curve_metrics(eq: pd.Series) -> dict:
+    """Return / CAGR / max-DD / Sharpe for an equity curve (₹, indexed by date)."""
+    if len(eq) == 0:
+        return {'return_pct': 0.0, 'cagr_pct': 0.0, 'max_drawdown_pct': 0.0, 'sharpe': 0.0}
+    rets = eq.pct_change().dropna()
+    dd = (eq / eq.cummax() - 1).min()
+    sharpe = float(rets.mean() / rets.std() * np.sqrt(252)) if len(rets) > 20 and rets.std() > 0 else 0.0
+    years = max(len(eq) / 252.0, 1e-9)
+    final = float(eq.iloc[-1])
+    cagr = (final / CAPITAL) ** (1 / years) - 1 if final > 0 else -1.0
+    return {'return_pct': round((final / CAPITAL - 1) * 100, 2),
+            'cagr_pct': round(cagr * 100, 2),
+            'max_drawdown_pct': round(float(dd) * 100, 2),
+            'sharpe': round(sharpe, 2)}
+
+
+def _trade_sharpe(pnls: list[float], n_years: float) -> float:
+    """Trade-level Sharpe: per-trade return on capital, annualised by the lens's
+    own trade frequency. A per-lens daily equity curve isn't well defined (the
+    book overlaps positions), so per-lens risk is measured on the trade stream."""
+    if len(pnls) < 2 or n_years <= 0:
+        return 0.0
+    r = np.array(pnls, dtype=float) / CAPITAL
+    if r.std() == 0:
+        return 0.0
+    trades_per_year = len(pnls) / n_years
+    return round(float(r.mean() / r.std() * np.sqrt(trades_per_year)), 2)
+
+
 def _report(closed: list[Trade], daily_equity: list, days: int,
             regimes: dict, dates: list, planner_meta: dict | None = None) -> dict:
     eq = pd.Series({d: v for d, v in daily_equity})
-    rets = eq.pct_change().dropna()
-    dd = (eq / eq.cummax() - 1).min() if len(eq) else 0.0
-    sharpe = float(rets.mean() / rets.std() * np.sqrt(252)) if len(rets) > 20 and rets.std() > 0 else 0.0
+
+    # Gross curve = net curve + cumulative transaction cost realised by each date
+    # (costs fold into pnl at exit, so net trails gross by the costs booked so far).
+    cost_by_date: dict = {}
+    for t in closed:
+        cost_by_date[t.exit_date] = cost_by_date.get(t.exit_date, 0.0) + t.cost
+    gross_vals, run_cost = [], 0.0
+    for d, v in daily_equity:
+        run_cost += cost_by_date.get(str(d)[:10], 0.0)
+        gross_vals.append(v + run_cost)
+    gross_eq = pd.Series({d: gv for (d, _), gv in zip(daily_equity, gross_vals)})
+
+    n_years = max(len(eq) / 252.0, 1e-9)
+    net_m, gross_m = _curve_metrics(eq), _curve_metrics(gross_eq)
+    sharpe = net_m['sharpe']
 
     def stats(trades):
         if not trades:
             return {'n': 0}
         wins = [t for t in trades if t.pnl > 0]
+        net_pnl = sum(t.pnl for t in trades)
+        cost = sum(t.cost for t in trades)
         return {'n': len(trades),
                 'win_rate': round(len(wins) / len(trades), 3),
-                'total_pnl': round(sum(t.pnl for t in trades)),
-                'avg_pnl': round(sum(t.pnl for t in trades) / len(trades))}
+                'total_pnl': round(net_pnl),
+                'gross_pnl': round(net_pnl + cost),
+                'costs': round(cost),
+                'avg_pnl': round(net_pnl / len(trades)),
+                'net_sharpe': _trade_sharpe([t.pnl for t in trades], n_years),
+                'gross_sharpe': _trade_sharpe([t.pnl + t.cost for t in trades], n_years)}
 
     # per-lens attribution: a convergence trade credits every member lens
     lens_names = sorted({l for t in closed for l in t.strategy.split('+')})
@@ -631,15 +767,29 @@ def _report(closed: list[Trade], daily_equity: list, days: int,
         for t in sorted(closed, key=lambda x: x.exit_date, reverse=True)[:60]
     ]
 
+    total_costs = sum(t.cost for t in closed)
+    # avg round-trip cost in bps of the entry-leg notional (legible drag metric)
+    rt_bps = [t.cost / (t.entry * t.qty) * 1e4 for t in closed if t.entry * t.qty > 0]
+    costs_block = {
+        'total_costs': round(total_costs),
+        'pct_of_capital': round(total_costs / CAPITAL * 100, 3),
+        'avg_roundtrip_bps': round(float(np.mean(rt_bps)), 2) if rt_bps else 0.0,
+        'n_round_trips': len(closed),
+    }
+
     pm = planner_meta or {'mode': 'degraded'}
     result = {
         'ts': int(time.time() * 1000), 'days': days,
         'engine': f"v3-{pm.get('mode', 'degraded')}",
         'capital': CAPITAL,
         'final_equity': round(float(eq.iloc[-1])) if len(eq) else CAPITAL,
-        'return_pct': round((float(eq.iloc[-1]) / CAPITAL - 1) * 100, 2) if len(eq) else 0,
-        'max_drawdown_pct': round(float(dd) * 100, 2),
-        'sharpe': round(sharpe, 2),
+        'return_pct': net_m['return_pct'],
+        'cagr_pct': net_m['cagr_pct'],
+        'max_drawdown_pct': net_m['max_drawdown_pct'],
+        'sharpe': sharpe,
+        'gross': gross_m,           # same metrics before transaction costs
+        'net': net_m,               # explicit net block (mirrors top-level)
+        'costs': costs_block,
         'trades': stats(closed),
         'per_lens': per_lens,
         'per_regime': per_regime,

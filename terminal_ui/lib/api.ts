@@ -430,8 +430,27 @@ export type NSESymbol = {
 export type BacktestStat = {
   n: number
   win_rate?: number
-  total_pnl?: number
+  total_pnl?: number       // NET of transaction costs
+  gross_pnl?: number       // before transaction costs
+  costs?: number           // all-in transaction costs attributed to this slice
   avg_pnl?: number
+  net_sharpe?: number      // trade-level Sharpe, net of costs
+  gross_sharpe?: number    // trade-level Sharpe, before costs
+}
+
+// return / CAGR / max-DD / Sharpe for an equity curve (gross or net)
+export type BacktestCurveMetrics = {
+  return_pct: number
+  cagr_pct: number
+  max_drawdown_pct: number
+  sharpe: number
+}
+
+export type BacktestCosts = {
+  total_costs: number
+  pct_of_capital: number
+  avg_roundtrip_bps: number
+  n_round_trips: number
 }
 
 export type BacktestTrade = {
@@ -472,8 +491,12 @@ export type BacktestResult = {
   capital: number
   final_equity: number
   return_pct: number
+  cagr_pct?: number
   max_drawdown_pct: number
   sharpe: number
+  gross?: BacktestCurveMetrics   // same metrics before transaction costs
+  net?: BacktestCurveMetrics     // explicit net block (mirrors top-level)
+  costs?: BacktestCosts
   trades: BacktestStat
   per_lens: Record<string, BacktestStat>
   per_regime: Record<string, BacktestStat>

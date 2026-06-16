@@ -16,11 +16,13 @@ from typing import Optional
 
 from terminal_in.bus import bus
 from terminal_in.agents.control import registry
+from terminal_in.execution.costs import cost_breakdown
 
 log = logging.getLogger(__name__)
 
-SLIPPAGE_PCT = 0.0003    # 0.03% slippage on fills
-COMMISSION = 20.0        # flat ₹20 per order (approximate Zerodha)
+SLIPPAGE_PCT = 0.0003    # 0.03% slippage on fills — PRICE adjustment, not a fee
+# All-in transaction costs (brokerage + STT + exchange + SEBI + stamp + GST) come
+# from execution/costs.py — the single model shared with live + backtest.
 
 
 def _product_for(payload: dict) -> str:
@@ -293,7 +295,13 @@ class PaperBroker:
         qty = pos['quantity']
         sign = 1 if pos['side'] == 'BUY' else -1
         gross_pnl = sign * (fill_exit - pos['entry_price']) * qty
-        net_pnl = gross_pnl - COMMISSION * 2
+
+        # All-in transaction cost, both legs, side- and segment-aware (shared model).
+        seg = pos.get('product') or 'CNC'
+        exit_side = 'SELL' if pos['side'] == 'BUY' else 'BUY'
+        cost = (cost_breakdown(pos['entry_price'] * qty, pos['side'], seg)['total']
+                + cost_breakdown(fill_exit * qty, exit_side, seg)['total'])
+        net_pnl = gross_pnl - cost
 
         self._daily_pnl += net_pnl
         self._equity += net_pnl

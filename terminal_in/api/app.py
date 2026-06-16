@@ -160,6 +160,19 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
         from terminal_in import hw as _hw
         hardware = _hw.detect()
 
+        # Module 6 forward-EV head (Phase D₀). Trained/gated in the backtest;
+        # not promoted to the LIVE judge yet, so the live EV source is the
+        # heuristic — flagged here (invariant #3: untrained → flagged fallback),
+        # not an amber badge (nothing is broken; M6 is simply not enabled live).
+        try:
+            from terminal_in.m6 import ev_head as _ev
+            m6 = {'ev_source': 'heuristic', 'mode': 'fallback',
+                  'lightgbm_available': _ev.available(),
+                  'note': 'D0 EV head is gated in the backtest (validation.py --m6); '
+                          'not yet promoted to the live judge'}
+        except Exception:
+            m6 = {'ev_source': 'heuristic', 'mode': 'unavailable'}
+
         return jsonify({
             'status': 'degraded' if degraded else 'ok',
             'degraded': degraded,
@@ -167,6 +180,7 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
             'regime_mode': _clf.mode,
             'sentiment': sent,
             'ollama_online': ollama_online,
+            'm6': m6,
             'last_daily_bar': data_fresh,
             'recent_errors': [
                 {k: e[k] for k in ('id', 'ts', 'source', 'message')} for e in recent_errors

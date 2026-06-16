@@ -27,6 +27,7 @@ scipy>=1.12.0
 scikit-learn>=1.4.0
 # hmmlearn>=0.3.2           # OPTIONAL — needs MSVC Build Tools on Windows
 statsmodels>=0.14.1
+lightgbm>=4.6.0            # M6 Phase D₀ forward-EV head (universal wheel, 3.14 OK)
 
 # ── News ─────────────────────────────────────────────────────────────────────
 requests>=2.31.0
