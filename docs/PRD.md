@@ -352,12 +352,80 @@ Gate for adoption (per model, on the eval set from §P2 training): ≥10% better
 - **Commit convention:** `Change_N: summary` on `main`.
 - **Docs:** README (operator-facing), CLAUDE.md (agent/dev-facing), this PRD (product). Update all three at every phase boundary; session context persists to Claude memory.
 
+## 6b. Alpha validation — results to date (2026-06-17, honest record)
+
+A falsification-first harness (`terminal_in/backtest/validation.py`) is now the promotion
+gate for any edge claim: benchmarks (buy-hold NIFTY / equal-weight / 1,000× random-symbol
+null), Deflated Sharpe + White Reality Check, per-strategy significance, planner isolation,
+±20% robustness, regime/time concentration, survivorship — all net of the shared cost model
+(`execution/costs.py`) and walk-forward-fenced. Full detail: **[ALPHA_FINDINGS.md](ALPHA_FINDINGS.md)**.
+
+**Verdict: no configuration tested beats buy-and-hold NIFTY net of costs** (five independent
+fenced negatives — price-only technicals, LLM/planner, the Module-6 D₀ forward-EV head,
+competence weighting, and the event/PEAD + VIX-reaction planes). Net ~3% CAGR vs index
+~11.6% vs equal-weight ~21%. The bottleneck is **signal/data, not model capacity** — a
+better LLM does not help (planner adds ~0; ~54% literature direction-accuracy ceiling).
+
+**Implications for this roadmap:**
+- Module 6 Phases C + D₀ are BUILT and FAILED their gate (not promoted; `terminal_in/m6/`).
+  The research arc (A/B/D/E — JEPA + world model) should be pursued ONLY against genuinely
+  orthogonal **point-in-time data**, not more price-derived features.
+- The honest levers are **data, not model**: real point-in-time fundamentals, analyst-estimate
+  revisions (SUE/consensus — 0% free PIT coverage for this universe today), relational/
+  supply-chain signal, alternative data. Each is a data-acquisition project.
+- Two architectural reframes worth a fenced test before more modelling (see literature scan,
+  §7b): (a) **cross-sectional market-neutral long/short** evaluation — measure the signal's
+  cross-sectional IC and the dollar-neutral top-minus-bottom spread Sharpe (costs + borrow
+  modelled), since long-only selection structurally cannot out-return a bull index; (b)
+  forward-accumulated firm-news sentiment evaluated on a true forward holdout.
+
 ## 7. Success metrics
+
+> Reality check (2026-06-17): the profitability/planner-value targets below are **currently
+> unmet** — see §6b. They remain the bar; nothing ships as "alpha" until it clears the
+> validation gate net of costs, OOS.
 
 | Metric | Target | Where measured |
 |---|---|---|
+| Beats passive, net | Net Sharpe AND CAGR > buy-hold NIFTY over walk-forward, survives Deflated Sharpe | `validation.py` (the gate) |
 | Paper-trading profitability | Positive expectancy over 60 paper days; Sharpe > 1.0 | `/trade` performance tab |
 | Planner value-add | Approved-trade win rate > deterministic-only baseline; missed-winner rate < 30% of rejections | DECISION LOG hindsight |
 | Control-loop efficacy | Max consecutive-loss streak ≤ 8 (hard stop ceiling); no >4% daily loss breaches | supervisor state + settlement history |
 | Model improvement | Eval-set score improves run-over-run; final loss decreasing at constant data scale | `/train` run history |
 | System reliability | Backend boot < 5 s; zero silent degraded states; UI never false-reports backend down | /api/health + boot logs |
+
+## 7b. Literature scan — "what are we missing?" (2026-06-17)
+
+Reviewed four sources the owner flagged. Honest read on each and what it implies:
+
+- **Mercanti, *Using AI to Enhance Alpha Generation* (Medium)** — conceptual; yfinance-only,
+  no OOS results, no costs, no leakage discussion. This is precisely the naive approach our
+  harness already falsified. No new lever.
+- **algoadvantage, *The Right Way to Use AI in Trading* (Substack)** — thesis: AI's value is
+  **process + validation, not strategy authorship**; enforce "separation of powers" (the AI
+  author cannot be the backtester judge); "the alpha is in the process, not the prompt." This
+  **endorses our architecture** (deterministic validation gate, walk-forward fencing, AI as
+  assistant). Confirms method; reveals no missing signal.
+- **Wang et al., *Alpha-GPT* (arXiv 2308.00016)** — LLM mediates human alpha-MINING over
+  WorldQuant's **~5,000-field multi-modal universe (price-volume + fundamentals + derivatives
+  + news sentiment)**; alpha comes from **data breadth + cross-sectional symbolic search**,
+  not the LLM predicting price. Admits in-sample ≫ OOS (overfitting); competition-scored, no
+  net-of-cost detail. Lesson: **data breadth + cross-sectional construction is the lever** —
+  consistent with our conclusion.
+- **Ghatak et al., *Increase Alpha* (arXiv 2509.16707)** — the headline case ("Sharpe 2.54 vs
+  S&P 1.19, OOS walk-forward, 814 US equities"). Read critically, the number rests on three
+  things our gate is built to strip out: **(1) transaction costs explicitly NOT included**
+  (non-compounded gross returns, no slippage/borrow); **(2) heavy data-snooping** (2,280
+  scenarios/stock, per-stock "best signal period," 11 ranking rules, no multiple-testing
+  correction); **(3) black-box proprietary features** (non-reproducible, can't audit for
+  look-ahead). It is also a **market-NEUTRAL long/short** book (≈−5% S&P correlation) using
+  **fundamentals + news/social sentiment** — so "beats the S&P" is the wrong frame: the edge
+  is *cross-sectional spread + uncorrelatedness*, not directional out-return, and it leans on
+  **data we don't have** (fundamentals, sentiment). It is reported, not independently verified
+  net of costs.
+
+**Net takeaway:** nothing here is a technique we "missed" so much as confirmation that (i) the
+edge in published work lives in **orthogonal point-in-time data** (fundamentals, sentiment,
+cross-asset) and **market-neutral cross-sectional construction**, and (ii) the impressive
+numbers are typically **gross of costs and/or data-snooped** — exactly what our validation
+harness exists to expose. The two concretely actionable reframes are folded into §6b.

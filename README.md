@@ -98,6 +98,28 @@ Three feedback loops at three speeds — trade-by-trade control (supervisor), ba
 - **Health** — `/api/health` reports every degraded subsystem; the UI badges them. No silent fallbacks anywhere in the signal path.
 - **Design system** — layered cool-dark surfaces under an embossed dot-matrix mesh (cursor acts as a soft lamp; the grid never moves), frosted-glass chrome, electric-blue accent ramp (gold strictly = warning), Geist Mono for data / Georgia for display. Single palette source: `terminal_ui/lib/theme.ts` + `styles/globals.css`.
 
+## Does it actually capture alpha? (honest answer)
+
+**Not as a stock-picker — and we can prove it, which is the point.** A falsification-first
+validation harness (`terminal_in/backtest/validation.py`) runs the full stack over 10y of
+real OHLCV, net of the full Indian cost stack (`execution/costs.py`), against three
+benchmarks (buy-hold NIFTY, equal-weight, a 1,000× random-symbol null) with
+multiple-testing correction (Deflated Sharpe / White Reality Check), walk-forward fencing,
+and robustness/concentration/survivorship checks.
+
+Verdict across **five independent, walk-forward-fenced experiments** — price-only
+technicals, the LLM planner, a learned gradient-boosted forward-EV head (Module 6 / D₀),
+directional-competence weighting, and a point-in-time event/PEAD plane: **none beats
+buy-and-hold NIFTY net of costs.** The full stack returns ~3% CAGR net vs ~11.6% for the
+index and ~21% for equal-weighting the same names. The bottleneck is **signal/data, not
+the model** (a bigger LLM does not help — the planner adds nothing beyond noise). Full
+record: **[docs/ALPHA_FINDINGS.md](docs/ALPHA_FINDINGS.md)**.
+
+What this terminal *is*, then: a **risk-managed execution + research cockpit with an honest
+eval gate** — real-data-only, cost-accurate, walk-forward-validated, no silent fallbacks.
+The validation harness is the most valuable thing here; it refuses to let a good-looking
+in-sample number ship.
+
 ## Quick start
 
 > **First time on a clean machine?** The launcher bootstraps from nothing —
