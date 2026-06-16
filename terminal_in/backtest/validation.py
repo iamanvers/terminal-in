@@ -748,6 +748,137 @@ def validate_m6(db=None, days: int = 2470, horizon: int = 20, n_trials: int = 8,
             'phase_c': phase_c, 'phase_d0': phase_d0, 'elapsed_s': round(time.time() - t0, 1)}
 
 
+def validate_event_ablation(db=None, days: int = 2470, horizon: int = 20,
+                            n_trials: int = 8, seed: int = 7) -> dict:
+    """Phase 3 ablation: does the orthogonal EVENT plane add OOS lift to the D₀
+    head? Runs the GBT-EV judge two ways under identical per-fold walk-forward
+    fencing — (i) technical features only, (ii) technical + PEAD event features —
+    and reports the delta + whether it survives multiple-testing. If it doesn't
+    add net lift, the honest verdict is to drop the event features."""
+    from terminal_in.m6.dataset import build_candidate_dataset
+    from terminal_in.m6 import ev_head as EV
+    from terminal_in.m6.event_features import (add_event_features, EVENT_FEATURES,
+                                               event_consensus_coverage)
+    from terminal_in.data_ingest import events as EVT
+
+    if db is None:
+        from terminal_in.config import load_config
+        from terminal_in.db import DB
+        db = DB(load_config().sqlite_path)
+    t0 = time.time()
+    n_years = max(days / 252.0, 1e-9)
+
+    log.info('event-ablation: dataset + event features …')
+    ds = build_candidate_dataset(db=db, days=days, horizon=horizon)
+    ev_archive = EVT.load_events()
+    ds = add_event_features(ds, db, ev_archive)
+    consensus_pct = event_consensus_coverage(ds)
+
+    # technical-only vs technical+event, same fences
+    log.info('event-ablation: training + backtesting technical-only …')
+    wf_t = EV.WalkForwardEV(ds, seed=seed, extra_num=[])
+    wf_t.train_folds()
+    tech = run_backtest(db=db, days=days, planner='none', full_trades=True,
+                        ev_override=wf_t.ev_override())
+    log.info('event-ablation: training + backtesting technical+event …')
+    wf_e = EV.WalkForwardEV(ds, seed=seed, extra_num=EVENT_FEATURES)
+    wf_e.train_folds()
+    evt = run_backtest(db=db, days=days, planner='none', full_trades=True,
+                       ev_override=wf_e.ev_override())
+
+    s_t, s_e = _judge_stats(tech, n_years), _judge_stats(evt, n_years)
+    rets_t, rets_e = s_t['_rets'], s_e['_rets']
+    sr_t = rets_t.mean() / rets_t.std() if len(rets_t) > 1 and rets_t.std() else 0.0
+    sr_e = rets_e.mean() / rets_e.std() if len(rets_e) > 1 and rets_e.std() else 0.0
+    band = 2 * np.sqrt((1 + 0.5 * sr_t ** 2) / max(len(rets_t), 1) +
+                       (1 + 0.5 * sr_e ** 2) / max(len(rets_e), 1))
+    delta = sr_e - sr_t
+
+    uni, nifty, dates, _ = _load(db, days)
+    bh = benchmarks(uni, nifty, dates, tech['all_trades'], n_years, 1, np.random.default_rng(seed))[0]
+    bh_sharpe = bh.get('buy_hold_nifty', {}).get('sharpe', float('nan'))
+
+    # event-feature importance + the PEAD core check: does the immediate reaction
+    # predict the subsequent realized outcome? (our consensus-free 'surprise→drift')
+    last = max((f for f in wf_e.folds if f['trained']), key=lambda f: f['n_train'], default=None)
+    feat_imp_evt = {}
+    if last is not None:
+        train = ds[ds['outcome_date'] < last['train_cutoff']]
+        head = EV.GBTEvHead(seed, extra_num=EVENT_FEATURES).fit(train)
+        fi = head.feature_importance()
+        feat_imp_evt = {k: v for k, v in fi.items() if k.startswith('evt_')}
+    in_win = ds[ds['evt_in_drift_window'] == 1.0]
+    reaction_drift = {
+        'rows_in_drift_window': int(len(in_win)),
+        'corr_reaction_gap_vs_forward_ret': round(float(np.corrcoef(
+            in_win['evt_reaction_gap'], in_win['ret_net'])[0, 1]), 4) if len(in_win) > 50 and in_win['evt_reaction_gap'].std() else 0.0,
+        'mean_fwd_ret_pos_reaction': round(float(in_win[in_win['evt_reaction_gap'] > 0]['ret_net'].mean()), 5) if len(in_win) else 0.0,
+        'mean_fwd_ret_neg_reaction': round(float(in_win[in_win['evt_reaction_gap'] < 0]['ret_net'].mean()), 5) if len(in_win) else 0.0,
+    }
+
+    dsr_e = deflated_sharpe(_per_lens_returns(evt['all_trades']), n_trials)
+    reg = _regime_regression(tech, evt)
+    delta_survives = bool(abs(delta) > band and delta > 0)
+    return {
+        'ts': int(time.time() * 1000), 'days': days, 'n_years': round(n_years, 2),
+        'horizon': horizon, 'dataset_rows': int(len(ds)),
+        'events': {'archive_rows': int(len(ev_archive)),
+                   'symbols_with_events': int(ev_archive['symbol'].nunique()) if len(ev_archive) else 0,
+                   'pit_consensus_pct': consensus_pct,
+                   'by_type': ev_archive['event_type'].value_counts().to_dict() if len(ev_archive) else {}},
+        'buy_hold_nifty_sharpe': round(float(bh_sharpe), 3) if bh_sharpe == bh_sharpe else None,
+        'technical_only': {'net_sharpe': s_t['net_sharpe'], 'return_pct': s_t['return_pct'],
+                           'sortino': round(s_t['sortino'], 3), 'calmar': round(s_t['calmar'], 3),
+                           'n': s_t['n'], 'trade_sharpe_per_trade': round(float(sr_t), 4)},
+        'technical_plus_event': {'net_sharpe': s_e['net_sharpe'], 'return_pct': s_e['return_pct'],
+                                 'sortino': round(s_e['sortino'], 3), 'calmar': round(s_e['calmar'], 3),
+                                 'n': s_e['n'], 'trade_sharpe_per_trade': round(float(sr_e), 4)},
+        'delta_trade_sharpe': round(float(delta), 4), 'noise_band_2se': round(float(band), 4),
+        'event_adds_oos_lift': delta_survives,
+        'event_feature_importance': feat_imp_evt,
+        'reaction_drift_calibration': reaction_drift,
+        'deflated_sharpe_event': {'survivors': [l for l, v in (dsr_e.get('per_lens') or {}).items() if v.get('survives')]},
+        'regime_regression': reg,
+        'verdict_drop_event_features': bool(not delta_survives),
+        'elapsed_s': round(time.time() - t0, 1),
+    }
+
+
+def _print_event_ablation(r: dict):
+    P = print
+    P('\n' + '=' * 78)
+    P(f'EVENT-PLANE ABLATION (PEAD) — {r["days"]}d / {r["n_years"]}y / '
+      f'{r["dataset_rows"]} candidates / horizon {r["horizon"]}d')
+    P('=' * 78)
+    e = r['events']
+    P(f'\nEVENT ARCHIVE: {e["archive_rows"]} announcements, {e["symbols_with_events"]} symbols, '
+      f'PIT consensus {e["pit_consensus_pct"]}% (→ earnings_surprise NULL, by design)')
+    P(f'  by type: {e["by_type"]}')
+    bh = r['buy_hold_nifty_sharpe']
+    t, v = r['technical_only'], r['technical_plus_event']
+    P('\nABLATION (OOS, same per-fold walk-forward fences):')
+    P(f'  TECHNICAL ONLY   net_sharpe {t["net_sharpe"]:+.2f}  ret {t["return_pct"]:+.1f}%  '
+      f'sortino {t["sortino"]:+.2f}  n={t["n"]}')
+    P(f'  TECH + EVENT     net_sharpe {v["net_sharpe"]:+.2f}  ret {v["return_pct"]:+.1f}%  '
+      f'sortino {v["sortino"]:+.2f}  n={v["n"]}')
+    P(f'  buy-hold NIFTY   net_sharpe {bh:+.2f}' if bh is not None else '  buy-hold NIFTY n/a')
+    P(f'  Δ trade-Sharpe (event - tech) = {r["delta_trade_sharpe"]:+.4f}  '
+      f'noise band ±{r["noise_band_2se"]:.4f}  → '
+      f'{"REAL LIFT" if r["event_adds_oos_lift"] else "WITHIN NOISE"}')
+    fi = r['event_feature_importance']
+    P('  event-feature importance: ' + (', '.join(f'{k}={x}' for k, x in fi.items()) if fi else 'none'))
+    rd = r['reaction_drift_calibration']
+    P(f'  PEAD check (in-drift-window n={rd["rows_in_drift_window"]}): '
+      f'corr(reaction, fwd-ret)={rd["corr_reaction_gap_vs_forward_ret"]}  | '
+      f'fwd-ret after +reaction {rd["mean_fwd_ret_pos_reaction"]:+.4f} vs '
+      f'-reaction {rd["mean_fwd_ret_neg_reaction"]:+.4f}')
+    P(f'  deflated-Sharpe survivors (event judge): {r["deflated_sharpe_event"]["survivors"] or "NONE"}')
+    P(f'  worst per-regime regression {r["regime_regression"]["worst_regression_pp"]:+.2f}pp')
+    P(f'\n  VERDICT: event features add OOS lift = {r["event_adds_oos_lift"]}  → '
+      f'{"KEEP" if r["event_adds_oos_lift"] else "DROP (report the null, no narrative)"}')
+    P('=' * 78 + '\n')
+
+
 def _print_m6(r: dict):
     P = print
     P('\n' + '=' * 78)
@@ -814,11 +945,15 @@ if __name__ == '__main__':
     ap.add_argument('--boot', type=int, default=2000)
     ap.add_argument('--trials', type=int, default=8, help='strategies tried (DSR deflation)')
     ap.add_argument('--m6', action='store_true', help='run the Module 6 (Phase C + D₀) validation')
+    ap.add_argument('--events', action='store_true', help='run the event-plane (PEAD) ablation')
     ap.add_argument('--horizon', type=int, default=20, help='m6 label horizon (trading days)')
     ap.add_argument('--competence-mode', choices=['veto', 'weight'], default='veto')
     ap.add_argument('--json', action='store_true', help='dump full JSON instead of the report')
     args = ap.parse_args()
-    if args.m6:
+    if args.events:
+        r = validate_event_ablation(days=args.days, horizon=args.horizon, n_trials=args.trials)
+        print(json.dumps(r, indent=1, default=str)) if args.json else _print_event_ablation(r)
+    elif args.m6:
         r = validate_m6(days=args.days, horizon=args.horizon, n_trials=args.trials,
                         competence_mode=args.competence_mode)
         print(json.dumps(r, indent=1, default=str)) if args.json else _print_m6(r)

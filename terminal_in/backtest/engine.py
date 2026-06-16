@@ -392,10 +392,10 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
                 if w is not None:
                     score *= w
             if ev_override is not None:
-                feat = {'ev': ev, 'confidence': avg_conf, 'persistence': persist[sym],
-                        'rr': rr, 'rsi': float(row['rsi']), 'vol_factor': vol_factor,
-                        'regime': regime, 'sector': sectors.get(sym, 'other'),
-                        'n_lenses': len(lenses),
+                feat = {'symbol': sym, 'ev': ev, 'confidence': avg_conf,
+                        'persistence': persist[sym], 'rr': rr, 'rsi': float(row['rsi']),
+                        'vol_factor': vol_factor, 'regime': regime,
+                        'sector': sectors.get(sym, 'other'), 'n_lenses': len(lenses),
                         'lens_set': '+'.join(sorted(lens_names))}
                 ovr = ev_override(feat, ds)
                 if ovr is not None:

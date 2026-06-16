@@ -54,8 +54,10 @@ class GBTEvHead:
     → E[net return]. Categoricals (regime, sector) are integer-coded against a
     fixed/observed vocab. Predicts from a feature dict (the engine's candidate)."""
 
-    def __init__(self, seed: int = 7):
+    def __init__(self, seed: int = 7, extra_num: list[str] | None = None):
         self.seed = seed
+        self.extra_num = list(extra_num or [])      # e.g. event features (ablation)
+        self.num = NUM_FEATURES + self.extra_num
         self.clf = self.reg = self.iso = None
         self.sectors: list[str] = []
         self.cols: list[str] = []
@@ -66,16 +68,16 @@ class GBTEvHead:
     def _sector_code(self, s): return self.sectors.index(s) if s in self.sectors else -1
 
     def _matrix(self, df: pd.DataFrame) -> pd.DataFrame:
-        X = df[NUM_FEATURES].astype(float).copy()
+        X = df[self.num].astype(float).copy()
         X['regime_c'] = [self._regime_code(r) for r in df['regime']]
         X['sector_c'] = [self._sector_code(s) for s in df['sector']]
         return X
 
     def _vec(self, feat: dict) -> pd.DataFrame:
-        row = {k: float(feat.get(k, 0.0)) for k in NUM_FEATURES if k not in LENS_COLS}
         lens_set = set(str(feat.get('lens_set', '')).split('+'))
-        for L in LENS_COLS:
-            row[L] = 1.0 if L in lens_set else 0.0
+        row = {}
+        for k in self.num:
+            row[k] = (1.0 if k in lens_set else 0.0) if k in LENS_COLS else float(feat.get(k, 0.0))
         row['regime_c'] = self._regime_code(feat.get('regime'))
         row['sector_c'] = self._sector_code(feat.get('sector'))
         return pd.DataFrame([row])[self.cols]
@@ -159,10 +161,19 @@ class WalkForwardEV:
     ev_override closure that routes each candidate to the model trained strictly
     before that candidate's fold."""
 
-    def __init__(self, df: pd.DataFrame, min_train: int = MIN_TRAIN_ROWS, seed: int = 7):
+    def __init__(self, df: pd.DataFrame, min_train: int = MIN_TRAIN_ROWS, seed: int = 7,
+                 extra_num: list[str] | None = None):
         self.df, self.min_train, self.seed = df, min_train, seed
+        self.extra_num = list(extra_num or [])
         self.models: dict[str, GBTEvHead | None] = {}
         self.folds: list[dict] = []
+        # point-in-time lookup of the extra (event) features by (symbol, date) —
+        # already computed point-in-time when the dataset was augmented, so the
+        # live override reuses them rather than recomputing (and cannot leak).
+        self._extra_lookup: dict[tuple, dict] = {}
+        if self.extra_num and {'symbol', 'date'}.issubset(df.columns):
+            for r in df[['symbol', 'date', *self.extra_num]].itertuples(index=False):
+                self._extra_lookup[(r.symbol, r.date)] = {c: getattr(r, c) for c in self.extra_num}
 
     def train_folds(self) -> list[dict]:
         for year, start, end in _fold_bounds(self.df):
@@ -171,7 +182,7 @@ class WalkForwardEV:
             cutoff_ok = (not len(train)) or train['outcome_date'].max() < start
             model, n = None, len(train)
             if n >= self.min_train and _HAVE_LGB:
-                model = GBTEvHead(self.seed).fit(train)
+                model = GBTEvHead(self.seed, extra_num=self.extra_num).fit(train)
             self.models[year] = model
             self.folds.append({'fold': year, 'train_cutoff': start,
                                'test_span': f'{start}..{end}', 'n_train': n,
@@ -184,6 +195,10 @@ class WalkForwardEV:
             m = self.models.get(date[:4])
             if m is None:
                 return None                      # heuristic fallback (flagged)
+            if self.extra_num:                   # merge point-in-time event features
+                extra = self._extra_lookup.get((feat.get('symbol'), date))
+                if extra:
+                    feat = {**feat, **extra}
             p_win, _e_ret = m.predict(feat)
             return p_win
         return _fn

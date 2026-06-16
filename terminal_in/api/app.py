@@ -166,8 +166,10 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
         # not an amber badge (nothing is broken; M6 is simply not enabled live).
         try:
             from terminal_in.m6 import ev_head as _ev
+            from terminal_in.data_ingest import events as _events
             m6 = {'ev_source': 'heuristic', 'mode': 'fallback',
                   'lightgbm_available': _ev.available(),
+                  'event_plane': _events.freshness(),
                   'note': 'D0 EV head is gated in the backtest (validation.py --m6); '
                           'not yet promoted to the live judge'}
         except Exception:
