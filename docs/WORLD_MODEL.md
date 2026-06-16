@@ -1,9 +1,22 @@
 # Module 6 — World-Model Decisioning Core (design)
 
-> Status: **DESIGN / NOT BUILT.** This document plans a forward-looking
-> replacement for the heart of the decision pipeline. It is staged so each
-> phase ships and is eval-gated independently; nothing here weakens the
-> hard invariants in [CLAUDE.md](../CLAUDE.md) or the risk gate.
+> Status: **DESIGN doc. Phases C + D₀ are now BUILT and EVAL-GATED — and FAILED
+> the gate (clean negatives, not promoted).** See
+> [ALPHA_FINDINGS.md](ALPHA_FINDINGS.md) for the full out-of-sample record. In
+> short: the gradient-boosted forward EV head (D₀), the directional-competence
+> layer (C), the event/PEAD plane, and the VIX-conditioned reaction matrix were
+> all built, walk-forward-fenced, and **none beat the heuristic or buy-and-hold
+> net of costs.** The code lives in `terminal_in/m6/` and is exercised by
+> `validation.py --m6 / --events`; it is NOT wired into the live judge (promotion
+> is earned on OOS, and none earned it). The remaining phases (A/B/D/E — JEPA +
+> world model) are unbuilt; given five negatives the honest read is that the
+> bottleneck is signal/data, not model capacity — build those only against
+> genuinely orthogonal point-in-time data, not more price-derived features.
+>
+> This document plans a forward-looking replacement for the heart of the decision
+> pipeline. It is staged so each phase ships and is eval-gated independently;
+> nothing here weakens the hard invariants in [CLAUDE.md](../CLAUDE.md) or the
+> risk gate.
 >
 > Owner ask (2026-06-13): *"the decisioning core … will only look back and
 > try and guess. I came across JEPA and world models … a combo to make a
@@ -427,8 +440,8 @@ Ryzen 7 7730U, 8C/16T, 16 GB, CPU-only (no CUDA; iGPU via DirectML/Vulkan only).
 | Phase | Deliverable | Ships when | Gate |
 |------|-------------|-----------|------|
 | **A** | JEPA-lite encoder + regime probe; `z_t` in bus cache; `/api/health.m6` | encoder trains, regime probe ≈ HMM agreement, no collapse (VICReg variance floor) | probe matches HMM ≥70% of days; latent variance non-degenerate |
-| **C** | Directional competence weights + abstention (cheapest, do early/parallel) | trailing HR+/HR− per lens×dir×regime wired from hindsight | backtest: competence-weighting ≥ flat on Sharpe |
-| **D₀** | **Gradient-boosted EV head (+ optional TSFM feature) replaces heuristic EV — the buildable-now System 1 (§2d)** | hindsight outcomes labelled; LightGBM trains + calibrates on the candidate feature vector | **walk-forward backtest beats heuristic-EV judge, no >5pt category regression** |
+| **C** | Directional competence weights + abstention (cheapest, do early/parallel) | ✅ BUILT (`m6/competence.py`) — **FAILED GATE**: veto abstained the winners, net Sharpe 0.44→0.03 | backtest: competence-weighting ≥ flat on Sharpe — NOT met |
+| **D₀** | **Gradient-boosted EV head replaces heuristic EV — buildable-now System 1 (§2d)** | ✅ BUILT (`m6/dataset.py`+`ev_head.py`, LightGBM, 78k point-in-time labels, per-fold fenced) — **FAILED GATE**: net Sharpe −0.02 vs heuristic +0.44, < buy-hold, 0 DSR survivors | **beats heuristic-EV judge OOS — NOT met** |
 | **B** | Latent world model + uncertainty ensemble; imagination rollout (fenced) | transition model trains; rollouts produce calibrated return bands | rollout return-bands calibrated on held-out (coverage ≈ nominal) |
 | **D** | World-model rollout EV supersedes/ensembles the D₀ head; LLM judge consumes forward distribution | (A)+(B)+(C)+(D₀) live | **walk-forward beats the D₀ judge, no >5pt category regression** |
 | **E** | Latent policy (RL-in-imagination) for size/timing — *optional* | (D) promoted + stable | real walk-forward + 60-day paper record beats (D) |
