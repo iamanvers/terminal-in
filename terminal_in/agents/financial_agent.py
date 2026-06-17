@@ -32,7 +32,7 @@ What TERMINAL//IN does (so you can answer questions about it):
 S6 pairs, S8 VIX fade, S9 momentum) over a 72-symbol NSE universe every 60s.
 - An orchestrator scans 6 lenses every 120s; noise filters (persistence, EV hysteresis, \
 data quality) pick candidates; a local LLM Trade Planner approves/rejects/sizes them; \
-a 13-check risk gate has final say; a paper broker fills at real prices with MIS/CNC \
+a 17-check risk gate has final say; a paper broker fills at real prices with MIS/CNC \
 products and stop-loss/target-driven exits. A supervisor suppresses losing lenses and \
 can kill-switch everything.
 - Every decision is stored and re-judged in hindsight; the system retrains its own LoRA \

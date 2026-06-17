@@ -2,9 +2,24 @@
 
 # TERMINAL//IN
 
+![tests](https://img.shields.io/badge/tests-229_passing-brightgreen)
+![python](https://img.shields.io/badge/python-3.14-blue)
+![mode](https://img.shields.io/badge/mode-paper_%7C_live-0094FB)
+![license](https://img.shields.io/badge/license-personal_use-lightgrey)
+
 **An agentic algorithmic trading terminal for Indian markets (NSE).** Runs entirely on a single machine — Python, SQLite, and a statically served Next.js interface — with a local language model embedded in the trade-decision loop. No cloud dependencies.
 
 > Paper-trading first; live execution via Zerodha Kite Connect when enabled. The system operates exclusively on real market data and observes real NSE market hours, products (MIS/CNC), and settlement mechanics — including in simulation.
+
+---
+
+## Positioning
+
+This is a **research and execution terminal**, not an alpha engine — and it says so on the strength of its own evidence. A built-in falsification harness (`backtest/validation.py`) tests every claimed edge out-of-sample, net of real Indian transaction costs, with walk-forward fences and multiple-testing corrections. The honest result, recorded in [`docs/ALPHA_FINDINGS.md`](docs/ALPHA_FINDINGS.md): **no long-only configuration in this 67-name large-cap universe beats buy-and-hold NIFTY net of costs** — seven independent, walk-forward-fenced negatives, including a learned forward-EV head, an LLM planner, and an event/PEAD plane.
+
+What this terminal actually delivers is **engineering you can trust**: a single-process, fully-local stack (no cloud, no Redis, no Docker); real-data-only ingestion with explicit degraded-mode surfacing; a 17-check pre-trade risk gate; product-aware paper settlement; a shared, audited Indian transaction-cost model; and an agentic decision loop with a local LLM judge that can veto or shrink — but never bypass — the risk gate. The value is the cockpit, the plumbing, the cost honesty, and a validation discipline that refuses to tune signals until they pass.
+
+If alpha is the goal, the evidence points at **inputs, not models**: orthogonal, point-in-time forward information (real fundamentals, estimate revisions, relational/supply-chain structure) that no free source provides for this universe today. That is a data-acquisition problem, and it is the roadmap — not a bigger model.
 
 ---
 
@@ -44,6 +59,24 @@ The agentic core: actionable-only scan matrix, LLM Trade Planner verdicts with r
 | **AGENTS** | `/agents` | The agentic core: actionable-only scan view, **LLM Trade Planner verdicts with reasoning**, supervisor control loop, decision log with hindsight, EventBus inspector, **streaming app-aware AI analyst** |
 | **TRAIN** | `/train` | **Recursive model training**: rebuild dataset from the system's own trades + judged decisions → LoRA fine-tune → loss metrics → run history |
 | **BACKTEST** | `/backtest` | **Walk-forward backtest** over 10y real OHLCV (no lookahead): replays the live core with the **real Trade Planner in the loop** (degraded *or* sampled LLM, with a per-judge comparison) or the **real strategy_engine classes** (SOURCE toggle); equity curve, per-lens/per-regime/by-year attribution, progress bar + cancel |
+
+### What's shipped vs researched vs planned
+
+The six modules above are all **✅ shipped**. To set expectations honestly, the
+deeper layers fall into three buckets:
+
+- **✅ Shipped & live** — the six modules, the 17-check risk gate, paper + (Kite)
+  live execution, F&O paper execution with SPAN-approx margin, the recursive
+  training pipeline, and the walk-forward backtest + alpha-validation harness.
+- **🔬 Built, evaluated, and *not promoted*** — Module 6's forward judge (directional
+  competence, a LightGBM forward-EV head), the point-in-time event/PEAD plane, and a
+  VIX-conditioned reaction matrix. All were built and **failed their walk-forward
+  eval gate**, so they stay behind flags, never live. The negatives are documented in
+  [`docs/ALPHA_FINDINGS.md`](docs/ALPHA_FINDINGS.md) — this project keeps its dead ends
+  on the record rather than hiding them.
+- **🛣️ Roadmap** — full agentic-stack replay in the backtest, multi-asset (NSE CDS FX →
+  MCX commodities → global), multi-leg options strategies, the Firm Intelligence Graph,
+  and the rest of the Module 6 world-model track (see `docs/PRD.md`, `docs/WORLD_MODEL.md`).
 
 ## Architecture
 
@@ -93,7 +126,7 @@ Three feedback loops at three speeds — trade-by-trade control (supervisor), ba
 - **Strategy engine** — 8 rule strategies (ORB, 52-week breakout, RSI reversion, EMA pullback, pairs cointegration, VIX fade, Hawkes momentum) evaluated every 60s
 - **Regime classifier** — 6-state HMM (heuristic fallback until trained; degraded mode reported, never hidden)
 - **DSA** — monthly capital allocation across strategies: `0.40×regime_fit + 0.30×Bayesian_WR + 0.30×Sharpe`
-- **Risk** — 13-check pre-trade gate, sector concentration via full-universe sector map, drawdown/daily-loss caps, kill switch, margin check that *rejects* unpriceable orders
+- **Risk** — 17-check pre-trade gate (+ a non-blocking VIX size-reduce), sector concentration via full-universe sector map (with a small-book floor — see below), drawdown/daily-loss caps, kill switch, margin check that *rejects* unpriceable orders
 - **Data** — real NSE OHLCV via yfinance (~10y daily back to 2016 + 60d 5m, gap-aware forward + backward backfill, 24h refresh), live quotes, FinBERT news sentiment
 - **Health** — `/api/health` reports every degraded subsystem; the UI badges them. No silent fallbacks anywhere in the signal path.
 - **Design system** — layered cool-dark surfaces under an embossed dot-matrix mesh (cursor acts as a soft lamp; the grid never moves), frosted-glass chrome, electric-blue accent ramp (gold strictly = warning), Geist Mono for data / Georgia for display. Single palette source: `terminal_ui/lib/theme.ts` + `styles/globals.css`.
@@ -167,7 +200,7 @@ cd terminal_ui ; npm run dev                          # UI :3000
 #   first launch runs an onboarding wizard (capital / risk tier / mode / keys)
 
 # Tests
-.venv\Scripts\pytest tests\ -v                        # 191 tests
+.venv\Scripts\pytest tests\ -v                        # 229 tests
 ```
 
 **Platforms:** macOS / Linux run the **browser-served** single process (`./start.sh` → `localhost:5000`) — Flask serves the static UI cross-platform, no Node needed at runtime. The **packaged Windows `.exe` is a self-serving desktop app**: backend on a private loopback port, UI in a native `TERMINAL//IN` window (WebView2), no browser, no visible URL. Hardware maximization (`hw.apply()` — all logical cores) runs everywhere.
@@ -208,16 +241,26 @@ TERMINAL//IN is a personal analysis and automation tool — **not investment adv
 ```
 terminal_in/            Python backend (threads + EventBus)
   agents/               orchestrator, trade_planner (LLM judge), supervisor,
-                        decision_memory, signal_filters, learner, training/
-  strategy_engine/      8 strategies, regime HMM, DSA
-  risk/                 M2 gate, M3 analyst, event calendar
-  execution/            paper broker, F&O paper broker, options pricing, Kite broker, EOD settlement
-  backtest/             walk-forward engine (real OHLCV replay, no lookahead)
-  data_ingest/          yfinance backfill + live feed, instrument registry (72 symbols), F&O contracts
+                        decision_memory, signal_filters, learner, control,
+                        financial_agent, training/ (LoRA, dataset, reasoning traces, deploy)
+  strategy_engine/      8 strategies, regime HMM (+ pure-NumPy backend), DSA
+  risk/                 M2 gate, M3 analyst, event calendar, SPAN-approx margin
+  execution/            paper broker, F&O paper broker, options pricing, Kite broker,
+                        EOD settlement, shared transaction-cost model, F&O signal router
+  backtest/             walk-forward engine (real OHLCV replay, no lookahead) +
+                        validation.py (alpha-falsification harness — DSR, White RC, IC)
+  m6/                   forward judge experiments (competence, GBT EV head, event/PEAD,
+                        reaction matrix) — built, eval-gated, NOT live
+  data_ingest/          yfinance backfill + live feed, instrument registry (72 symbols),
+                        F&O contracts, point-in-time NSE event archive, global quotes
   news/                 NewsAPI + FinBERT
+  reporting/            daily PDF brief/EOD report, portfolio statement assembly
+  persistence/          metadata repo + artifact store (training runs, models)
   api/                  Flask + SocketIO (threading mode), route blueprints
+  (top-level)           main, config, app_settings, market_hours, hw, errors, bus, db
 terminal_ui/            Next.js 14 — MARKET / EQUITIES / F&O / AGENTS / TRAIN / BACKTEST
-tests/                  191 tests (gate, broker, persistence, filters, planner, supervisor, backtest, F&O greeks, palette, onboarding)
+tests/                  229 tests (gate, broker, persistence, filters, planner, supervisor,
+                        backtest, validation, m6, events, costs, F&O greeks, palette, onboarding)
 docs/PRD.md             Product requirements + multi-asset and low-latency roadmaps
 ```
 

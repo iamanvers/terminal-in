@@ -355,7 +355,7 @@ Without a journal you repeat the same mistakes indefinitely."""),
 # ── M2 Risk Gate understanding ─────────────────────────────────────────────────
 (
 "Explain what the M2 pre-trade risk gate checks before placing any order in an automated system.",
-"""M2 Pre-Trade Risk Gate — 13 Checks Before Any Order
+"""M2 Pre-Trade Risk Gate — 17 Checks Before Any Order
 
 The M2 gate runs before every order is placed. ALL checks must pass.
 
@@ -1171,7 +1171,7 @@ After each trade, update win rate estimate from prior 50-trade window. Updated K
 - Third tranche: 20% at first pullback after confirmation
 - Never average down on losing trades
 
-**Pre-Trade Checklist (M2 Gate — 12 checks):**
+**Pre-Trade Checklist (M2 Gate — 17 checks):**
 1. Is instrument tradeable? (not index-only, not in ban period)
 2. VIX < 35? (hard stop if VIX ≥ 35)
 3. Drawdown < 20%? (portfolio-level check)

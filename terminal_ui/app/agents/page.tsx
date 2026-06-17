@@ -41,7 +41,7 @@ const STATUS_C: Record<string, string> = {
 
 const AGENT_DESC: Record<string, string> = {
   ENGINE:       'Strategy Evaluation Loop · 60s cycle',
-  GATE:         'M2 Pre-Trade Risk Gate · 12 checks',
+  GATE:         'M2 Pre-Trade Risk Gate · 17 checks',
   BROKER:       'Paper Fill Simulator · 0.03% slip + ₹20',
   ORCHESTRATOR: 'Multi-Lens Agentic Scanner',
   S1: 'Opening Range Breakout (index)',

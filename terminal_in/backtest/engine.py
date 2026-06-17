@@ -108,6 +108,18 @@ class _Approve:
     size_factor: float = 1.0
 
 
+def _split_by_conf_gate(eligible: list, gate: float):
+    """Split eligible candidates by the LLM confidence gate (planner='llm').
+    strong (smoothed conf >= gate) clear the heuristic and are auto-approved with
+    NO LLM call; ambiguous (< gate) are batched to the judge. gate <= 0 disables
+    the split (everything is ambiguous → the LLM judges the whole batch)."""
+    if gate <= 0.0:
+        return [], list(eligible)
+    strong    = [c for c in eligible if c['conf_smoothed'] >= gate]
+    ambiguous = [c for c in eligible if c['conf_smoothed'] <  gate]
+    return strong, ambiguous
+
+
 def _segment(strat: str) -> str:
     """Cost segment for a backtest trade. Only S1 (opening-range breakout) is
     intraday (MIS); every other lens / strategy here is positional delivery
@@ -234,12 +246,19 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
                  planner: str = 'degraded', max_llm_calls: int = 150,
                  progress_cb=None, should_stop=None, signals: str = 'lenses',
                  full_trades: bool = False, ev_override=None, competence_gate=None,
-                 ev_min_override: float = 0.5) -> dict:
+                 ev_min_override: float = 0.5, llm_conf_gate: float = 0.60) -> dict:
     """Replay the live decision core. `planner`:
       'degraded' — the deterministic planner bar (fast, reproducible; default)
       'llm'      — the REAL TradePlanner LLM judge in the loop (sampled up to
                    max_llm_calls Ollama calls; degraded for batches past budget).
     Both routes go through TradePlanner.judge_batch — true formula parity.
+
+    llm_conf_gate (planner='llm' only): heuristic-confidence gate for the LLM.
+    Candidates whose smoothed confidence is >= this clear the heuristic on their
+    own and are auto-approved deterministically — no LLM call. Only the AMBIGUOUS
+    remainder (below the gate) is batched to the LLM, and a scan with no ambiguous
+    candidate spends NO budget. Set 0.0 to disable (LLM judges every batch, the
+    old behavior). Backtest-only; the live planner path is unchanged.
 
     progress_cb(frac, info) is called periodically (frac 0..1); should_stop() →
     True aborts early and reports the partial result (used by the cancel button)."""
@@ -311,6 +330,8 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
     daily_equity: list[tuple[str, float]] = []
     llm_calls = 0                           # batches LLM-judged (sampling counter)
     degraded_calls = 0
+    llm_strong_skipped = 0                  # candidates auto-approved past the conf gate (no LLM)
+    llm_gate_active = planner == 'llm' and llm_conf_gate > 0.0
     ev_source_counts: dict[str, int] = {}   # M6: 'gbt' | 'heuristic' candidate counts
 
     n_steps = len(dates) - 1
@@ -422,26 +443,41 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
                 approved = [_Approve(c['symbol']) for c in
                             sorted(eligible, key=lambda c: c['ev'], reverse=True)]
             else:
-                use_llm = planner == 'llm' and ollama_ok and llm_calls < max_llm_calls
-                batch = {
-                    'scan_id': i, 'regime': regime,
-                    'india_vix': vix_by_date.get(d, 0.0), 'equity': equity, 'throttle': 0,
-                    'open_positions': [
-                        {'symbol': s, 'side': p.trade.side, 'qty': p.trade.qty,
-                         'unrealized': (float(data[s].loc[d]['close']) - p.trade.entry) * p.trade.qty
-                                       if d in data[s].index else 0.0}
-                        for s, p in positions.items()],
-                    'candidates': eligible,
-                }
-                # backtest LLM calls are tight + no-retry so a long horizon doesn't
-                # spend 2×60s per batch; verdicts are short so num_predict is small.
-                verdicts, mode, _lat = judge.judge_batch(
-                    batch, use_llm=use_llm, timeout_s=25, retry=False, num_predict=220)
-                if mode == 'llm':
-                    llm_calls += 1
+                # Confidence gate (planner='llm'): candidates that clear the gate
+                # on heuristic confidence are auto-approved with NO LLM call; only
+                # the ambiguous remainder is sent to the judge — and a scan with no
+                # ambiguous candidate spends no budget. Disabled (gate 0.0) → the
+                # LLM judges the whole batch, as before.
+                if llm_gate_active:
+                    strong, ambiguous = _split_by_conf_gate(eligible, llm_conf_gate)
                 else:
-                    degraded_calls += 1
-                approved = [v for v in verdicts if v.action == 'approve' and v.symbol in by_sym]
+                    strong, ambiguous = [], eligible
+
+                approved = [_Approve(c['symbol']) for c in strong]    # deterministic auto-pass
+                llm_strong_skipped += len(strong)
+
+                mode = 'lenses' if strong and not ambiguous else 'degraded'
+                if ambiguous:
+                    use_llm = planner == 'llm' and ollama_ok and llm_calls < max_llm_calls
+                    batch = {
+                        'scan_id': i, 'regime': regime,
+                        'india_vix': vix_by_date.get(d, 0.0), 'equity': equity, 'throttle': 0,
+                        'open_positions': [
+                            {'symbol': s, 'side': p.trade.side, 'qty': p.trade.qty,
+                             'unrealized': (float(data[s].loc[d]['close']) - p.trade.entry) * p.trade.qty
+                                           if d in data[s].index else 0.0}
+                            for s, p in positions.items()],
+                        'candidates': ambiguous,
+                    }
+                    # backtest LLM calls are tight + no-retry so a long horizon doesn't
+                    # spend 2×60s per batch; verdicts are short so num_predict is small.
+                    verdicts, mode, _lat = judge.judge_batch(
+                        batch, use_llm=use_llm, timeout_s=25, retry=False, num_predict=220)
+                    if mode == 'llm':
+                        llm_calls += 1
+                    else:
+                        degraded_calls += 1
+                    approved += [v for v in verdicts if v.action == 'approve' and v.symbol in by_sym]
                 approved.sort(key=lambda v: by_sym[v.symbol]['ev'], reverse=True)
 
             for v in approved:
@@ -459,8 +495,11 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
                 qty = max(1, int((equity * RISK_PER_TRADE) / entry * size_factor))
                 seg = _segment(c['strat'])
                 entry_cost = cost_breakdown(entry * qty, 'BUY', seg)['total']
+                # auto-passed strong candidates bypass the LLM → tag them 'lenses'
+                # (honest per_judge accounting); only ambiguous verdicts carry `mode`.
+                v_judge = 'lenses' if isinstance(v, _Approve) else mode
                 t = Trade(v.symbol, c['strat'], 'BUY', str(nxt)[:10], entry, sl_f, tgt_f, qty,
-                          regime=regime, ev=c['ev'], judge=mode, size_factor=round(size_factor, 2),
+                          regime=regime, ev=c['ev'], judge=v_judge, size_factor=round(size_factor, 2),
                           segment=seg, cost=entry_cost)
                 positions[v.symbol] = Position(t, sec)
 
@@ -480,6 +519,8 @@ def run_backtest(db=None, days: int = 730, symbols: list[str] | None = None,
     total_ev = sum(ev_source_counts.values()) or 1
     planner_meta = {'mode': planner, 'ollama_available': ollama_ok,
                     'llm_batches': llm_calls, 'degraded_batches': degraded_calls,
+                    'llm_conf_gate': llm_conf_gate if llm_gate_active else None,
+                    'llm_strong_skipped': llm_strong_skipped,
                     'llm_budget': max_llm_calls, 'cancelled': stopped,
                     'ev_source': ('gbt' if ev_source_counts.get('gbt', 0) > total_ev / 2
                                   else 'heuristic'),
@@ -816,7 +857,11 @@ if __name__ == '__main__':
     ap.add_argument('--planner', choices=['degraded', 'llm'], default='degraded',
                     help="'llm' puts the real Ollama planner in the loop (sampled)")
     ap.add_argument('--max-llm-calls', type=int, default=400)
+    ap.add_argument('--llm-conf-gate', type=float, default=0.60,
+                    help='only candidates BELOW this smoothed confidence go to the '
+                         'LLM (planner=llm); strong ones auto-pass. 0 = LLM judges all')
     args = ap.parse_args()
-    r = run_backtest(days=args.days, planner=args.planner, max_llm_calls=args.max_llm_calls)
+    r = run_backtest(days=args.days, planner=args.planner, max_llm_calls=args.max_llm_calls,
+                     llm_conf_gate=args.llm_conf_gate)
     print(json.dumps({k: v for k, v in r.items() if k != 'path'}, indent=1))
     print('->', r['path'])

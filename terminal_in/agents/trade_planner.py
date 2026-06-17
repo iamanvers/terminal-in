@@ -8,7 +8,7 @@ Flow (when config.planner_enabled):
   The planner makes ONE LLM call per scan (Ollama, format=json) asking the
   model to approve/reject/size each candidate with reasoning, validates the
   verdicts, then publishes approved ones as 'strategy.signal' — which flow
-  through the existing 12-check risk gate unchanged. The planner can never
+  through the existing 17-check risk gate unchanged. The planner can never
   bypass risk; it can only veto or shrink.
 
 Degraded mode (Ollama down / timeout / unparseable output after retry):

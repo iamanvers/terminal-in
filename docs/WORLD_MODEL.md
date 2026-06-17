@@ -207,7 +207,7 @@ forward distribution. The risk gate is untouched and final.
         distribution + competence + latent regime + hindsight memory)
         → reasons over a SIMULATED FORWARD DISTRIBUTION, explains, sizes
                                   ▼
-                 M2 risk gate (13 checks, UNCHANGED, final)
+                 M2 risk gate (17 checks, UNCHANGED, final)
                                   ▼
                                broker
   (E, later) latent policy proposes size/timing, trained in imagination,
@@ -408,7 +408,7 @@ world-model to *fail gracefully into abstention*, not to be oracular.
    — imagination is a *planning* tool inside the judge, fenced off from the data
    path. (New invariant, added to CLAUDE.md.)
 2. **The risk gate stays final.** M6 can veto, shrink, or abstain; it can never
-   bypass the 13-check M2 gate. Unchanged from the current planner invariant.
+   bypass the 17-check M2 gate. Unchanged from the current planner invariant.
 3. **No silent degradation.** Each M6 component reports to `/api/health`. If the
    encoder/world-model is untrained or unavailable, the judge falls back to the
    current heuristic-EV + LLM path, flagged (`m6_mode: world_model | fallback`),

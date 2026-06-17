@@ -1,0 +1,42 @@
+TERMINAL//IN — Personal / Source-Available License
+Copyright (c) 2026 Anmol Verma. All rights reserved.
+
+This software and its source code (the "Software") are made available for
+reference and personal, non-commercial use only.
+
+GRANT
+You are permitted to:
+  - View, study, and run the Software on your own machine(s) for personal,
+    educational, and research purposes.
+  - Modify the Software for your own personal use.
+
+RESTRICTIONS
+You may NOT, without prior written permission from the copyright holder:
+  - Use the Software, in whole or in part, for any commercial purpose,
+    including trading on behalf of others, paid services, or resale.
+  - Redistribute, sublicense, publish, or share the Software or any
+    derivative of it, in source or binary form.
+  - Remove or alter this license or the copyright notices.
+
+DATA AND THIRD-PARTY SERVICES
+The Software integrates third-party data and brokerage services (including but
+not limited to Zerodha Kite Connect, NSE/BSE data, yfinance, and NewsAPI). Your
+use of those services is governed entirely by their own terms of service and
+licensing. This license grants no rights to any third-party data or API, and
+you are solely responsible for complying with each provider's terms.
+
+NO FINANCIAL ADVICE
+The Software is a research and execution tool. It does not constitute financial,
+investment, or trading advice. Trading involves substantial risk of loss. You use
+the Software, in paper or live mode, entirely at your own risk.
+
+NO WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR OR
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY — INCLUDING
+ANY TRADING OR FINANCIAL LOSSES — WHETHER IN AN ACTION OF CONTRACT, TORT, OR
+OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For commercial licensing or redistribution rights, contact the copyright holder.

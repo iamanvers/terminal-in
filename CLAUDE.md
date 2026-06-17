@@ -12,7 +12,7 @@ Bloomberg-style **agentic** algorithmic trading terminal for Indian markets (NSE
 .\start.ps1                       # Windows
 ./start.sh                        # macOS/Linux — builds static UI + serves UI+API on :5000 (browser); --dev for :3000 hot-reload
 
-# Run tests (191 passing)
+# Run tests (229 passing)
 .venv/Scripts/pytest tests/ -v
 
 # Train HMM regime classifier (after accumulating 500+ days of data)
@@ -53,7 +53,7 @@ orchestrator (6 deterministic lenses, 120s scan)
   → signal_filters (persistence debounce ≥2 scans, conf EMA, EV hysteresis, data-quality gate)
   → planner.candidates batch (top-5 eligible)
   → TradePlanner (1 Ollama LLM call/scan, JSON verdicts: approve/reject/size + reasoning)
-  → strategy.signal → M2 risk gate (12 checks, unchanged) → broker
+  → strategy.signal → M2 risk gate (17 checks, unchanged) → broker
 TradingSupervisor closes the loop: lens circuit breaker (3 losses → 2h suppression),
 global throttle (5 losses → fewer candidates + higher EV bar), hard stop (8 → KillSwitch).
 DecisionMemory persists every verdict; hindsight loop re-prices rejected candidates
@@ -97,7 +97,7 @@ terminal_in/                        ← Python backend
     paper_tick_agg.py               — aggregates live ticks → 1m bars
   news/                             — NewsAPI fetcher, FinBERT sentiment, parser
   strategy_engine/                  — engine (8 strategies S1–S9 ex S7), DSA, regime/ (HMM)
-  risk/                             — gate.py (M2 12-check), m3_analyst.py, event_calendar.py
+  risk/                             — gate.py (M2 17-check + 1 size-reduce), m3_analyst.py, event_calendar.py
   execution/                        — paper_broker, kite_broker, settlement (EOD close)
   api/
     app.py                          — Flask factory, SocketIO async_mode='threading',
@@ -185,7 +185,7 @@ docs/PRD.md                         ← product requirements: F&O execution P2, 
 
 **DSA scoring** — `0.40 × regime_fit + 0.30 × Bayesian_WR + 0.30 × rolling_Sharpe`; monthly rebalance, ±15% gradient cap, 5% floor; WARNs when scoring on uninformed priors.
 
-**M2 gate order** — kill_switch → symbol block → event_mask → VIX hard stop → drawdown → daily loss cap → daily trade count → confidence (learner-adaptive) → max positions → duplicate → signal dedup → margin (live-tick priced, rejects unpriceable) → sector → correlation → VIX reduce.
+**M2 gate order** (17 rejecting checks + 1 size-reduce = 18 recorded conditions) — kill_switch → auto_trade_on → symbol block → tradeable_instrument → market_open → event_mask (LIVE-ONLY: always passes in paper) → VIX hard stop → drawdown → daily loss cap → daily trade count → confidence (learner-adaptive) → max positions → duplicate → signal dedup → margin (live-tick priced, rejects unpriceable) → sector → correlation (CONDITIONAL: only at ≥3 open) → VIX reduce (size-only, never rejects). **Sector check has a small-book floor**: `SECTOR_SMALL_BOOK_FLOOR` (env, default true) always allows ≤2 positions/sector regardless of book size — the 40% cap (`SECTOR_CAP_PCT`) only engages from the 3rd same-sector name; without the floor a 1-position book deadlocks (any 2nd trade projects ≥50%). Set `SECTOR_SMALL_BOOK_FLOOR=false` to restore the strict proportional cap.
 
 **TRL 1.x / transformers 5.x gotchas** — `SFTTrainer(processing_class=tokenizer)` (not `tokenizer=`); SFTConfig holds `dataset_text_field`/`max_length`/`packing`; `dtype=` not `torch_dtype=`; TRL import crashes on Windows cp1252 — train_lora.py re-execs with `-X utf8`.
 
@@ -193,7 +193,7 @@ docs/PRD.md                         ← product requirements: F&O execution P2, 
 
 **LLM backend (pluggable, distribution path)** — TradePlanner's client is backend-agnostic: `LLM_BACKEND=ollama` (default, native `/api/chat`) or `LLM_BACKEND=openai` → OpenAI-compatible `/v1/chat/completions` at `LLM_BASE_URL` (default `:8080`) with model `LLM_MODEL` — lets a bundled llama.cpp `llama-server` replace Ollama. Default behaviour is unchanged. NOTE: only the planner is migrated; **financial_agent (AI analyst) still uses Ollama directly**, so fully dropping Ollama also needs the analyst moved + the binary/GGUF bundled.
 
-**Backtest v3** — `run_backtest(..., planner='degraded'|'llm', max_llm_calls=150, progress_cb, should_stop)` routes candidates through the REAL `TradePlanner.judge_batch` (degraded high bar OR sampled Ollama LLM in the loop), reports `per_judge` (LLM vs degraded) + a `planner` block + progress; `POST /api/backtest/cancel` aborts at the next step (partial result kept). LLM mode is slow on local HW (best 1–2Y). ⚠️ still mirrors the S2/S4/S5/MOM lens subset, NOT the full `strategy_engine` suite.
+**Backtest v3** — `run_backtest(..., planner='degraded'|'llm', max_llm_calls=150, llm_conf_gate=0.60, progress_cb, should_stop)` routes candidates through the REAL `TradePlanner.judge_batch` (degraded high bar OR sampled Ollama LLM in the loop), reports `per_judge` (LLM vs degraded vs lenses) + a `planner` block + progress; `POST /api/backtest/cancel` aborts at the next step (partial result kept). LLM mode is slow on local HW (best 1–2Y). **LLM confidence gate** (`llm_conf_gate`, planner='llm' only): candidates with smoothed conf ≥ gate clear the heuristic and are **auto-approved with no LLM call** (`judge='lenses'`); only the AMBIGUOUS remainder (< gate) is **batched** to the judge, and a scan with zero ambiguous candidates spends no budget — cuts LLM cost/time without touching the live planner path (`_split_by_conf_gate` is the pure, tested split; `0.0` disables = LLM judges every batch, old behavior). `planner.llm_strong_skipped`/`llm_conf_gate` report the gating. ⚠️ still mirrors the S2/S4/S5/MOM lens subset, NOT the full `strategy_engine` suite.
 
 ## Codebase Memory MCP (token-saving index)
 
@@ -240,7 +240,7 @@ Python 3.14 on Windows 11. Interpreter: `.venv/Scripts/python.exe`.
 **Complete:**
 - Modules: MARKET, EQUITIES (cash cockpit), F&O (view+signals + chain + lot-based paper execution), AGENTS (full agentic layer: planner/supervisor/memory/filters), TRAIN (recursive training pipeline), BACKTEST (walk-forward eval over 10y real OHLCV)
 - F&O execution Stages 1–5 shipped: contract model + Black-Scholes theoretical chain (`data_ingest/fno_instruments.py`, `execution/options_pricing.py`, `/api/fno/*`), OPTION CHAIN UI + order ticket + positions, lot-based paper execution (`execution/fno_paper_broker.py` — premium P&L, expiry square-off, shared account), scenario-based **SPAN-approx margin** (`risk/span_margin.py`), and S1/S8 index→ATM-option routing (`execution/fno_signal_router.py`), plus portfolio greek caps + event-day limits (`_risk_check`). Remaining: live-mode Kite chain ingestion.
-- 72-symbol universe with full sector coverage; real-data-only ingest; degraded-mode surfacing; 191 tests passing
+- 72-symbol universe with full sector coverage; real-data-only ingest; degraded-mode surfacing; 229 tests passing
 - Low-latency Tier 1: vectorized indicators (72-symbol pass ≈ 67 ms), LOW_LATENCY priority flag, PYTHON_JIT opt-in (see PRD §5)
 
 **Remaining (see docs/PRD.md for full detail):**

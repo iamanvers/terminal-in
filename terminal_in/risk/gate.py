@@ -1,10 +1,14 @@
 """
-M2 — RiskSupervisor pre-trade gate. 12 checks.
+M2 — RiskSupervisor pre-trade gate. 17 checks that can reject a signal, plus one
+size-modifying condition (VIX reduce) — 18 recorded conditions in the checks dict.
+Two of the 17 carry caveats: `event_mask` is live-only (always passes in paper) and
+`correlation_ok` is conditional (only evaluated at >=3 open positions).
 Subscribes to 'strategy.signal', runs all checks, publishes to 'order.approved' or 'order.rejected'.
 Persists every decision to risk_decisions + signal_lineage tables.
 """
 
 import logging
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -68,6 +72,11 @@ class RiskSupervisor:
         self._max_daily_trades = MAX_DAILY_TRADES_LIVE if config.is_live else MAX_DAILY_TRADES_PAPER
         # Dedup: instrument_token → timestamp of last approved signal
         self._last_approved: dict[int, float] = {}
+        # Serializes the counter-mutating tail of gate(): the EventBus dispatches
+        # callbacks synchronously in the publishing thread, so gate() can run from
+        # multiple producer threads at once. Without this, the trade-count cap
+        # (read-modify-write) and the dedup check-then-set would race.
+        self._gate_lock = threading.Lock()
 
         bus.subscribe('strategy.signal', self._on_signal)
         bus.subscribe('regime.update', self._on_regime_update)
@@ -220,90 +229,96 @@ class RiskSupervisor:
         if not checks['daily_loss_ok']:
             return GateResult(False, checks, f'daily_loss_cap={daily_loss_pct:.3f}')
 
-        # 5. Daily trade count
-        checks['trade_count_ok'] = self._daily_trades < self._max_daily_trades
-        if not checks['trade_count_ok']:
-            return GateResult(False, checks, 'max_daily_trades')
+        # Checks 5–12 read and mutate shared counters (_daily_trades,
+        # _last_approved). Hold the gate lock across the whole tail so the
+        # trade-count cap (check-then-increment) and the dedup (check-then-set)
+        # are atomic under concurrent dispatch. gate() never re-enters itself,
+        # so a plain Lock cannot deadlock; early returns release it.
+        with self._gate_lock:
+            # 5. Daily trade count
+            checks['trade_count_ok'] = self._daily_trades < self._max_daily_trades
+            if not checks['trade_count_ok']:
+                return GateResult(False, checks, 'max_daily_trades')
 
-        # 6. Confidence threshold — adaptive per strategy via StrategyLearner
-        sid = signal.get('strategy_id', '')
-        min_conf = MIN_CONFIDENCE
-        if self._learner is not None:
-            params = self._learner.get_params(sid)
-            min_conf = float(params.get('min_confidence', MIN_CONFIDENCE))
+            # 6. Confidence threshold — adaptive per strategy via StrategyLearner
+            sid = signal.get('strategy_id', '')
+            min_conf = MIN_CONFIDENCE
+            if self._learner is not None:
+                params = self._learner.get_params(sid)
+                min_conf = float(params.get('min_confidence', MIN_CONFIDENCE))
 
-        confidence = float(signal.get('confidence', 0.0))
-        checks['confidence_ok'] = confidence >= min_conf
-        if not checks['confidence_ok']:
-            return GateResult(False, checks, f'low_confidence={confidence:.2f}<{min_conf:.2f}')
+            confidence = float(signal.get('confidence', 0.0))
+            checks['confidence_ok'] = confidence >= min_conf
+            if not checks['confidence_ok']:
+                return GateResult(False, checks, f'low_confidence={confidence:.2f}<{min_conf:.2f}')
 
-        # 7. Max open positions
-        open_trades = self._db.get_open_trades() if self._db else []
-        checks['position_limit_ok'] = len(open_trades) < MAX_OPEN_POSITIONS
-        if not checks['position_limit_ok']:
-            return GateResult(False, checks, f'max_positions={len(open_trades)}')
+            # 7. Max open positions
+            open_trades = self._db.get_open_trades() if self._db else []
+            checks['position_limit_ok'] = len(open_trades) < MAX_OPEN_POSITIONS
+            if not checks['position_limit_ok']:
+                return GateResult(False, checks, f'max_positions={len(open_trades)}')
 
-        # 8. Duplicate position check (same instrument already open)
-        instrument_id = int(signal.get('instrument_id', 0))
-        open_instruments = {int(t.get('instrument_token') or 0) for t in open_trades}
-        checks['no_duplicate'] = instrument_id not in open_instruments
-        if not checks['no_duplicate']:
-            return GateResult(False, checks, f'duplicate_instrument={instrument_id}')
+            # 8. Duplicate position check (same instrument already open)
+            instrument_id = int(signal.get('instrument_id', 0))
+            open_instruments = {int(t.get('instrument_token') or 0) for t in open_trades}
+            checks['no_duplicate'] = instrument_id not in open_instruments
+            if not checks['no_duplicate']:
+                return GateResult(False, checks, f'duplicate_instrument={instrument_id}')
 
-        # 8b. Signal dedup — skip same instrument if approved within SIGNAL_DEDUP_WINDOW_S
-        import time as _time_
-        now_ts = _time_.time()
-        last_ts = self._last_approved.get(instrument_id, 0)
-        checks['signal_fresh'] = (now_ts - last_ts) >= SIGNAL_DEDUP_WINDOW_S
-        if not checks['signal_fresh']:
-            age_s = int(now_ts - last_ts)
-            return GateResult(False, checks, f'signal_too_recent={age_s}s')
+            # 8b. Signal dedup — skip same instrument if approved within SIGNAL_DEDUP_WINDOW_S
+            import time as _time_
+            now_ts = _time_.time()
+            last_ts = self._last_approved.get(instrument_id, 0)
+            checks['signal_fresh'] = (now_ts - last_ts) >= SIGNAL_DEDUP_WINDOW_S
+            if not checks['signal_fresh']:
+                age_s = int(now_ts - last_ts)
+                return GateResult(False, checks, f'signal_too_recent={age_s}s')
 
-        # 9. Margin check — per-trade notional ≤ 30% of equity.
-        # Price source order: live tick → limit_price → stop_loss. A signal with
-        # NO resolvable price is rejected — an unknown notional must never pass.
-        qty = int(signal.get('quantity', 0))
-        price_approx = 0.0
-        try:
-            from terminal_in.bus import bus as _bus
-            cached_tick = _bus.get_cached(f'ticks.{instrument_id}') or {}
-            price_approx = float(cached_tick.get('last_price') or 0.0)
-        except Exception:
-            pass
-        if price_approx <= 0:
-            price_approx = float(signal.get('limit_price') or signal.get('stop_loss') or 0.0)
-        if price_approx <= 0:
-            checks['margin_ok'] = False
-            return GateResult(False, checks, 'no_price_for_margin_check')
-        notional = qty * price_approx
-        max_per_trade = self._current_equity * 0.30
-        checks['margin_ok'] = notional <= max_per_trade
-        if not checks['margin_ok']:
-            return GateResult(False, checks, f'notional_too_large={notional:.0f}>{max_per_trade:.0f}')
+            # 9. Margin check — per-trade notional ≤ 30% of equity.
+            # Price source order: live tick → limit_price → stop_loss. A signal with
+            # NO resolvable price is rejected — an unknown notional must never pass.
+            qty = int(signal.get('quantity', 0))
+            price_approx = 0.0
+            try:
+                from terminal_in.bus import bus as _bus
+                cached_tick = _bus.get_cached(f'ticks.{instrument_id}') or {}
+                price_approx = float(cached_tick.get('last_price') or 0.0)
+            except Exception:
+                pass
+            if price_approx <= 0:
+                price_approx = float(signal.get('limit_price') or signal.get('stop_loss') or 0.0)
+            if price_approx <= 0:
+                checks['margin_ok'] = False
+                return GateResult(False, checks, 'no_price_for_margin_check')
+            notional = qty * price_approx
+            max_per_trade = self._current_equity * 0.30
+            checks['margin_ok'] = notional <= max_per_trade
+            if not checks['margin_ok']:
+                return GateResult(False, checks, f'notional_too_large={notional:.0f}>{max_per_trade:.0f}')
 
-        # 10. Sector concentration — reject if adding this position would put >40%
-        #     of open positions in the same sector (prevents sector crowding)
-        checks['sector_ok'] = self._check_sector(instrument_id, open_trades)
-        if not checks['sector_ok']:
-            return GateResult(False, checks, f'sector_concentration_limit={MAX_SECTOR_PCT:.0%}')
+            # 10. Sector concentration — reject if adding this position would put >40%
+            #     of open positions in the same sector (prevents sector crowding)
+            checks['sector_ok'] = self._check_sector(instrument_id, open_trades)
+            if not checks['sector_ok']:
+                return GateResult(False, checks, f'sector_concentration_limit={MAX_SECTOR_PCT:.0%}')
 
-        # 11. Directional correlation — reject if ≥3 open positions are in the same
-        #     sector AND same direction as this signal (avoids crowded one-sided bets)
-        checks['correlation_ok'] = True
-        if len(open_trades) >= 3:
-            checks['correlation_ok'] = self._check_correlation(signal, open_trades)
-            if not checks['correlation_ok']:
-                return GateResult(False, checks, 'directional_crowding_in_sector')
+            # 11. Directional correlation — reject if ≥3 open positions are in the same
+            #     sector AND same direction as this signal (avoids crowded one-sided bets)
+            checks['correlation_ok'] = True
+            if len(open_trades) >= 3:
+                checks['correlation_ok'] = self._check_correlation(signal, open_trades)
+                if not checks['correlation_ok']:
+                    return GateResult(False, checks, 'directional_crowding_in_sector')
 
-        # 12. VIX reduce (non-blocking — modifies qty, does NOT reject)
-        #     vix_size_reduced=True means size was halved due to elevated VIX
-        checks['vix_size_reduced'] = self._india_vix > VIX_REDUCE_THRESHOLD
-        if checks['vix_size_reduced']:
-            signal['quantity'] = max(int(qty * 0.5), 1)
+            # 12. VIX reduce (non-blocking — modifies qty, does NOT reject)
+            #     vix_size_reduced=True means size was halved due to elevated VIX
+            checks['vix_size_reduced'] = self._india_vix > VIX_REDUCE_THRESHOLD
+            if checks['vix_size_reduced']:
+                signal['quantity'] = max(int(qty * 0.5), 1)
 
-        self._daily_trades += 1
-        self._last_approved[instrument_id] = now_ts
-        return GateResult(True, checks)
+            self._daily_trades += 1
+            self._last_approved[instrument_id] = now_ts
+            return GateResult(True, checks)
 
     def _check_sector(self, instrument_id: int, open_trades: list) -> bool:
         """True if adding this instrument stays within the sector concentration limit."""

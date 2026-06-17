@@ -11,6 +11,7 @@ import pandas as pd
 
 from terminal_in.backtest.engine import (
     _indicators, _regime_series, _lenses, _report, Trade, CAPITAL,
+    _split_by_conf_gate,
 )
 
 
@@ -97,6 +98,33 @@ def test_lens_s2_blocked_in_bear():
                      'hh252': 120.0, 'vol': 2000.0, 'vol_avg20': 1000.0})
     assert 'S2' not in dict(_lenses(row, 'bear'))
     assert 'S2' in dict(_lenses(row, 'bull'))
+
+
+# ── LLM confidence gate (planner='llm' cost control) ───────────────────────────
+
+def _cand(sym, conf):
+    return {'symbol': sym, 'conf_smoothed': conf, 'ev': 1.5}
+
+
+def test_conf_gate_splits_strong_from_ambiguous():
+    elig = [_cand('A', 0.70), _cand('B', 0.55), _cand('C', 0.60), _cand('D', 0.45)]
+    strong, ambiguous = _split_by_conf_gate(elig, 0.60)
+    # >= gate auto-passes (no LLM); < gate is sent to the judge
+    assert {c['symbol'] for c in strong} == {'A', 'C'}
+    assert {c['symbol'] for c in ambiguous} == {'B', 'D'}
+
+
+def test_conf_gate_disabled_sends_everything_to_judge():
+    elig = [_cand('A', 0.90), _cand('B', 0.50)]
+    strong, ambiguous = _split_by_conf_gate(elig, 0.0)
+    assert strong == []
+    assert len(ambiguous) == 2            # gate off → LLM judges the whole batch
+
+
+def test_conf_gate_all_strong_spends_no_llm():
+    elig = [_cand('A', 0.80), _cand('B', 0.75)]
+    strong, ambiguous = _split_by_conf_gate(elig, 0.60)
+    assert len(strong) == 2 and ambiguous == []   # no ambiguous → no LLM call this scan
 
 
 # ── report / output contract ───────────────────────────────────────────────────

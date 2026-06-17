@@ -409,6 +409,21 @@ def test_sector_small_book_never_deadlocks():
     assert not g3._check_sector(1510401, three_fin)   # AXISBANK blocked
 
 
+def test_sector_floor_disabled_restores_strict_cap(monkeypatch):
+    """SECTOR_SMALL_BOOK_FLOOR=false removes the small-book carve-out, so the
+    strict proportional cap applies from the 2nd same-sector position:
+    (1+1)/(1+1) = 50% > 40% → blocked. This is the pre-2026-06-12 behavior,
+    kept available via the env switch."""
+    monkeypatch.setenv('SECTOR_SMALL_BOOK_FLOOR', 'false')
+    one_fin = [{'instrument_token': 341249}]              # HDFCBANK (financials)
+    g = _make_gate(open_trades=one_fin)
+    # 2nd financial on a 1-position book: floor off → strict cap blocks it
+    assert not g._check_sector(1270529, one_fin)          # ICICIBANK blocked
+    # default (floor on) would have allowed it — guard against regression
+    monkeypatch.setenv('SECTOR_SMALL_BOOK_FLOOR', 'true')
+    assert g._check_sector(1270529, one_fin)
+
+
 def test_sector_map_covers_all_instruments():
     """Every known instrument symbol must have a sector mapping."""
     missing = [s for s in KNOWN_TOKENS if s not in SECTOR_MAP]
@@ -504,6 +519,43 @@ def test_market_closed_rejects_everything(monkeypatch):
     assert not result.approved
     assert 'market_closed' in (result.reason or '')
     assert result.checks.get('market_open') is False
+
+
+# ── Concurrency: trade-count cap holds under parallel dispatch ────────────────
+
+def test_concurrent_gate_respects_trade_cap_exactly():
+    """The EventBus dispatches callbacks synchronously in the publishing thread,
+    so gate() runs from multiple producer threads at once. The gate lock must
+    make the trade-count cap (check-then-increment) atomic: firing many more
+    distinct-instrument signals than the cap, concurrently, must approve EXACTLY
+    the cap and never overshoot — and must not deadlock."""
+    import threading
+
+    g = _make_gate()
+    cap = g._max_daily_trades          # 200 in paper
+    n = cap + 100
+    approvals = []
+    lock = threading.Lock()
+    barrier = threading.Barrier(n)
+
+    def worker(i):
+        barrier.wait()                  # release all at once to maximize contention
+        sig = _signal(instrument_id=300000 + i, limit_price=100.0, qty=1)
+        g._last_approved[300000 + i] = 0   # pre-stamp so dedup never blocks
+        res = g.gate(sig)
+        if res.approved:
+            with lock:
+                approvals.append(i)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    assert all(not t.is_alive() for t in threads), 'gate() deadlocked under concurrency'
+    assert len(approvals) == cap, f'expected exactly {cap} approvals, got {len(approvals)}'
+    assert g._daily_trades == cap, f'_daily_trades miscounted: {g._daily_trades} != {cap}'
 
 
 # ── Auto-trade (advise-only) ────────────────────────────────────────────────────
