@@ -37,7 +37,8 @@ during the decade equities ran.
 | 4 | Directional competence weighting (Phase C) | `validation.py --m6` | **abstains the winners** (abstained trades +0.0027 vs kept −0.0006); net Sharpe 0.44→0.03 |
 | 5 | Event-reaction / PEAD plane (NSE archive, 87k events) | `validation.py --events` | **no OOS lift** (Δ −0.064 within ±0.20); PEAD core flat: corr(reaction, fwd-ret) = **0.004**; 0 DSR survivors |
 | 5b | VIX-conditioned reaction matrix | `m6/reaction.py` | OOS dir-hit **0.515**, corr(expected, realized drift) **−0.0008**; no VIX pocket |
-| 6 | Cross-sectional market-neutral (A1 IC + A2 L/S) | `validation.py --longshort` | 12-1 momentum **null** (IC-IR 0.88, L/S −8%); 1-month **reversal = the first PULSE** — IC +0.039, **IC-IR +1.96**, market-neutral L/S net **+58% / Sharpe 0.39** over 10y (caveats below) |
+| 6 | Cross-sectional market-neutral (A1 IC + A2 L/S) | `validation.py --longshort` | 12-1 momentum **null** (IC-IR 0.88, L/S −8%); 1-month **reversal = the first PULSE** — IC +0.039, **IC-IR +1.96**, market-neutral L/S net **+58% / Sharpe 0.39** over 10y (but fails hardening — see below) |
+| 7 | Directional long/short across OUR signals | `validation.py --longshort-directional` | **the system's own lens score has NEGATIVE cross-sectional IC (−1.35)** — lens-favoured names underperform equal-weight (excess Sharpe −1.20); shorting adds no edge (L/S Sharpes lens −0.81, reversal 0.39, mom 0.04; short-leg contribution ≈0 and sign-unstable) |
 
 ## The one non-null: cross-sectional 1-month reversal (a lead, not an edge)
 
@@ -105,6 +106,19 @@ and decomposed the spread:
 Net: the one-month reversal does **not** work as risk-adjusted alpha in any fundable
 form. The only thing beating the index is passive equal-weighting — a portfolio
 construction choice, not selection — and it is biased upward by survivorship.
+
+### Directional long/short across our signals (`--longshort-directional`)
+
+The sharpest finding about the system itself: **the lens score has NEGATIVE
+cross-sectional IC (IC-IR −1.35).** Ranking names by how much the lenses like them is
+*worse than random* — the lens-favoured names underperform even naive equal-weighting
+(excess Sharpe −1.20). It's coherent: 3 of 4 lenses (S2 breakout, S5 pullback-in-uptrend,
+MOM) buy recent **strength**, which mean-reverts over the next month — so the lenses
+systematically pick names about to fade. That is *why* the long-only stack loses to
+passive. Shorting adds no edge either (L/S net Sharpe: lens −0.81, reversal 0.39,
+momentum 0.04; the short-leg contribution is ≈0 and flips sign across H=20/21 — noise).
+**Conclusion: long/short across our signals yields no deployable edge** — confirmed in
+the backtest layer before any short-execution plumbing was built.
 
 ## Universe capacity — adding mid / small caps (evaluation)
 

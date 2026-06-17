@@ -948,6 +948,145 @@ def validate_longshort(db=None, days: int = 2470, horizon: int = 20, quantile: f
                           'segment cannot hold overnight shorts. Benchmark = 0 (cash).'}
 
 
+def validate_longshort_directional(db=None, days: int = 2470, horizon: int = 21,
+                                   quantile: float = 0.2, seed: int = 7) -> dict:
+    """#1 — directional long/short across OUR signals, with the honest benchmark
+    baked in. For each cross-sectional signal (incl. the system's own lens score),
+    rank names and report, per signal:
+      - IC-IR (cross-sectional skill),
+      - LONG-ONLY top-quantile vs the EQUAL-WEIGHT universe (the *correct* long-only
+        benchmark — raw return vs cap-weighted NIFTY flatters via the size effect),
+      - SHORT-LEG contribution (equal-weight − bottom-quantile; >0 ⇒ shorting helps,
+        <0 ⇒ shorting DRAGS — what we found for reversal),
+      - market-neutral L/S net Sharpe + the long leg's beta to NIFTY.
+    Answers 'what does shorting our signals actually do, OOS' without any live
+    short-execution plumbing (this is a research probe; benchmark for L/S = 0)."""
+    from scipy.stats import spearmanr
+    if db is None:
+        from terminal_in.config import load_config
+        from terminal_in.db import DB
+        db = DB(load_config().sqlite_path)
+    from terminal_in.data_ingest.instruments import KNOWN_TOKENS, registry
+    registry.load_stubs()
+    ppy = 252 / horizon
+
+    eq_tokens = {t: s for s, t in KNOWN_TOKENS.items() if registry.sector(t) not in ('index',)}
+    nifty_tok, vix_tok = KNOWN_TOKENS.get('NIFTY 50'), KNOWN_TOKENS.get('INDIA VIX')
+    all_1d = db.get_ohlcv_1d_all(list(eq_tokens) + [t for t in (nifty_tok, vix_tok) if t], limit=days + 320)
+    regimes = engine._regime_series(all_1d.get(nifty_tok), all_1d.get(vix_tok))
+    nif = all_1d.get(nifty_tok)
+
+    ind = {}                                    # per-name indicator frames (for lens score)
+    closes = {}
+    for t, s in eq_tokens.items():
+        df = all_1d.get(t)
+        if df is None or len(df) < 300:
+            continue
+        ind[s] = engine._indicators(df)
+        closes[s] = df['close']
+    dates = sorted(set().union(*[set(c.index) for c in closes.values()]))[-days:]
+    M = pd.DataFrame({s: closes[s].reindex(dates) for s in closes}).astype(float)
+    nser = nif['close'].reindex(dates).astype(float) if nif is not None else None
+    idx = list(range(252, len(M) - horizon, horizon))
+
+    def lens_score_row(i):
+        d = dates[i]; reg = regimes.get(d, 'sideways'); out = {}
+        for s, fr in ind.items():
+            if d not in fr.index:
+                continue
+            lst = engine._lenses(fr.loc[d], reg)
+            out[s] = float(sum(c for _, c in lst))     # 0 if no lens fires
+        return pd.Series(out)
+
+    def sig_at(i, kind):
+        if kind == 'mom_12_1':
+            return M.iloc[i - 21] / M.iloc[i - 252] - 1.0
+        if kind == 'reversal_1m':
+            return -(M.iloc[i] / M.iloc[i - 21] - 1.0)
+        return lens_score_row(i)                       # 'lens_score'
+
+    res = {}
+    for kind in ('lens_score', 'reversal_1m', 'mom_12_1'):
+        ics, lo, ew, ls, lo_b, nf = [], [], [], [], [], []
+        prevL = set()
+        for i in idx:
+            sig = sig_at(i, kind); fwd = M.iloc[i + horizon] / M.iloc[i] - 1.0
+            ok = sig.notna() & fwd.notna()
+            if ok.sum() < 10:
+                continue
+            s, f = sig[ok], fwd[ok]
+            if s.std() == 0:
+                continue
+            c = spearmanr(s, f).correlation
+            if c == c:
+                ics.append(c)
+            nq = max(2, int(len(s) * quantile))
+            top, bot = set(s.nlargest(nq).index), set(s.nsmallest(nq).index)
+            tf, bf, mf = f[list(top)].mean(), f[list(bot)].mean(), f.mean()
+            tl = 1.0 - len(top & prevL) / max(len(top), 1)
+            lo.append(tf - tl * _RT_FRAC); ew.append(mf); ls.append((tf - bf) - tl * (_RT_FRAC + _FUT_RT_FRAC))
+            lo_b.append(tf); nf.append(nser.iloc[i + horizon] / nser.iloc[i] - 1.0 if nser is not None else 0.0)
+            prevL = top
+        ic = np.array(ics); lo_a, ew_a, ls_a, nf_a = map(np.array, (lo, ew, ls, nf))
+
+        def shp(x): return float(x.mean() / x.std() * np.sqrt(ppy)) if len(x) > 2 and x.std() else 0.0
+        beta = float(np.cov(np.array(lo_b), nf_a)[0, 1] / np.var(nf_a)) if len(nf_a) > 2 and np.var(nf_a) else 0.0
+        res[kind] = {
+            'ic_ir': round(float(ic.mean() / ic.std() * np.sqrt(len(ic))), 2) if len(ic) > 2 and ic.std() else 0.0,
+            'long_only_sharpe': round(shp(lo_a), 2),
+            'long_minus_equalweight_per_reb': round(float(lo_a.mean() - ew_a.mean()), 5),
+            'long_minus_ew_sharpe': round(shp(lo_a - ew_a), 2),
+            'short_leg_contribution_per_reb': 0.0,     # filled cleanly in the 2nd pass
+            'shorting_helps': None,
+            'ls_net_sharpe': round(shp(ls_a), 2),
+            'long_beta_to_nifty': round(beta, 2),
+            'n_reb': len(lo_a),
+        }
+        # short-leg contribution = equal-weight − bottom-quantile forward return
+        # (recompute cleanly): >0 means the names we'd short underperform (shorting helps)
+        # derived from stored arrays below
+    # second pass for a clean short-leg number (bottom-quantile fwd) — recompute
+    for kind in res:
+        bot_fwd = []
+        for i in idx:
+            sig = sig_at(i, kind); fwd = M.iloc[i + horizon] / M.iloc[i] - 1.0
+            ok = sig.notna() & fwd.notna()
+            if ok.sum() < 10:
+                continue
+            s, f = sig[ok], fwd[ok]
+            if s.std() == 0:
+                continue
+            nq = max(2, int(len(s) * quantile))
+            bot_fwd.append((f.mean(), f[list(set(s.nsmallest(nq).index))].mean()))
+        if bot_fwd:
+            mkt = np.array([m for m, _ in bot_fwd]); btm = np.array([b for _, b in bot_fwd])
+            res[kind]['short_leg_contribution_per_reb'] = round(float(mkt.mean() - btm.mean()), 5)
+            res[kind]['shorting_helps'] = bool(mkt.mean() - btm.mean() > 0)
+    return {'ts': int(time.time() * 1000), 'days': days, 'n_years': round(days / 252.0, 2),
+            'horizon': horizon, 'n_symbols': int(M.shape[1]), 'signals': res,
+            'note': 'long-only judged vs EQUAL-WEIGHT (not NIFTY); short-leg contribution '
+                    '= equal-weight − bottom-quantile fwd ret (>0 = shorting helps). L/S '
+                    'benchmark = 0; short leg would need futures (capacity-gated).'}
+
+
+def _print_longshort_directional(r: dict):
+    P = print
+    P('\n' + '=' * 84)
+    P(f'DIRECTIONAL LONG/SHORT ACROSS OUR SIGNALS — {r["days"]}d / {r["n_years"]}y / '
+      f'{r["n_symbols"]} names / H={r["horizon"]}d')
+    P('=' * 84)
+    P(f'  {r["note"]}')
+    P(f"\n  {'signal':<14}{'IC-IR':>7}{'LO Shp':>8}{'LO-EW Shp':>11}{'short helps':>13}"
+      f"{'L/S Shp':>9}{'beta':>7}")
+    for k, v in r['signals'].items():
+        sh = ('+' if v['shorting_helps'] else '') + f'{v["short_leg_contribution_per_reb"]:+.4f}'
+        P(f"  {k:<14}{v['ic_ir']:>7.2f}{v['long_only_sharpe']:>8.2f}{v['long_minus_ew_sharpe']:>11.2f}"
+          f"{sh:>13}{v['ls_net_sharpe']:>9.2f}{v['long_beta_to_nifty']:>7.2f}")
+    P('\n  Read: LO-EW Sharpe ≤ 0 ⇒ no alpha vs equal-weight (raw long-only is just '
+      'size/beta).\n        short helps < 0 ⇒ shorting the disliked names DRAGS (no short edge).')
+    P('=' * 84 + '\n')
+
+
 # ── hardened reversal book: realistic costs + impact + DSR + dynamic variants ──
 
 _REV_HORIZONS = [5, 10, 21, 42, 63]          # the search space (DSR deflates for it)
@@ -1279,11 +1418,15 @@ if __name__ == '__main__':
     ap.add_argument('--events', action='store_true', help='run the event-plane (PEAD) ablation')
     ap.add_argument('--longshort', action='store_true', help='run the cross-sectional market-neutral test (A1 IC + A2 L/S)')
     ap.add_argument('--hard', action='store_true', help='with --longshort: hardened costs + impact/capacity + DSR + dynamic variants')
+    ap.add_argument('--longshort-directional', action='store_true', help='directional L/S across our signals (incl. lens score) vs equal-weight + beta')
     ap.add_argument('--horizon', type=int, default=20, help='m6 label horizon (trading days)')
     ap.add_argument('--competence-mode', choices=['veto', 'weight'], default='veto')
     ap.add_argument('--json', action='store_true', help='dump full JSON instead of the report')
     args = ap.parse_args()
-    if args.longshort and args.hard:
+    if args.longshort_directional:
+        r = validate_longshort_directional(days=args.days, horizon=args.horizon)
+        print(json.dumps(r, indent=1, default=str)) if args.json else _print_longshort_directional(r)
+    elif args.longshort and args.hard:
         r = validate_longshort_hardened(days=args.days, horizon=args.horizon)
         print(json.dumps(r, indent=1, default=str)) if args.json else _print_longshort_hardened(r)
     elif args.longshort:
