@@ -162,6 +162,23 @@ most names remain shortable; **avoid small-caps** for the neutral book. Do this 
 liquidity-aware impact model replaces flat slippage — otherwise any mid/small "alpha" is
 mostly bias.
 
+### RAN IT (2026-06-18): wide universe (large 67 + 84 midcap), `--longshort --wide`
+
+Added the research midcap universe and re-ran the cross-sectional test. The picture
+**flips** vs large-cap-only: cross-sectional **MOMENTUM strengthens** (12-1: IC-IR
+0.78→**1.99**, L/S net Sharpe 0.10→**0.58**, +108% / −28% DD) while **reversal weakens**
+(IC-IR 2.10→1.13, Sharpe 0.30→0.09). Tempting — but **almost certainly a survivorship
+artifact, NOT an edge**, for the textbook reason: the midcap universe here is a CURRENT
+SNAPSHOT (today's survivors back to 2016), and **momentum is the factor MOST inflated by
+survivorship** — today's midcap list is precisely the names that kept winning and survived;
+the ones that crashed and delisted are absent, so a "buy winners" book looks great in
+hindsight. This is exactly the bias the universe-capacity caveat above warns about, now
+demonstrated. **Verdict: a LEAD, not a result.** It means nothing until (a) point-in-time
+membership incl. delisted names removes the survivorship inflation and (b) it survives the
+hardened gate (impact/capacity + Deflated Sharpe). Recorded so the flip isn't mistaken for
+alpha. (Reversal weakening in the wider set is also consistent — more momentum-laden
+survivors dilute the large-cap reversal pulse.)
+
 ## Why a "better LLM" would not help
 
 The LLM's job in the architecture is to reason/size/abstain over a quantitative

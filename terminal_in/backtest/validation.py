@@ -119,6 +119,20 @@ def _load(db, days: int):
     return uni, nifty, dates, first_listing
 
 
+def _load_research(db, days: int) -> dict:
+    """Research universe (Nifty Midcap 150 set) closes — for the WIDE cross-sectional
+    test. SURVIVORSHIP-BIASED: the membership seed is a current snapshot, so this is
+    today's survivors backtested to 2016 (loudly flagged in the caller's output)."""
+    from terminal_in.data_ingest.index_membership import RESEARCH_BY_TOKEN
+    all_1d = db.get_ohlcv_1d_all(list(RESEARCH_BY_TOKEN), limit=days + 300)
+    out = {}
+    for t, s in RESEARCH_BY_TOKEN.items():
+        df = all_1d.get(t)
+        if df is not None and len(df) >= 250:
+            out[s] = df['close']
+    return out
+
+
 # ── 1. BENCHMARKS ────────────────────────────────────────────────────────────
 
 def benchmarks(uni, nifty, dates, all_trades, n_years, null_runs, rng):
@@ -854,7 +868,7 @@ def validate_event_ablation(db=None, days: int = 2470, horizon: int = 20,
 
 
 def validate_longshort(db=None, days: int = 2470, horizon: int = 20, quantile: float = 0.2,
-                       seed: int = 7) -> dict:
+                       seed: int = 7, wide: bool = False) -> dict:
     """A1 + A2 — cross-sectional, market-neutral test (the right frame for selection
     skill: discriminate BETWEEN names, don't try to out-return a bull index).
 
@@ -877,6 +891,8 @@ def validate_longshort(db=None, days: int = 2470, horizon: int = 20, quantile: f
         db = DB(load_config().sqlite_path)
     n_years = max(days / 252.0, 1e-9)
     uni, _nifty, dates, _fl = _load(db, days)
+    if wide:
+        uni = {**uni, **_load_research(db, days)}   # + Nifty Midcap 150 research set
 
     # aligned close matrix (names × dates)
     syms = sorted(uni.keys())
@@ -942,8 +958,13 @@ def validate_longshort(db=None, days: int = 2470, horizon: int = 20, quantile: f
         }
     return {'ts': int(time.time() * 1000), 'days': days, 'n_years': round(n_years, 2),
             'horizon': horizon, 'quantile': quantile, 'n_symbols': len(syms),
+            'universe': 'wide_large72+midcap150' if wide else 'large72',
             'short_leg_cost_frac_estimate': _FUT_RT_FRAC,
             'long_leg_cost_frac': round(_RT_FRAC, 5), 'signals': results,
+            'survivorship_warning': ('WIDE universe membership is a CURRENT SNAPSHOT '
+                                     '(today\'s survivors back to 2016) — IC/spread are '
+                                     'UPWARD-BIASED until dated reconstitution incl. '
+                                     'delisted names lands.') if wide else None,
             'india_note': 'short leg = single-stock FUTURES (F&O names only); cash '
                           'segment cannot hold overnight shorts. Benchmark = 0 (cash).'}
 
@@ -1418,6 +1439,7 @@ if __name__ == '__main__':
     ap.add_argument('--events', action='store_true', help='run the event-plane (PEAD) ablation')
     ap.add_argument('--longshort', action='store_true', help='run the cross-sectional market-neutral test (A1 IC + A2 L/S)')
     ap.add_argument('--hard', action='store_true', help='with --longshort: hardened costs + impact/capacity + DSR + dynamic variants')
+    ap.add_argument('--wide', action='store_true', help='with --longshort: include the Nifty Midcap 150 research universe (survivorship-flagged)')
     ap.add_argument('--longshort-directional', action='store_true', help='directional L/S across our signals (incl. lens score) vs equal-weight + beta')
     ap.add_argument('--horizon', type=int, default=20, help='m6 label horizon (trading days)')
     ap.add_argument('--competence-mode', choices=['veto', 'weight'], default='veto')
@@ -1430,7 +1452,7 @@ if __name__ == '__main__':
         r = validate_longshort_hardened(days=args.days, horizon=args.horizon)
         print(json.dumps(r, indent=1, default=str)) if args.json else _print_longshort_hardened(r)
     elif args.longshort:
-        r = validate_longshort(days=args.days, horizon=args.horizon)
+        r = validate_longshort(days=args.days, horizon=args.horizon, wide=args.wide)
         print(json.dumps(r, indent=1, default=str)) if args.json else _print_longshort(r)
     elif args.events:
         r = validate_event_ablation(days=args.days, horizon=args.horizon, n_trials=args.trials)
