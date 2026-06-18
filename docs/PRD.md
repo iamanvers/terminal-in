@@ -1,6 +1,8 @@
 # TERMINAL//IN — Product Requirements Document
 
-**Version:** 1.1 · **Date:** 2026-06-11 · **Owner:** Anmol Verma · **Status:** Living document
+**Version:** 1.2 · **Date:** 2026-06-18 · **Owner:** Anmol Verma · **Status:** Living document
+
+> **Positioning (honest framing).** This is a **research + execution terminal, not an alpha engine** — and it says so on the strength of its own evidence. A built-in falsification harness (`backtest/validation.py`) has tested every claimed edge out-of-sample, net of real Indian costs, walk-forward-fenced: **eight independent negatives, nothing beats buy-and-hold NIFTY** (see §6b). The delivered value is the cockpit, the agentic plumbing, the cost/data honesty, and a validation discipline that refuses to tune signals until they pass. The forward bet (§4 fundamentals plane) is **data, not model**: orthogonal point-in-time information we don't yet have.
 
 ---
 
@@ -39,8 +41,9 @@ A single-user, laptop-local, **agentic trading terminal** for Indian markets tha
 |---|---|---|
 | Market intelligence | `/` | ✅ Shipped |
 | Equities cockpit (cash) | `/trade` | ✅ Shipped |
-| F&O (derivatives) | `/fno` | ◑ Phase 1 (view + signals) + chain + lot-based paper execution; SPAN gate + strategy migration remain |
+| F&O (derivatives) | `/fno` | ✅ Shipped — chain + greeks + lot-based paper execution + SPAN-approx margin + portfolio greek caps + **per-strike vol-surface skew** + **multi-leg strategies** (spreads, iron condor, futures pair, covered call, straddle). Live-mode Kite chain ingestion shipped; live F&O *execution* is the only remaining stage. |
 | Agent orchestration | `/agents` | ✅ Shipped incl. LLM planner |
+| Backtest | `/backtest` | ✅ Shipped — walk-forward over 10y real OHLCV (v2 lens-mirror / v3 real planner-in-loop / real strategy_engine classes) + alpha-validation harness + **F&O iron-condor backtest** |
 | Recursive training | `/train` | ✅ Shipped (deploy step manual) |
 | Education | `/learn` | ✅ Shipped |
 | Firm intelligence graph | `/firm` | ◯ Planned (P3) — per-stock business map: force-directed relational graph of news · suppliers · customers · peers · financials · live market value · corporate actions. See §4 P3 "Firm Intelligence Graph". |
@@ -51,10 +54,12 @@ A single-user, laptop-local, **agentic trading terminal** for Indian markets tha
 ### 3.2 The agentic decision pipeline (shipped)
 
 ```
-6 rule lenses (120s, 72 symbols) → noise filters → LLM Trade Planner → M2 risk gate → broker
+6 rule lenses (120s, 72 symbols) → noise filters → LLM Trade Planner → M2 risk gate (17-check) → broker
    feedback: TradingSupervisor (fast) · StrategyLearner (medium) · recursive training (slow)
    audit: DecisionMemory + hindsight re-pricing of every verdict
 ```
+
+The risk gate is **17 rejecting checks + 1 size-modifying (VIX reduce)** = 18 recorded conditions (`risk/gate.py`); `event_mask` is live-only, `correlation` only at ≥3 open positions, and the sector cap has a documented small-book floor (≤2/sector always allowed). Cash **shorts are intraday-only (MIS)** — NSE has no overnight CNC delivery short, so any SELL is squared off at EOD. The portfolio surfaces **all-time realized return tagged to initial capital** (not just open marks).
 
 Key properties (acceptance criteria, all verified):
 - A signal **cannot** fire on its first scan appearance (persistence ≥ 2), below EV 1.2 (with exit hysteresis at 1.0), on <30 daily bars, on stale data, or without a resolvable price at the margin check.
@@ -65,20 +70,21 @@ Key properties (acceptance criteria, all verified):
 
 ### 3.3 Data
 
-- 72 NSE instruments (Nifty-100 large/mid caps + index complex), symbol-keyed sector map covering the full universe.
-- Real OHLCV only: yfinance gap-aware backfill (730d daily, 60d 5m) + live quotes; synthetic data is **banned** (GBM seeder deleted 2026-06-10).
+- **Live universe:** 72 NSE instruments (Nifty-100 large/mid caps + index complex), symbol-keyed sector map covering the full universe. **Research universe (backtest only):** +85 curated Nifty Midcap 150 names with **point-in-time membership** (`data_ingest/index_membership.py`, stable crc32 tokens, kept separate from the live scan), 84 backfilled to full 10y — survivorship-flagged until NSE dated reconstitution lands.
+- Real OHLCV only: yfinance gap-aware backfill (10y daily back to 2016, 60d 5m) + live quotes; synthetic data is **banned** (GBM seeder deleted 2026-06-10).
 - FinBERT news sentiment; `/api/health` reports degraded subsystems (regime heuristic, sentiment off, Ollama offline).
+- **Point-in-time fundamentals store** (`data_ingest/fundamentals.py`): every datum carries a filing_date so a backtest at date D can never see a filing dated after D; as-reported, FAIL-CLOSED on undatable rows. The spine for the fundamentals plane (§4) — empty until dated ingest accumulates; yfinance restated `.info` is barred from it.
 
 ### 3.4 Recursive training (Module 4, shipped)
 
-Pipeline per run: dataset rebuild (static corpora + own closed trades + hindsight-judged decisions) → LoRA fine-tune TinyLlama-1.1B in subprocess → real loss metrics from `trainer_state.json` → `training_runs` history. Smoke (200 steps) and full (3 epochs) modes from `/train`.
+Pipeline per run: dataset rebuild (static corpora + own closed trades + hindsight-judged decisions + Claude reasoning-traces) → LoRA fine-tune **Qwen2.5-1.5B-Instruct** in subprocess (TinyLlama-1.1B retired — failed the eval gate) → real loss metrics from `trainer_state.json` → `training_runs` history. Smoke (200 steps) and full modes from `/train`; deploy = merge → GGUF → `ollama create` (shipped).
 **Open:** deploy automation (merge → GGUF via llama.cpp → `ollama create`) and a held-out eval set (see P2).
 
 ---
 
 ## 4. Roadmap
 
-### P2 — F&O execution (Stages 1–5 shipped; portfolio greek + event-day risk caps shipped 2026-06-14)
+### P2 — F&O execution (Stages 1–6 shipped; only live-mode Kite F&O *execution* remains)
 
 **Why separate from equities:** derivatives differ in every dimension that matters — lot-based sizing, expiry lifecycle, SPAN margining, non-linear payoff, and the underlyings (indices) are not cash-tradeable at all. Bolting options onto the cash pipeline would corrupt risk checks; F&O gets its own instrument model, broker path, and gate checks.
 
@@ -88,7 +94,10 @@ Pipeline per run: dataset rebuild (static corpora + own closed trades + hindsigh
 | Chain UI | ✅ OPTION CHAIN view on `/fno`: CE/PE premiums + greeks per strike, ATM highlight, expiry chips. **OI/real-IV are live-only (null in paper, never fabricated)** — premiums are Black-Scholes theoretical from real spot + India VIX (labeled). |
 | Paper execution | ✅ `execution/fno_paper_broker.py`: lot-based orders, premium P&L, theoretical mark-to-market on underlying ticks, expiry square-off at intrinsic; shares the cash account. UI order ticket + positions panel on `/fno`. |
 | Margin | ✅ `risk/span_margin.py`: scenario-based **SPAN approximation** — worst-case loss over a price (±3.5σ/2-day, VIX-implied) × vol grid + exposure add-on. ATM short > OTM short; futures ~7% notional. Long option = premium. Labeled approx. |
-| Strategies | ✅ `execution/fno_signal_router.py`: S1 ORB + S8 VIX index signals express as ATM options (BUY→CALL, SELL→PUT) on the F&O broker, with market-hours + kill-switch checks. |
+| Signal routing | ✅ `execution/fno_signal_router.py`: S1 ORB + S8 VIX index signals express as **risk-defined debit spreads** by default (bull-call / bear-put; `FNO_DIRECTIONAL_STRUCTURE=spread\|option`, `FNO_SPREAD_WIDTH`), market-hours + kill-switch checked. |
+| Vol surface | ✅ `execution/vol_surface.py`: per-strike **skew/smile** (equity-index negative skew, mild wing smile, short-tenor steepening, clamped) replaces flat-VIX as the per-strike IV; ATM preserved bit-for-bit; `VOL_SURFACE=false` reverts; live Kite per-strike IV overrides. Feeds chain greeks + SPAN consistently via `_iv_at`. |
+| Multi-leg strategies | ✅ `place_combo` (atomic multi-leg, **combo-level** greek/margin/event risk — never leg-by-leg) + `execution/fno_strategies.py` leg-builders + `fno_strategy_manager.py` (periodic scan, book-reconciled dedupe): **variance harvest** (range+VIX→NIFTY iron condor), **futures pair** (cointegration→long cheap/short rich FUT — the fundable market-neutral form), **covered call**, **event straddle**. Per-kind env toggles. All eval-gated capabilities, not tuned alpha. |
+| F&O backtest | ✅ `backtest/fno_engine.py` + `/api/backtest/fno`: monthly NIFTY iron condor over 10y real NIFTY+VIX, shorts at the VIX-implied ~1-SD move, realistic NSE-options costs, no lookahead. **Verdict (negative #8): theoretical CAGR +0.74% / Sharpe 0.13 / −25% DD — not a deployable edge** (theoretical BS premiums flatter short-premium; real is worse). |
 | Risk additions | ✅ `fno_paper_broker._risk_check`: per-expiry concentration + max short-option legs (shipped earlier) PLUS equity-normalized **portfolio greek caps** (net delta notional ≤ 400%, net short-gamma loss on a 2% gap ≤ 5%, net vega ≤ 2% of equity) and **event-day limits** (full blackout on a 0-mask event; near expiry/RBI/FOMC refuse new short-gamma legs). |
 | Greeks (P3 bridge) | ✅ Black-Scholes delta/theta/vega/gamma per contract (`execution/options_pricing.py`); **portfolio greek caps live** + `portfolio_greeks()` served on `/api/fno/positions` and shown on the F&O BOOK (net delta / θ / vega / Γ@2%, labeled theoretical). |
 
@@ -123,6 +132,28 @@ Eval set live (`agents/training/evalset.py`, 42 graded items / 4 categories; res
 - Held-out eval set (~200 prompts: sentiment, NSE strategy QA, planner-verdict format checks); score each adapter before/after; promote only on improvement.
 - One-click deploy: merge adapter → GGUF (vendored llama.cpp) → `ollama create financial-analyst-vN` → planner hot-switches model → previous model kept for rollback.
 - Scheduled cadence: weekly auto-run once ≥100 new judged decisions accumulate.
+
+### P2/P3 — Fundamentals plane (ACTIVE — the one untested alpha lever)
+
+Owner direction 2026-06-18: ground the (technical-only) strategies in **firm
+fundamentals** and **expand the universe to mid-caps**, then backtest. This is exactly
+what §6b concluded was the only untested edge — orthogonal **point-in-time** data, a
+data-acquisition problem, not a model change. Decided: data source = **hybrid (BSE
+XBRL for breadth + firm-IR-site PDFs for depth)**; universe = **large-cap 72 + Nifty
+Midcap 150**.
+
+**Two make-or-break traps (violating either makes the backtest a lie):** (1)
+**point-in-time integrity** — today's restated numbers vs past prices = lookahead;
+use each datum only after its filing date, as-reported; (2) **survivorship** — today's
+mid/small list is survivor-skewed; need point-in-time index membership incl. delisted
+names. The store + membership model enforce these by construction.
+
+| Stage | Status |
+|---|---|
+| 1 — PIT fundamentals store | ✅ `data_ingest/fundamentals.py` — filing_date vs period_end, `get_pit(as_of)` no-lookahead, as-reported, FAIL-CLOSED. Empty until ingest. |
+| 2 — Universe expansion | ✅ `data_ingest/index_membership.py` — 85 curated Nifty Midcap 150 (research-only, separate from live 72), point-in-time `members_as_of`, stable tokens; 84/85 backfilled to 10y. Survivorship-flagged (current snapshot; load NSE dated reconstitution to fix). |
+| 3 — Ingest adapters | ◯ BSE-XBRL (breadth) + firm-IR-PDF (depth) writing dated rows; forward-accumulate (exchange access is bot-hostile → a trustworthy 10y historical PIT backtest needs accumulation or a licensed dataset). |
+| 4 — Factors + backtest | ◯ value/quality/growth cross-sectional factors computed point-in-time → backtest via `validation.py`. Interim (runnable now on prices): cross-sectional reversal/momentum on the wider midcap universe via `members_as_of`. |
 
 ### P3 — Multi-asset expansion (FX + commodities)
 
@@ -340,19 +371,20 @@ Training-fit knobs added to `train_lora.py`: `LORA_DTYPE=bf16`, `LORA_BATCH_SIZE
 
 ### P4 / Release 2 — Next-generation base models
 
-The current stack (qwen2.5:3b judge, TinyLlama-1.1B trainee) was chosen for CPU-era constraints. Once the packaged app ships and hardware detection (5b.4) is live, re-evaluate against the then-best small open-source models — candidates as of writing: **Qwen3 4B/8B**, **Llama 4 small variants**, **Phi-4-mini**, **Gemma 3 4B**, **DeepSeek-R1 distills (7B/8B)** — all GGUF-served via the bundled llama.cpp, so a model swap is a file replacement + Modelfile bump, no code change.
+The current stack (qwen2.5:3b judge, Qwen2.5-1.5B-Instruct trainee) was chosen for CPU-era constraints. Once the packaged app ships and hardware detection (5b.4) is live, re-evaluate against the then-best small open-source models — candidates as of writing: **Qwen3 4B/8B**, **Llama 4 small variants**, **Phi-4-mini**, **Gemma 3 4B**, **DeepSeek-R1 distills (7B/8B)** — all GGUF-served via the bundled llama.cpp, so a model swap is a file replacement + Modelfile bump, no code change.
 
 Gate for adoption (per model, on the eval set from §P2 training): ≥10% better planner-verdict accuracy at ≤1.5× latency on reference hardware, and a clean license for redistribution inside the installer. Not before P4 — the backtest engine and F&O execution outrank model churn.
 
 ## 6. Quality & operations
 
-- **Tests:** 160 passing (gate, broker, persistence, filters, planner, supervisor, backtest, F&O pricing + broker); every new module ships with unit tests; planner/LLM tests run fully mocked.
+- **Tests:** 276 passing (gate, broker, persistence, filters, planner, supervisor, backtest, validation, m6, events, costs, vol surface, F&O pricing/broker/strategies/manager/backtest, fundamentals, index membership, palette, onboarding); every new module ships with unit tests; planner/LLM tests run fully mocked.
+- **License & positioning:** personal / source-available (see `LICENSE`); `CONTRIBUTING.md` records the hard invariants; README carries badges + a Positioning section. The "validation negatives are results, don't tune to pass" discipline is itself an invariant.
 - **No-silent-degradation invariant:** any subsystem fallback must (a) log at WARN with rate limiting, (b) appear in `/api/health`, (c) badge in the UI. PR-blocking rule.
 - **Real-data invariant:** no synthetic/random market data may enter `ohlcv_*` tables or the tick path. PR-blocking rule.
 - **Commit convention:** `Change_N: summary` on `main`.
 - **Docs:** README (operator-facing), CLAUDE.md (agent/dev-facing), this PRD (product). Update all three at every phase boundary; session context persists to Claude memory.
 
-## 6b. Alpha validation — results to date (2026-06-17, honest record)
+## 6b. Alpha validation — results to date (2026-06-18, honest record)
 
 A falsification-first harness (`terminal_in/backtest/validation.py`) is now the promotion
 gate for any edge claim: benchmarks (buy-hold NIFTY / equal-weight / 1,000× random-symbol
@@ -360,10 +392,16 @@ null), Deflated Sharpe + White Reality Check, per-strategy significance, planner
 ±20% robustness, regime/time concentration, survivorship — all net of the shared cost model
 (`execution/costs.py`) and walk-forward-fenced. Full detail: **[ALPHA_FINDINGS.md](ALPHA_FINDINGS.md)**.
 
-**Verdict: no configuration tested beats buy-and-hold NIFTY net of costs** (five independent
-fenced negatives — price-only technicals, LLM/planner, the Module-6 D₀ forward-EV head,
-competence weighting, and the event/PEAD + VIX-reaction planes). Net ~3% CAGR vs index
-~11.6% vs equal-weight ~21%. The bottleneck is **signal/data, not model capacity** — a
+**Verdict: no configuration tested beats buy-and-hold NIFTY net of costs** — **eight
+independent fenced negatives**: (1) price-only technicals; (2) LLM/planner marginal value;
+(3) the Module-6 D₀ forward-EV head; (4) directional competence weighting; (5) the
+event/PEAD + VIX-reaction planes; (6) cross-sectional 1-month reversal (looked like a pulse,
+**dies on hardening — Deflated Sharpe 0.72 < 0.95**, and decomposes to beta not alpha); (7)
+directional long/short across our own signals (**the lens score has NEGATIVE cross-sectional
+IC −1.35** — lens-favoured names underperform equal-weight, which is *why* long-only loses to
+passive); (8) the F&O variance-risk-premium harvester (monthly NIFTY iron condor, theoretical
+Sharpe 0.13 / CAGR +0.74%, and theoretical pricing *flatters* short-premium). Net ~3% CAGR vs
+index ~11.6% vs equal-weight ~21%. The bottleneck is **signal/data, not model capacity** — a
 better LLM does not help (planner adds ~0; ~54% literature direction-accuracy ceiling).
 
 **Implications for this roadmap:**
@@ -413,15 +451,16 @@ not directional. So we built and ran that test (`validation.py --longshort`):
    evaluate on a forward holdout); honest "model-on-start" (boot/nightly rebuild the
    candidate dataset + **re-run the validation gate**, auto-promote ONLY on a pass).
 
-**Universe capacity — mid/small caps (evaluation):** more breadth strengthens
-cross-sectional dispersion (reversal is documented stronger in less-covered names), but
-the frictions bite hardest on a turnover-heavy neutral book: liquidity/impact (flat
-slippage understates it), **shortability** (most mid/small are not F&O-eligible → can't
-short → breaks the neutral book), and **survivorship** (today's mid/small list is heavily
-survivor-skewed). Recommendation: add **Nifty Midcap-150 (F&O-eligible subset)** to the
-long/ranking sleeve only after point-in-time index membership (incl. delisted names) and a
-liquidity-aware impact model land; **keep small-caps out of the neutral book**. Adding them
-is a real ingest project (none backfilled today).
+**Universe capacity — mid/small caps:** more breadth strengthens cross-sectional dispersion
+(reversal is documented stronger in less-covered names), but frictions bite hardest on a
+turnover-heavy neutral book: liquidity/impact (flat slippage understates it), **shortability**
+(most mid/small are not F&O-eligible → can't short → breaks the neutral book), and
+**survivorship** (today's mid/small list is heavily survivor-skewed). **Status (2026-06-18):**
+the **Nifty Midcap 150 research universe is now ADDED** (§4 fundamentals plane Stage 2) — 85
+curated names, 10y price backfill, with a **point-in-time membership model** so the survivorship
+fix is structural (the seed is a current snapshot, flagged, pending NSE dated reconstitution
+incl. delisted names). Still required before trusting a mid/small neutral result: dated
+reconstitution + a liquidity-aware impact model; **small-caps stay out of the neutral book**.
 
 ## 7. Success metrics
 
