@@ -12,7 +12,7 @@ Bloomberg-style **agentic** algorithmic trading terminal for Indian markets (NSE
 .\start.ps1                       # Windows
 ./start.sh                        # macOS/Linux — builds static UI + serves UI+API on :5000 (browser); --dev for :3000 hot-reload
 
-# Run tests (266 passing)
+# Run tests (271 passing)
 .venv/Scripts/pytest tests/ -v
 
 # Train HMM regime classifier (after accumulating 500+ days of data)
@@ -182,7 +182,7 @@ docs/PRD.md                         ← product requirements: F&O execution P2, 
 
 **Event + reaction planes (orthogonal-signal experiments, both NULL)** — `data_ingest/events.py` = point-in-time NSE corporate-announcement archive (filing timestamps to the second, FAIL-CLOSED on unparseable dates; ~87k events, 65/72 symbols, gitignored cache under `data/events/`). **Data honesty: `as_reported`/`consensus` are NULL — no free point-in-time consensus for Indian names, so `earnings_surprise` is emitted null+flagged, NEVER backfilled** (BSE API blocks bots; yfinance is restated — both barred). `m6/event_features.py` = consensus-free PEAD features (reaction_gap, drift_so_far, days_since_results, pre/post vol), strictly point-in-time. `m6/reaction.py` = interpretable (event_type × VIX) reaction matrix + fenced OOS check (thin cells <30n flagged). Both add **zero OOS lift** (PEAD corr 0.004; reaction-matrix OOS corr −0.0008) → dropped from the default judge, live only behind the `--events` ablation flag.
 
-**DB API conventions** — `get_ohlcv_1d/1m` return pandas DataFrames with DatetimeIndex. `insert_trade(dict)` accepts `instrument_id` or `instrument_token`. `agent_decisions` table stores planner verdicts + hindsight (see decision_memory.py).
+**Fundamentals plane (Stage 1 — PIT store BUILT; ingest/factors/backtest TODO)** — `data_ingest/fundamentals.py` is the point-in-time spine for grounding strategies in firm fundamentals WITHOUT lookahead. Every datum carries a **filing_date** (when public) separate from **period_end** (fiscal period); `get_pit(symbol, metric, as_of)` returns the latest value with filing_date ≤ as_of — by construction a backtest at date D can never see a filing dated after D. As-reported only (restatements not folded back). **FAIL CLOSED**: undatable/unknown-metric/no-value rows are DROPPED, never guessed (mirrors `events.py`). Metrics: revenue/net_income/operating_profit/eps/equity/total_debt/shares_out. Cache `data/fundamentals/pit_fundamentals.parquet` (gitignored). **yfinance `.info` fundamentals are RESTATED+undated → never written here** (live-only, labeled). NEXT stages (decided 2026-06-18 with owner): (2) expand universe to large-cap 72 + **Nifty Midcap 150** with point-in-time membership incl. delisted (survivorship fix); (3) ingest adapters — **BSE XBRL for breadth + firm-IR PDFs for depth** (hybrid), forward-accumulate (BSE/NSE programmatic access is bot-hostile — a trustworthy 10y historical PIT backtest needs accumulation or a licensed dataset); (4) value/quality/growth cross-sectional factors → backtest through the validation harness. Tests: `tests/test_fundamentals.py` (the as-of no-lookahead guarantee). **DB API conventions** — `get_ohlcv_1d/1m` return pandas DataFrames with DatetimeIndex. `insert_trade(dict)` accepts `instrument_id` or `instrument_token`. `agent_decisions` table stores planner verdicts + hindsight (see decision_memory.py).
 
 **pandas 2.x timestamps** — convert via `(series - pd.Timestamp('1970-01-01', tz='UTC')) // pd.Timedelta('1ms')`, never `.astype('int64')`.
 
@@ -245,7 +245,7 @@ Python 3.14 on Windows 11. Interpreter: `.venv/Scripts/python.exe`.
 **Complete:**
 - Modules: MARKET, EQUITIES (cash cockpit), F&O (view+signals + chain + lot-based paper execution), AGENTS (full agentic layer: planner/supervisor/memory/filters), TRAIN (recursive training pipeline), BACKTEST (walk-forward eval over 10y real OHLCV)
 - F&O execution Stages 1–5 shipped: contract model + Black-Scholes theoretical chain (`data_ingest/fno_instruments.py`, `execution/options_pricing.py`, `/api/fno/*`), OPTION CHAIN UI + order ticket + positions, lot-based paper execution (`execution/fno_paper_broker.py` — premium P&L, expiry square-off, shared account), scenario-based **SPAN-approx margin** (`risk/span_margin.py`), and S1/S8 index→ATM-option routing (`execution/fno_signal_router.py`), plus portfolio greek caps + event-day limits (`_risk_check`). Remaining: live-mode Kite chain ingestion.
-- 72-symbol universe with full sector coverage; real-data-only ingest; degraded-mode surfacing; 266 tests passing
+- 72-symbol universe with full sector coverage; real-data-only ingest; degraded-mode surfacing; 271 tests passing
 - Low-latency Tier 1: vectorized indicators (72-symbol pass ≈ 67 ms), LOW_LATENCY priority flag, PYTHON_JIT opt-in (see PRD §5)
 
 **Remaining (see docs/PRD.md for full detail):**
