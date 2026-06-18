@@ -22,6 +22,8 @@ shared yf_fetcher (SYMBOL.NS) into ohlcv_1d under its research token — run on 
 """
 
 import logging
+import zlib
+from datetime import date
 
 log = logging.getLogger(__name__)
 
@@ -55,8 +57,9 @@ MIDCAP_SECTORS: dict[str, str] = {
     'ASTRAL': 'infra', 'APLAPOLLO': 'metals', 'VOLTAS': 'consumer', 'DIXON': 'consumer',
     'CUMMINSIND': 'infra', 'THERMAX': 'infra',
     # Energy / utilities
-    'HPCL': 'energy', 'PETRONET': 'energy', 'IGL': 'energy', 'GUJGASLTD': 'energy',
-    'TATAPOWER': 'energy', 'TORNTPOWER': 'energy', 'NHPC': 'energy', 'ADANIPOWER': 'energy',
+    'PETRONET': 'energy', 'IGL': 'energy', 'GUJGASLTD': 'energy',
+    'HINDPETRO': 'energy', 'TATAPOWER': 'energy', 'TORNTPOWER': 'energy',
+    'NHPC': 'energy', 'ADANIPOWER': 'energy',
     # Metals / chemicals
     'SAIL': 'metals', 'NMDC': 'metals', 'NATIONALUM': 'metals', 'HINDZINC': 'metals',
     'SRF': 'chemicals', 'PIIND': 'chemicals', 'DEEPAKNTR': 'chemicals', 'AARTIIND': 'chemicals',
@@ -66,10 +69,15 @@ MIDCAP_SECTORS: dict[str, str] = {
     'SUNTV': 'media', 'PEL': 'financials', 'TATAELXSI': 'it', 'TATACOMM': 'telecom',
 }
 
-# symbol → research token (stable: assigned by sorted order so re-runs don't churn)
-RESEARCH_TOKENS: dict[str, int] = {
-    sym: _TOKEN_BASE + i for i, sym in enumerate(sorted(MIDCAP_SECTORS))
-}
+# symbol → research token. STABLE per-symbol (crc32) so adding/removing/renaming a
+# name never reshuffles other tokens — the stored OHLCV stays correctly mapped as the
+# universe grows. crc32 is deterministic across runs (unlike hash()); collisions
+# across this set are asserted absent in the tests.
+def _stable_token(symbol: str) -> int:
+    return _TOKEN_BASE + (zlib.crc32(symbol.encode()) % 9_000_000)
+
+
+RESEARCH_TOKENS: dict[str, int] = {s: _stable_token(s) for s in MIDCAP_SECTORS}
 RESEARCH_BY_TOKEN: dict[int, str] = {t: s for s, t in RESEARCH_TOKENS.items()}
 
 # Point-in-time membership rows: (symbol, effective_from, effective_to|None). The
@@ -106,14 +114,48 @@ def coverage() -> dict:
     }
 
 
-def backfill_research_prices(db, days: int = 3650) -> int:
-    """Fetch daily history for the research universe via the shared yf_fetcher
-    (SYMBOL.NS) into ohlcv_1d under research tokens. On-demand (not auto at boot).
-    Returns symbols updated. yfinance simply skips a bad/delisted ticker (logged)."""
-    from terminal_in.data_ingest.yf_fetcher import backfill_history
-    token_map = dict(RESEARCH_BY_TOKEN)
-    n = backfill_history(db, token_map, days=days)
-    log.info('research universe: backfilled %d/%d midcap symbols', n, len(token_map))
+def backfill_research_prices(db, start: str = DATA_FLOOR) -> int:
+    """Fetch FULL daily history (start→today) for the research universe into
+    ohlcv_1d under research tokens. These are brand-new tokens, so this does a
+    direct fetch — yf_fetcher.backfill_history is backward-gap-only and skips
+    tokens with no existing data. On-demand (not auto at boot). Returns symbols
+    fetched; a bad/delisted ticker simply yields nothing (logged), never crashes."""
+    from concurrent.futures import ThreadPoolExecutor
+    from terminal_in.data_ingest.yf_fetcher import _yf_ticker
+    try:
+        import yfinance as yf
+    except ImportError:
+        log.warning('yfinance not installed — cannot backfill research universe')
+        return 0
+    today = date.today().isoformat()
+
+    def _one(item: tuple[int, str]) -> int:
+        token, symbol = item
+        ticker_str = _yf_ticker(symbol)
+        try:
+            hist = yf.Ticker(ticker_str).history(start=start, end=today, interval='1d',
+                                                 auto_adjust=True)
+            if hist.empty:
+                log.warning('research backfill: no data for %s (%s)', symbol, ticker_str)
+                return 0
+            bars = [{
+                'date': str(idx.date()), 'instrument_token': token,
+                'open': float(r['Open']), 'high': float(r['High']),
+                'low': float(r['Low']), 'close': float(r['Close']),
+                'volume': int(r['Volume']),
+            } for idx, r in hist.iterrows()]
+            db.insert_ohlcv_1d_batch(bars)
+            log.info('research backfill %s (%s): %d bars (%s → %s)', symbol, ticker_str,
+                     len(bars), bars[0]['date'], bars[-1]['date'])
+            return 1
+        except Exception:
+            log.warning('research backfill failed for %s (%s)', symbol, ticker_str)
+            return 0
+
+    items = list(RESEARCH_BY_TOKEN.items())
+    with ThreadPoolExecutor(max_workers=6, thread_name_prefix='yf-research') as pool:
+        n = sum(pool.map(_one, items))
+    log.info('research universe: backfilled %d/%d midcap symbols', n, len(items))
     return n
 
 
