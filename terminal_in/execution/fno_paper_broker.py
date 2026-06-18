@@ -25,6 +25,8 @@ and flows into the holdings/statement assembly unchanged.
 import json
 import logging
 import time
+import uuid
+from collections import Counter
 from datetime import datetime, timezone
 from threading import Lock
 
@@ -150,9 +152,10 @@ class FnOPaperBroker:
 
     # ── Order placement ───────────────────────────────────────────────────────
 
-    def place_order(self, order: dict) -> dict:
-        """order: {underlying, expiry, strike, opt_type, side, lots,
-                   sl_premium?, target_premium?}. Returns a result dict."""
+    def _quote_leg(self, order: dict) -> dict:
+        """Price ONE leg and compute its margin + greeks WITHOUT placing it.
+        Returns a quote dict, or {'error': ...}. Shared by place_order (single
+        leg) and place_combo (multi-leg), so pricing can never diverge."""
         label = str(order.get('underlying', '')).upper()
         opt_type = str(order.get('opt_type', 'CE')).upper()
         side = str(order.get('side', 'BUY')).upper()
@@ -160,27 +163,26 @@ class FnOPaperBroker:
             lots = int(order.get('lots', 1))
             strike = float(order.get('strike', 0))
         except (TypeError, ValueError):
-            return {'ok': False, 'error': 'invalid lots/strike'}
+            return {'error': 'invalid lots/strike'}
         expiry = str(order.get('expiry', ''))
 
         if label not in fno._BY_LABEL:
-            return {'ok': False, 'error': f'unknown underlying {label}'}
+            return {'error': f'unknown underlying {label}'}
         if lots <= 0:
-            return {'ok': False, 'error': 'lots must be >= 1'}
+            return {'error': 'lots must be >= 1'}
         if opt_type not in ('CE', 'PE', 'FUT'):
-            return {'ok': False, 'error': 'opt_type must be CE/PE/FUT'}
+            return {'error': 'opt_type must be CE/PE/FUT'}
 
         inst = fno.make_instrument(label, expiry, strike, opt_type)
         spot = self._current_spot(inst.underlying_token)
         if spot <= 0:
-            return {'ok': False, 'error': 'no underlying spot — cannot price'}
+            return {'error': 'no underlying spot — cannot price'}
 
         t = fno._t_years(expiry)
         iv = self._iv_at(label, inst.underlying_token, spot, strike, t)
         raw_premium = bs_price(spot, strike, t, iv, opt_type)
         # slippage against the taker
-        premium = raw_premium * (1 + SLIPPAGE_PCT * (1 if side == 'BUY' else -1))
-        premium = max(premium, 0.05)
+        premium = max(raw_premium * (1 + SLIPPAGE_PCT * (1 if side == 'BUY' else -1)), 0.05)
         qty = lots * inst.lot_size
 
         # Capital to reserve: long option = the premium actually PAID (max loss,
@@ -192,47 +194,128 @@ class FnOPaperBroker:
             span = span_margin(spot, strike, t, iv, opt_type, side, qty)
             margin = span['margin']      # reserve and release the SAME value
 
-        equity = getattr(self._cash, 'equity', 0) or 0
-        leg_greeks = self._greeks_of(spot, strike, t, iv, opt_type, side, qty)
-        risk_ok, risk_reason = self._risk_check(expiry, opt_type, side, margin,
-                                                leg_greeks=leg_greeks, equity=equity)
-        if not risk_ok:
-            return {'ok': False, 'error': risk_reason}
+        return {
+            'inst': inst, 'label': label, 'opt_type': opt_type, 'side': side,
+            'lots': lots, 'strike': strike, 'expiry': expiry, 'spot': spot,
+            't': t, 'iv': iv, 'premium': premium, 'qty': qty, 'margin': margin,
+            'span': span,
+            'leg_greeks': self._greeks_of(spot, strike, t, iv, opt_type, side, qty),
+            'sl_premium': float(order.get('sl_premium') or 0),
+            'target_premium': float(order.get('target_premium') or 0),
+        }
 
-        if not self._cash.reserve_capital(margin):
-            return {'ok': False, 'error': f'insufficient capital for margin ₹{margin:,.0f}'}
-
-        trade_id = f"FNO_{inst.tradingsymbol}_{int(time.time()*1000)}"
+    def _commit_leg(self, q: dict, reserve: bool = True, combo_id: str | None = None) -> dict:
+        """Record a quoted leg as an open position. reserve=False means the margin
+        was already reserved in bulk by the caller (place_combo)."""
+        if reserve and not self._cash.reserve_capital(q['margin']):
+            return {'ok': False, 'error': f"insufficient capital for margin ₹{q['margin']:,.0f}"}
+        inst = q['inst']
+        trade_id = f"FNO_{inst.tradingsymbol}_{int(time.time()*1000)}_{uuid.uuid4().hex[:4]}"
         pos = {
-            'trade_id': trade_id,
-            'instrument_id': inst.token,
-            'underlying': label,
-            'underlying_token': inst.underlying_token,
-            'opt_type': opt_type,
-            'strike': strike,
-            'expiry': expiry,
-            'lot_size': inst.lot_size,
-            'lots': lots,
-            'side': side,
-            'quantity': qty,
-            'entry_price': round(premium, 2),
-            'stop_loss': float(order.get('sl_premium') or 0),
-            'target': float(order.get('target_premium') or 0),
-            'margin': margin,
+            'trade_id': trade_id, 'instrument_id': inst.token, 'underlying': q['label'],
+            'underlying_token': inst.underlying_token, 'opt_type': q['opt_type'],
+            'strike': q['strike'], 'expiry': q['expiry'], 'lot_size': inst.lot_size,
+            'lots': q['lots'], 'side': q['side'], 'quantity': q['qty'],
+            'entry_price': round(q['premium'], 2), 'stop_loss': q['sl_premium'],
+            'target': q['target_premium'], 'margin': q['margin'],
             'tradingsymbol': inst.tradingsymbol,
             'opened_at': datetime.now(timezone.utc).isoformat(),
         }
+        if combo_id:
+            pos['combo_id'] = combo_id
         with self._lock:
             self._positions[trade_id] = pos
         self._persist_open(pos)
         bus.publish('fno.trade.opened', pos)
-        log.info('FNO FILL: %s %s %dx%d @%.2f (margin %.0f)',
-                 side, inst.tradingsymbol, lots, inst.lot_size, premium, margin)
-        return {'ok': True, 'trade_id': trade_id, 'premium': round(premium, 2),
-                'qty': qty, 'margin': margin,
-                'scan_loss': span['scan_loss'], 'exposure': span['exposure'],
-                'margin_approx': True,
+        log.info('FNO FILL: %s %s %dx%d @%.2f (margin %.0f)%s', q['side'],
+                 inst.tradingsymbol, q['lots'], inst.lot_size, q['premium'], q['margin'],
+                 f' [{combo_id}]' if combo_id else '')
+        return {'ok': True, 'trade_id': trade_id, 'premium': round(q['premium'], 2),
+                'qty': q['qty'], 'margin': q['margin'], 'scan_loss': q['span']['scan_loss'],
+                'exposure': q['span']['exposure'], 'margin_approx': True,
                 'tradingsymbol': inst.tradingsymbol, 'theoretical': True}
+
+    def place_order(self, order: dict) -> dict:
+        """Place ONE leg. order: {underlying, expiry, strike, opt_type, side,
+        lots, sl_premium?, target_premium?}. Returns a result dict."""
+        q = self._quote_leg(order)
+        if 'error' in q:
+            return {'ok': False, 'error': q['error']}
+        equity = getattr(self._cash, 'equity', 0) or 0
+        ok, reason = self._risk_check(q['expiry'], q['opt_type'], q['side'], q['margin'],
+                                      leg_greeks=q['leg_greeks'], equity=equity)
+        if not ok:
+            return {'ok': False, 'error': reason}
+        return self._commit_leg(q, reserve=True)
+
+    def place_combo(self, legs: list[dict], combo_meta: dict | None = None) -> dict:
+        """Place a multi-leg combo (iron condor, vertical spread, futures pair, …)
+        ATOMICALLY. Risk is checked on the COMBO AS A WHOLE — the net greeks of all
+        legs against the prospective book — never leg-by-leg, so a balanced
+        structure is not rejected on its first short leg. Total margin is reserved
+        once; either all legs are recorded or none are (the combo risk/margin check
+        gates entry, and recording cannot fail once margin is reserved)."""
+        if not legs:
+            return {'ok': False, 'error': 'no legs'}
+        quotes = [self._quote_leg(l) for l in legs]
+        for q in quotes:
+            if 'error' in q:
+                return {'ok': False, 'error': f"leg quote failed: {q['error']}"}
+        ok, reason = self._risk_check_combo(quotes)
+        if not ok:
+            return {'ok': False, 'error': reason}
+        total_margin = round(sum(q['margin'] for q in quotes), 2)
+        if not self._cash.reserve_capital(total_margin):
+            return {'ok': False, 'error': f'insufficient capital for combo margin ₹{total_margin:,.0f}'}
+        combo_id = f"COMBO_{int(time.time()*1000)}_{uuid.uuid4().hex[:4]}"
+        legs_out = [self._commit_leg(q, reserve=False, combo_id=combo_id) for q in quotes]
+        log.info('FNO COMBO %s: %d legs, margin %.0f%s', combo_id, len(legs_out),
+                 total_margin, f" ({combo_meta.get('kind')})" if combo_meta else '')
+        return {'ok': True, 'combo_id': combo_id, 'n_legs': len(legs_out),
+                'legs': [r['trade_id'] for r in legs_out], 'margin': total_margin,
+                'meta': combo_meta or {}, 'theoretical': True}
+
+    def _risk_check_combo(self, quotes: list[dict]):
+        """Combo-level pre-trade caps — the prospective book is the open legs PLUS
+        ALL combo legs, with greeks NETTED across the structure. Returns (ok, reason)."""
+        equity = getattr(self._cash, 'equity', 0) or 0
+        mask = event_cal.mask()
+        if mask <= 0.0:
+            return False, 'event blackout — no new F&O entries today'
+        any_short = any(q['side'] == 'SELL' and q['opt_type'] in ('CE', 'PE') for q in quotes)
+        if mask < 1.0 and any_short:
+            return False, f'event-day risk (mask {mask:.2f}) — no new short-gamma legs'
+
+        with self._lock:
+            poss = list(self._positions.values())
+        if len(poss) + len(quotes) > MAX_FNO_POSITIONS:
+            return False, f'combo would exceed max F&O positions ({MAX_FNO_POSITIONS})'
+        for exp, n in Counter(q['expiry'] for q in quotes).items():
+            if sum(1 for p in poss if p['expiry'] == exp) + n > MAX_PER_EXPIRY:
+                return False, f'combo would exceed max positions per expiry ({MAX_PER_EXPIRY}) for {exp}'
+        short_new = sum(1 for q in quotes if q['side'] == 'SELL' and q['opt_type'] in ('CE', 'PE'))
+        cur_short = sum(1 for p in poss if p['side'] == 'SELL' and p['opt_type'] in ('CE', 'PE'))
+        if cur_short + short_new > MAX_SHORT_OPTIONS:
+            return False, f'combo would exceed max short-option legs ({MAX_SHORT_OPTIONS})'
+        total_margin = sum(q['margin'] for q in quotes)
+        used = sum(p['margin'] for p in poss)
+        if equity > 0 and (used + total_margin) > equity * MAX_FNO_MARGIN_PCT:
+            return False, (f'F&O margin cap — combo would use ₹{used + total_margin:,.0f} '
+                           f'> {MAX_FNO_MARGIN_PCT:.0%} of equity')
+
+        if equity > 0:
+            agg = self._aggregate_greeks(poss)
+            net_delta = agg['delta_notional'] + sum(q['leg_greeks']['delta_notional'] for q in quotes)
+            net_gamma = agg['gamma_pnl']      + sum(q['leg_greeks']['gamma_pnl'] for q in quotes)
+            net_vega  = agg['vega_rupees']    + sum(q['leg_greeks']['vega_rupees'] for q in quotes)
+            if abs(net_delta) > equity * MAX_NET_DELTA_PCT:
+                return False, f'combo net delta notional ₹{net_delta:,.0f} > {MAX_NET_DELTA_PCT:.0%} of equity'
+            if net_gamma < 0 and abs(net_gamma) > equity * MAX_SHORT_GAMMA_PCT:
+                return False, (f'combo net short-gamma loss ₹{abs(net_gamma):,.0f} on a '
+                               f'{GAMMA_SHOCK:.0%} gap > {MAX_SHORT_GAMMA_PCT:.0%} of equity')
+            if abs(net_vega) > equity * MAX_NET_VEGA_PCT:
+                return False, f'combo net vega ₹{net_vega:,.0f}/vol-pt > {MAX_NET_VEGA_PCT:.0%} of equity'
+        return True, ''
 
     def _risk_check(self, expiry: str, opt_type: str, side: str, margin: float,
                     leg_greeks: dict | None = None, equity: float | None = None):
@@ -346,6 +429,8 @@ class FnOPaperBroker:
                                     'strike', 'expiry', 'lot_size', 'lots',
                                     'margin', 'tradingsymbol')}
         meta['segment'] = 'FNO'
+        if pos.get('combo_id'):
+            meta['combo_id'] = pos['combo_id']
         try:
             self._db.insert_trade({
                 'trade_id': pos['trade_id'],
