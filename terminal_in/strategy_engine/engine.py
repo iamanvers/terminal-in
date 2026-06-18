@@ -43,17 +43,14 @@ ALL_STRATEGIES = [
     S3MidcapBreakout(),
     S4RSIReversion(),
     S5MidPullback(),
-    # S6PairsCointegration() — DISABLED 2026-06-18. Two correctness defects make it
-    # actively harmful, not just a cost-bleed: (1) it only ever fires the leg-A
-    # signal — the hedge leg (hedge_symbol/hedge_side metadata) is NEVER placed, so
-    # it is a NAKED directional bet, not the market-neutral pair it claims to be;
-    # (2) on z>0 it emits side='SELL' which _product_for tags CNC = an OVERNIGHT
-    # SHORT in the cash delivery segment, mechanically impossible on NSE (no CNC
-    # short-sell). docs/ALPHA_FINDINGS.md also shows pairs/cross-sectional neutral
-    # has no deployable edge and the short leg isn't fundable in cash. Re-enable
-    # only with a real single-stock-FUTURES two-leg implementation. Class kept for
-    # reference; the historical churn (eod_settlement) was a separate, already-fixed
-    # legacy settlement bug (CNC now carries overnight — see settlement.py).
+    # S6 — relative-value mean-reversion on a cointegrated pair. NOTE: it currently
+    # fires only the LEG-A signal (single-leg directional RV), not a hedged two-leg
+    # pair — a true market-neutral version needs multi-leg orders (long cash + short
+    # FUTURES, since a cash short can't carry overnight) and is on the roadmap. The
+    # short side is now correctly intraday: any cash SELL is tagged MIS by
+    # _product_for (no overnight CNC short). The old RELIANCE churn was a legacy
+    # off-hours EOD bulldozer, since fixed (CNC carries — see settlement.py).
+    S6PairsCointegration(),
     S8VIXAsymmetry(),
     S9HawkesCont(),
 ]

@@ -30,7 +30,11 @@ def _product_for(payload: dict) -> str:
     overnight until SL/target/manual exit). Mirrors real NSE cash products:
     only explicitly-intraday trades die at the close.
     S1 (opening-range breakout) and anything with a time_exit are intraday
-    by design; everything else is positional delivery."""
+    by design; everything else is positional delivery.
+
+    HARD RULE: a SHORT (SELL) in the cash segment can ONLY be intraday — NSE does
+    not permit an overnight CNC delivery short. So every SELL is MIS regardless of
+    strategy; a multi-day short must go through F&O (futures), never cash CNC."""
     meta = payload.get('metadata') or {}
     if str(meta.get('product', '')).upper() == 'MIS':
         return 'MIS'
@@ -38,6 +42,8 @@ def _product_for(payload: dict) -> str:
         return 'MIS'
     if payload.get('time_exit'):
         return 'MIS'
+    if str(payload.get('side', 'BUY')).upper() == 'SELL':
+        return 'MIS'        # cash shorts are intraday-only (no overnight CNC short)
     return 'CNC'
 
 
@@ -108,7 +114,8 @@ class PaperBroker:
                     'stop_loss':    sl,
                     'target':       target,
                     'time_exit':    None,
-                    'product':      _product_for({'strategy_id': t.get('strategy_id', '')}),
+                    'product':      _product_for({'strategy_id': t.get('strategy_id', ''),
+                                                  'side': t.get('side', 'BUY')}),
                     'opened_at':    t.get('opened_at', ''),
                     'regime':       t.get('regime_at_entry', ''),
                     'confidence':   t.get('confidence'),

@@ -1,8 +1,15 @@
 """
-S6 — Pairs Cointegration (daily)
-Spread mean-reversion between correlated pairs.
-Pairs are built dynamically from available equity instruments — no hardcoded tickers.
-Valid regimes: all (market-neutral).
+S6 — Pairs Cointegration (daily), relative-value mean-reversion.
+Spread mean-reversion between correlated pairs; pairs are built dynamically from
+available equity instruments — no hardcoded tickers.
+
+SCOPE / HONESTY: this currently emits only the LEG-A signal (the mispriced name),
+i.e. a single-leg DIRECTIONAL relative-value bet — NOT yet a hedged, market-neutral
+two-leg pair (hedge_symbol/hedge_side metadata is informational; the second leg is
+not placed). A true neutral pair needs multi-leg orders with the short leg in
+FUTURES (a cash short can't be carried overnight) — that's roadmap. When the signal
+is a SELL (leg A rich), the broker tags it MIS (intraday) since the cash segment
+cannot hold an overnight short.
 """
 
 import logging
