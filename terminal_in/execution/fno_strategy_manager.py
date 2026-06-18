@@ -175,8 +175,16 @@ class FnOStrategyManager:
         expiry = self._near_expiry('NIFTY')
         if spot <= 0 or not expiry:
             return None
-        legs = strats.iron_condor_legs('NIFTY', spot, expiry, body=3, wing=2, lots=1)
-        r = self._fno.place_combo(legs, {'kind': 'iron_condor'})
+        # Place the shorts at the VIX-implied expected move (~1 SD), NOT a fixed
+        # step count — the F&O backtest showed fixed-step shorts sit ~0.75% OTM and
+        # lose almost every month (28% win) vs ~75% at 1 SD. body = round(σ√T / step).
+        _, vix = self._regime_vix()
+        step = fno.strike_interval('NIFTY', spot)
+        t = max(fno._t_years(expiry), 1e-6)
+        em = spot * (vix / 100.0) * (t ** 0.5)
+        body = max(1, round(em / step))
+        legs = strats.iron_condor_legs('NIFTY', spot, expiry, body=body, wing=4, lots=1)
+        r = self._fno.place_combo(legs, {'kind': 'iron_condor', 'body_steps': body})
         return r.get('combo_id') if r.get('ok') else None
 
     def _fire_straddle(self):

@@ -120,6 +120,28 @@ momentum 0.04; the short-leg contribution is ≈0 and flips sign across H=20/21 
 **Conclusion: long/short across our signals yields no deployable edge** — confirmed in
 the backtest layer before any short-execution plumbing was built.
 
+## F&O — variance-risk-premium harvester (negative #8)
+
+The one *options* idea with a documented structural edge prior is selling index
+variance (the short-vol risk premium). Tested as a **monthly NIFTY short iron
+condor** over 10y of real NIFTY + India-VIX daily bars (`terminal_in/backtest/fno_engine.py`),
+shorts placed at the **VIX-implied ~1-SD expected move** (the principled placement —
+fixed-step shorts sit ~0.75% OTM and lose 72% of months), 4-step wings, sized to
+~5% defined risk/cycle, with a realistic NSE-options cost estimate at entry+exit:
+
+- **118 cycles, 75.4% win rate** (correct for 1-SD condors), **+7.5% TOTAL over 10y
+  → CAGR +0.74%, Sharpe 0.13, max drawdown −25.3%.** Economically negligible — a
+  worse risk-adjusted return than holding cash, with index-like drawdowns.
+
+And this is the **theoretical UPPER BOUND**: premiums are Black-Scholes from real
+spot + VIX (no real bid/ask, no smile/term dynamics, no early-assignment or
+liquidity), and theoretical pricing *systematically flatters short-premium sellers*
+— it can't see the fat tails and slippage that actually bite. The real-world number
+is almost certainly worse, likely negative. **Verdict: not a deployable edge** — the
+F&O strategies (condor, futures pair, covered call, straddle, spreads) are built and
+risk-capped as honest CAPABILITIES, not as an alpha source. Eighth independent
+negative; the variance premium, our best options prior, joins the list.
+
 ## Universe capacity — adding mid / small caps (evaluation)
 
 Would a broader universe help? Cross-sectional alpha (especially reversal) is documented

@@ -109,6 +109,31 @@ def cancel():
     return jsonify({'ok': True})
 
 
+@bp.route('/fno', methods=['POST', 'GET'])
+def fno():
+    """F&O strategy backtest (eval gate). Currently the monthly NIFTY iron-condor
+    variance-premium harvester over real NIFTY+VIX history. Fast (<1s) so it runs
+    synchronously. Body/query: years, short_sd, wing, risk_frac."""
+    body = request.get_json(silent=True) or {}
+    def _num(key, default, cast):
+        v = body.get(key, request.args.get(key, default))
+        try:
+            return cast(v)
+        except (TypeError, ValueError):
+            return default
+    from terminal_in.backtest.fno_engine import run_fno_backtest
+    try:
+        result = run_fno_backtest(
+            db=_db, years=max(1, min(_num('years', 10, int), 10)),
+            short_sd=max(0.25, min(_num('short_sd', 1.0, float), 3.0)),
+            wing=max(1, min(_num('wing', 4, int), 20)),
+            risk_frac=max(0.005, min(_num('risk_frac', 0.05, float), 0.25)))
+        return jsonify({'ok': True, **result})
+    except Exception as e:
+        log.exception('fno backtest failed')
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 500
+
+
 @bp.route('/latest')
 def latest():
     """Most-recent persisted backtest result (survives restarts; the run-status
