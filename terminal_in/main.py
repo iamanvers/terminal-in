@@ -212,9 +212,17 @@ def main():
     if not (cfg.use_kite_live and kite is not None):
         from terminal_in.execution.fno_paper_broker import FnOPaperBroker
         fno_broker = FnOPaperBroker(db=db, config=cfg, cash_broker=broker)
-        # Stage 5: express S1/S8 index signals as ATM options on the F&O broker.
+        # Stage 5: express S1/S8 index signals as risk-defined spreads (or naked
+        # ATM options) on the F&O broker.
         from terminal_in.execution.fno_signal_router import FnOSignalRouter
         _fno_router = FnOSignalRouter(fno_broker=fno_broker, config=cfg)
+        # Multi-leg F&O strategies (variance-premium harvest, futures pair, covered
+        # call, event straddle) — periodic scan, atomic combos, combo-level risk.
+        from terminal_in.execution.fno_strategy_manager import FnOStrategyManager
+        _fno_manager = FnOStrategyManager(db=db, fno_broker=fno_broker,
+                                          cash_broker=broker, config=cfg)
+        threads.append(Thread(target=_fno_manager.run, args=(_stop_event,),
+                              daemon=True, name='fno-strategy-manager'))
 
     # ── Trading mode (auto-trade persisted across restarts) ───────────────────
     try:

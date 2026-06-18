@@ -2,7 +2,7 @@
 
 # TERMINAL//IN
 
-![tests](https://img.shields.io/badge/tests-251_passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-261_passing-brightgreen)
 ![python](https://img.shields.io/badge/python-3.14-blue)
 ![mode](https://img.shields.io/badge/mode-paper_%7C_live-0094FB)
 ![license](https://img.shields.io/badge/license-personal_use-lightgrey)
@@ -200,7 +200,7 @@ cd terminal_ui ; npm run dev                          # UI :3000
 #   first launch runs an onboarding wizard (capital / risk tier / mode / keys)
 
 # Tests
-.venv\Scripts\pytest tests\ -v                        # 251 tests
+.venv\Scripts\pytest tests\ -v                        # 261 tests
 ```
 
 **Platforms:** macOS / Linux run the **browser-served** single process (`./start.sh` → `localhost:5000`) — Flask serves the static UI cross-platform, no Node needed at runtime. The **packaged Windows `.exe` is a self-serving desktop app**: backend on a private loopback port, UI in a native `TERMINAL//IN` window (WebView2), no browser, no visible URL. Hardware maximization (`hw.apply()` — all logical cores) runs everywhere.
@@ -259,7 +259,7 @@ terminal_in/            Python backend (threads + EventBus)
   api/                  Flask + SocketIO (threading mode), route blueprints
   (top-level)           main, config, app_settings, market_hours, hw, errors, bus, db
 terminal_ui/            Next.js 14 — MARKET / EQUITIES / F&O / AGENTS / TRAIN / BACKTEST
-tests/                  251 tests (gate, broker, persistence, filters, planner, supervisor,
+tests/                  261 tests (gate, broker, persistence, filters, planner, supervisor,
                         backtest, validation, m6, events, costs, F&O greeks, palette, onboarding)
 docs/PRD.md             Product requirements + multi-asset and low-latency roadmaps
 ```

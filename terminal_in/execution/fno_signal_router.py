@@ -20,13 +20,29 @@ FNO_STRATEGIES. Lots default 1, overridable via signal metadata 'fno_lots'.
 """
 
 import logging
+import os
 
 from terminal_in.bus import bus
 from terminal_in.agents.control import kill_switch, trading_mode
 from terminal_in.market_hours import is_market_open
 from terminal_in.data_ingest import fno_instruments as fno
+from terminal_in.execution import fno_strategies as fno_strats
 
 log = logging.getLogger(__name__)
+
+
+def _directional_structure() -> str:
+    """'spread' (risk-defined debit vertical, default) or 'option' (naked ATM long).
+    A debit spread caps premium bleed by selling the far leg; the legacy naked
+    long is still available via FNO_DIRECTIONAL_STRUCTURE=option."""
+    return os.environ.get('FNO_DIRECTIONAL_STRUCTURE', 'spread').lower()
+
+
+def _spread_width() -> int:
+    try:
+        return max(1, int(os.environ.get('FNO_SPREAD_WIDTH', '2')))
+    except ValueError:
+        return 2
 
 # Index underlying token → F&O label (only these are routed).
 UNDERLYING_BY_TOKEN = {c['token']: c['label'] for c in fno.INDEX_CONTRACTS}
@@ -64,7 +80,6 @@ class FnOSignalRouter:
             return
 
         side = str(sig.get('side', 'BUY')).upper()
-        opt_type = 'CE' if side == 'BUY' else 'PE'   # bullish→call, bearish→put
 
         exps = fno.expiries(label)
         if not exps:
@@ -75,7 +90,6 @@ class FnOSignalRouter:
         if spot <= 0:
             log.warning('FnO route: no spot for %s', label)
             return
-        strike = fno.atm_strike(label, spot)
 
         meta = sig.get('metadata') or {}
         try:
@@ -83,19 +97,32 @@ class FnOSignalRouter:
         except (TypeError, ValueError):
             lots = 1
 
-        result = self._fno.place_order({
-            'underlying': label, 'expiry': expiry, 'strike': strike,
-            'opt_type': opt_type, 'side': 'BUY', 'lots': lots,
-        })
+        # Express the directional view as a risk-DEFINED debit spread (default) or
+        # a naked ATM long option (legacy). Both carry the lens's direction.
+        if _directional_structure() == 'spread':
+            direction = 'BULL' if side == 'BUY' else 'BEAR'
+            legs = fno_strats.vertical_spread_legs(label, spot, expiry, direction,
+                                                   width=_spread_width(), lots=lots)
+            result = self._fno.place_combo(legs, {'kind': f'{direction.lower()}_spread',
+                                                  'strategy_id': strat})
+            expressed = f"{direction} {'call' if side == 'BUY' else 'put'} spread"
+        else:
+            opt_type = 'CE' if side == 'BUY' else 'PE'   # bullish→call, bearish→put
+            result = self._fno.place_order({
+                'underlying': label, 'expiry': expiry, 'strike': fno.atm_strike(label, spot),
+                'opt_type': opt_type, 'side': 'BUY', 'lots': lots,
+            })
+            expressed = f"BUY {opt_type}"
+
         if result.get('ok'):
             self._routed += 1
-            log.info('FnO ROUTE [%s]: %s %s → BUY %d×%s @%.2f',
-                     strat, side, label, lots, result['tradingsymbol'], result['premium'])
+            log.info('FnO ROUTE [%s]: %s %s → %s (%d lots, margin %.0f)',
+                     strat, side, label, expressed, lots, result.get('margin', 0))
             bus.publish('fno.signal.routed', {
                 'strategy_id': strat, 'underlying': label, 'index_side': side,
-                'expressed_as': f"BUY {opt_type}", 'strike': strike,
-                'tradingsymbol': result['tradingsymbol'], 'premium': result['premium'],
-                'lots': lots, 'margin': result['margin'],
+                'expressed_as': expressed, 'lots': lots, 'margin': result.get('margin', 0),
+                'combo_id': result.get('combo_id'), 'tradingsymbol': result.get('tradingsymbol'),
+                'premium': result.get('premium'),
             })
         else:
             log.info('FnO ROUTE rejected [%s %s]: %s', strat, label, result.get('error'))
