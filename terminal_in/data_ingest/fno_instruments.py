@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from terminal_in.data_ingest.contract_specs import INDEX_CONTRACTS, STOCK_FNO_LOTS
 from terminal_in.execution.options_pricing import price_and_greeks
+from terminal_in.execution.vol_surface import skew_iv, surface_enabled
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -222,8 +223,9 @@ def build_chain(label: str, spot: float, iv_pct: float, expiry_iso: str,
         strike = atm + k * step
         if strike <= 0:
             continue
-        ce = price_and_greeks(spot, strike, t, iv, 'CE')
-        pe = price_and_greeks(spot, strike, t, iv, 'PE')
+        strike_iv = skew_iv(iv, spot, strike, t)   # per-strike skew/smile (flat at ATM)
+        ce = price_and_greeks(spot, strike, t, strike_iv, 'CE')
+        pe = price_and_greeks(spot, strike, t, strike_iv, 'PE')
         ce['token'] = synth_token(label, expiry_iso, strike, 'CE')
         pe['token'] = synth_token(label, expiry_iso, strike, 'PE')
         rows.append({
@@ -245,12 +247,15 @@ def build_chain(label: str, spot: float, iv_pct: float, expiry_iso: str,
         't_years': round(t, 5),
         'iv_used_pct': round(iv_pct, 2),
         'iv_source': iv_source,
+        'iv_model': 'skew' if surface_enabled() else 'flat',
         'lot_size': int(spec['lot_size']),
         'strike_interval': step,
         'rows': rows,
         'theoretical': True,
         'note': f'Premiums/greeks are Black-Scholes theoretical (real spot + '
-                f'{iv_source} as IV). Not traded prices; OI/real-IV are live-only.',
+                f'{iv_source} as the ATM IV anchor'
+                + (', skew/smile by strike' if surface_enabled() else '')
+                + '). Not traded prices; OI/real-IV are live-only.',
     }
 
 

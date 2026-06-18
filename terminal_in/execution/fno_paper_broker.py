@@ -31,6 +31,7 @@ from threading import Lock
 from terminal_in.bus import bus
 from terminal_in.agents.control import registry
 from terminal_in.execution.options_pricing import bs_price, bs_greeks
+from terminal_in.execution.vol_surface import skew_iv
 from terminal_in.risk.span_margin import span_margin
 from terminal_in.risk.event_calendar import calendar as event_cal
 from terminal_in.data_ingest import fno_instruments as fno
@@ -117,13 +118,20 @@ class FnOPaperBroker:
     # ── Pricing helpers ───────────────────────────────────────────────────────
 
     def _iv(self, label: str, underlying_token: int) -> float:
-        """IV proxy in DECIMAL: India VIX for indices, realized vol for stocks."""
+        """ATM IV anchor in DECIMAL: India VIX for indices, realized vol for stocks."""
         iv_pct, _ = iv_for_underlying(label, self._db, self._vix, underlying_token)
         return max(iv_pct, 1.0) / 100.0
 
+    def _iv_at(self, label: str, underlying_token: int, spot: float,
+               strike: float, t: float) -> float:
+        """Per-strike IV: the ATM anchor adjusted by the skew surface (flat at ATM,
+        and a no-op when VOL_SURFACE=false). One source of truth for the leg's IV —
+        pricing, SPAN margin, and greeks all use the same value."""
+        return skew_iv(self._iv(label, underlying_token), spot, strike, t)
+
     def _price(self, pos: dict, spot: float) -> float:
         t = fno._t_years(pos['expiry'])
-        iv = self._iv(pos['underlying'], pos['underlying_token'])
+        iv = self._iv_at(pos['underlying'], pos['underlying_token'], spot, pos['strike'], t)
         return bs_price(spot, pos['strike'], t, iv, pos['opt_type'])
 
     def _current_spot(self, underlying_token: int) -> float:
@@ -168,7 +176,7 @@ class FnOPaperBroker:
             return {'ok': False, 'error': 'no underlying spot — cannot price'}
 
         t = fno._t_years(expiry)
-        iv = self._iv(label, inst.underlying_token)
+        iv = self._iv_at(label, inst.underlying_token, spot, strike, t)
         raw_premium = bs_price(spot, strike, t, iv, opt_type)
         # slippage against the taker
         premium = raw_premium * (1 + SLIPPAGE_PCT * (1 if side == 'BUY' else -1))
@@ -298,7 +306,7 @@ class FnOPaperBroker:
 
     def _leg_greeks(self, pos: dict, spot: float) -> dict:
         t = fno._t_years(pos['expiry'])
-        iv = self._iv(pos['underlying'], pos['underlying_token'])
+        iv = self._iv_at(pos['underlying'], pos['underlying_token'], spot, pos['strike'], t)
         return self._greeks_of(spot, pos['strike'], t, iv,
                                pos['opt_type'], pos['side'], pos['quantity'])
 
