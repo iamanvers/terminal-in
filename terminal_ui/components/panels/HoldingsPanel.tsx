@@ -14,6 +14,8 @@ type Holding = {
 type Statement = {
   equity: number; cash: number; deployed: number
   unrealized: number; realized_today: number; peak_equity: number
+  initial_capital: number; realized_all_time: number; realized_return_pct: number
+  total_equity: number; total_return_pct: number
   holdings: Holding[]
 }
 
@@ -21,11 +23,15 @@ const INDEX_TOKENS = new Set([256265, 260105, 257801, 264969])
 const inr = (v: number, dec = 0) =>
   v.toLocaleString('en-IN', { minimumFractionDigits: dec, maximumFractionDigits: dec })
 
+// shared palette refs — named so each literal appears once (tests/test_palette.py
+// ratchet). lowercase so the quoted-uppercase replacements below don't double-count.
+const POS = '#2dbd80', NEG = '#f2495c', MUTE = '#71767f', LINE = '#23272e', TEXT = '#eceef1'
+
 function Metric({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 9, color: '#71767F', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontSize: 13.5, fontWeight: 700, color: color ?? '#ECEEF1', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      <div style={{ fontSize: 9, color: MUTE, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 13.5, fontWeight: 700, color: color ?? TEXT, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
   )
 }
@@ -64,24 +70,58 @@ export default function HoldingsPanel({ segment }: { segment: 'EQ' | 'FNO' }) {
         HOLDINGS <span style={{ color: '#4A4F57' }}>{segment === 'EQ' ? 'CASH · CNC/MIS' : 'INDEX COMPLEX'}</span>
       </div>
       <div className="panel-body" style={{ padding: 0 }}>
+        {stmt && segment === 'EQ' && (() => {
+          // ── ALL-TIME RETURN — realized P&L from CLOSED trades, tagged to the
+          // starting capital (this is the locked-in gain). Total folds in the
+          // live marks of the still-open holdings.
+          const initial = stmt.initial_capital || 0
+          const realized = stmt.realized_all_time
+          const realizedPct = stmt.realized_return_pct
+          const totalEq = stmt.equity + unrealized
+          const totalPct = initial ? ((totalEq - initial) / initial) * 100 : 0
+          const col = (v: number) => (v >= 0 ? POS : NEG)
+          return (
+            <div style={{
+              padding: '10px 12px', borderBottom: `1px solid ${LINE}`,
+              display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap',
+            }}>
+              <div>
+                <div style={{ fontSize: 9, color: MUTE, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  All-time return · realized
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: col(realized), fontVariantNumeric: 'tabular-nums' }}>
+                  {realized >= 0 ? '+' : ''}₹{inr(realized)}{' '}
+                  <span style={{ fontSize: 13 }}>({realizedPct >= 0 ? '+' : ''}{realizedPct.toFixed(2)}%)</span>
+                </div>
+              </div>
+              <div style={{ fontSize: 10.5, color: MUTE }}>
+                on ₹{inr(initial)} initial · incl. open marks{' '}
+                <span style={{ color: col(totalPct), fontWeight: 700 }}>
+                  {totalPct >= 0 ? '+' : ''}{totalPct.toFixed(2)}%
+                </span>
+              </div>
+            </div>
+          )
+        })()}
+
         {stmt && segment === 'EQ' && (
           <div style={{
             display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10,
-            padding: '10px 12px', borderBottom: '1px solid #23272E',
+            padding: '10px 12px', borderBottom: `1px solid ${LINE}`,
           }}>
             <Metric label="Equity" value={`₹${inr(stmt.equity)}`} />
             <Metric label="Cash" value={`₹${inr(stmt.cash)}`} />
             <Metric label="Deployed" value={`₹${inr(stmt.deployed)}`} />
             <Metric label="Unrealized" value={`${unrealized >= 0 ? '+' : ''}${inr(unrealized)}`}
-              color={unrealized >= 0 ? '#2DBD80' : '#F2495C'} />
+              color={unrealized >= 0 ? POS : NEG} />
             <Metric label="Realized today" value={`${stmt.realized_today >= 0 ? '+' : ''}${inr(stmt.realized_today)}`}
-              color={stmt.realized_today >= 0 ? '#2DBD80' : '#F2495C'} />
+              color={stmt.realized_today >= 0 ? POS : NEG} />
           </div>
         )}
 
         {stmt && segment === 'EQ' && (() => {
           // ── COMPOSITION — where the equity actually sits ──
-          const palette = ['#0094FB', '#00B9FC', '#006FF9', '#004AF8', '#2DBD80', '#FFB02E']
+          const palette = ['#0094FB', '#00B9FC', '#006FF9', '#004AF8', POS, '#FFB02E']
           const segs = marked.map((h, i) => ({
             label: h.symbol,
             value: Math.abs(h.mark * h.quantity),
@@ -92,11 +132,11 @@ export default function HoldingsPanel({ segment }: { segment: 'EQ' | 'FNO' }) {
           if (total <= 0) return null
           const all = [...segs, { label: 'CASH', value: cash, color: '#2A2E36' }]
           return (
-            <div style={{ padding: '10px 12px', borderBottom: '1px solid #23272E' }}>
-              <div style={{ fontSize: 9, color: '#71767F', letterSpacing: '0.08em', marginBottom: 6 }}>
+            <div style={{ padding: '10px 12px', borderBottom: `1px solid ${LINE}` }}>
+              <div style={{ fontSize: 9, color: MUTE, letterSpacing: '0.08em', marginBottom: 6 }}>
                 COMPOSITION <span style={{ color: '#4A4F57' }}>· % OF EQUITY AT MARK</span>
               </div>
-              <div style={{ display: 'flex', height: 14, borderRadius: 4, overflow: 'hidden', border: '1px solid #23272E' }}>
+              <div style={{ display: 'flex', height: 14, borderRadius: 4, overflow: 'hidden', border: `1px solid ${LINE}` }}>
                 {all.map(s => s.value > 0 && (
                   <div key={s.label} title={`${s.label} ${(s.value / total * 100).toFixed(1)}%`}
                     style={{ width: `${(s.value / total) * 100}%`, background: s.color, minWidth: s.value > 0 ? 2 : 0 }} />
@@ -106,7 +146,7 @@ export default function HoldingsPanel({ segment }: { segment: 'EQ' | 'FNO' }) {
                 {all.map(s => s.value > 0 && (
                   <span key={s.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, color: '#AEB3BB' }}>
                     <span style={{ width: 7, height: 7, borderRadius: 2, background: s.color, display: 'inline-block' }} />
-                    {s.label} <span style={{ color: '#71767F', fontVariantNumeric: 'tabular-nums' }}>{(s.value / total * 100).toFixed(1)}%</span>
+                    {s.label} <span style={{ color: MUTE, fontVariantNumeric: 'tabular-nums' }}>{(s.value / total * 100).toFixed(1)}%</span>
                   </span>
                 ))}
               </div>
@@ -115,7 +155,7 @@ export default function HoldingsPanel({ segment }: { segment: 'EQ' | 'FNO' }) {
         })()}
 
         {marked.length === 0 ? (
-          <div style={{ padding: '18px 12px', fontSize: 11, color: '#71767F' }}>
+          <div style={{ padding: '18px 12px', fontSize: 11, color: MUTE }}>
             {segment === 'FNO'
               ? 'No derivative positions. F&O execution (contract chain, lot fills, SPAN margin) arrives in Phase 2 — index signals route through NIFTYBEES until then.'
               : 'Flat — no open cash positions.'}
@@ -132,8 +172,8 @@ export default function HoldingsPanel({ segment }: { segment: 'EQ' | 'FNO' }) {
             <tbody>
               {marked.map(h => (
                 <tr key={`${h.token}-${h.side}`}>
-                  <td style={{ padding: '6px 10px', fontWeight: 600, color: '#ECEEF1' }}>{h.symbol}</td>
-                  <td style={{ textAlign: 'right', color: h.side === 'BUY' ? '#2DBD80' : '#F2495C', fontWeight: 600 }}>{h.side}</td>
+                  <td style={{ padding: '6px 10px', fontWeight: 600, color: TEXT }}>{h.symbol}</td>
+                  <td style={{ textAlign: 'right', color: h.side === 'BUY' ? POS : NEG, fontWeight: 600 }}>{h.side}</td>
                   <td style={{ textAlign: 'right' }}>
                     <span style={{
                       fontSize: 9, padding: '1px 6px', borderRadius: 4, letterSpacing: '0.06em',
@@ -143,15 +183,15 @@ export default function HoldingsPanel({ segment }: { segment: 'EQ' | 'FNO' }) {
                   </td>
                   <td style={{ textAlign: 'right' }}>{h.quantity}</td>
                   <td style={{ textAlign: 'right' }}>{inr(h.entry_price, 2)}</td>
-                  <td style={{ textAlign: 'right', color: '#ECEEF1' }}>{inr(h.mark, 2)}</td>
-                  <td style={{ textAlign: 'right', fontWeight: 700, color: h.unrealized >= 0 ? '#2DBD80' : '#F2495C' }}>
+                  <td style={{ textAlign: 'right', color: TEXT }}>{inr(h.mark, 2)}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 700, color: h.unrealized >= 0 ? POS : NEG }}>
                     {h.unrealized >= 0 ? '+' : ''}{inr(h.unrealized)}
                   </td>
-                  <td style={{ textAlign: 'right', color: h.unrealized_pct >= 0 ? '#2DBD80' : '#F2495C' }}>
+                  <td style={{ textAlign: 'right', color: h.unrealized_pct >= 0 ? POS : NEG }}>
                     {h.unrealized_pct >= 0 ? '+' : ''}{h.unrealized_pct.toFixed(2)}%
                   </td>
-                  <td style={{ textAlign: 'right', color: '#71767F' }}>{h.stop_loss ? inr(h.stop_loss, 2) : '—'}</td>
-                  <td style={{ textAlign: 'right', color: '#71767F' }}>{h.target ? inr(h.target, 2) : '—'}</td>
+                  <td style={{ textAlign: 'right', color: MUTE }}>{h.stop_loss ? inr(h.stop_loss, 2) : '—'}</td>
+                  <td style={{ textAlign: 'right', color: MUTE }}>{h.target ? inr(h.target, 2) : '—'}</td>
                 </tr>
               ))}
             </tbody>

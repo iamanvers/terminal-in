@@ -75,13 +75,26 @@ def build_statement(db, broker) -> dict:
     except Exception:
         pass
 
+    # All-time performance, tagged to the starting capital. broker.equity already
+    # = initial_capital + every realized net_pnl, so realized_all_time is the
+    # locked-in gain from CLOSED trades; total_* folds in open (unrealized) marks.
+    initial = float(getattr(broker, 'initial_capital', 0) or 0)
+    equity = float(broker.equity)
+    realized_all_time = equity - initial
+    total_equity = equity + unrealized
+
     return {
         'generated_at':   int(now.timestamp() * 1000),
-        'equity':         broker.equity,
+        'equity':         equity,
+        'initial_capital': initial,
         'cash':           broker.available_capital,
         'deployed':       broker.capital_in_use,
         'unrealized':     unrealized,
         'realized_today': sum(float(t.get('net_pnl') or 0) for t in closed_today),
+        'realized_all_time':  realized_all_time,
+        'realized_return_pct': (realized_all_time / initial * 100) if initial else 0.0,
+        'total_equity':       total_equity,
+        'total_return_pct':   ((total_equity - initial) / initial * 100) if initial else 0.0,
         'peak_equity':    broker.peak_equity,
         'holdings':       holdings,
         'closed_today':   closed_today,
@@ -143,10 +156,13 @@ class PortfolioLedger:
             '',
             '| Metric | Value |',
             '|---|---|',
-            f'| Equity | Rs {equity:,.2f} |',
+            f"| Initial capital | Rs {s['initial_capital']:,.2f} |",
+            f'| Equity (realized) | Rs {equity:,.2f} |',
+            f"| All-time return (realized) | Rs {s['realized_all_time']:+,.2f} ({s['realized_return_pct']:+.2f}%) |",
+            f"| Total incl. open marks | Rs {s['total_equity']:,.2f} ({s['total_return_pct']:+.2f}%) |",
             f'| Cash available | Rs {cash:,.2f} |',
             f'| Capital deployed | Rs {in_use:,.2f} |',
-            f'| Unrealized P&L (marked) | Rs {unrealized:+,.2f} |',
+            f'| Unrealized P&L (open) | Rs {unrealized:+,.2f} |',
             f'| Realized P&L today | Rs {realized_today:+,.2f} ({len(closed_today)} trades) |',
             f"| Peak equity | Rs {s['peak_equity']:,.2f} |",
             '',

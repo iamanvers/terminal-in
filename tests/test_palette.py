@@ -21,9 +21,10 @@ from pathlib import Path
 
 UI = Path(__file__).resolve().parents[1] / 'terminal_ui'
 
-# Baselines captured 2026-06-14. RATCHET DOWN ONLY — never raise these.
-BASELINE_TOTAL = 833
-BASELINE_OFF_DISTINCT = 37
+# Baselines captured 2026-06-14; ratcheted down 2026-06-18 (HoldingsPanel color
+# consts). RATCHET DOWN ONLY — never raise these.
+BASELINE_TOTAL = 815
+BASELINE_OFF_DISTINCT = 36
 
 _HEX = re.compile(r'#[0-9A-Fa-f]{3,8}\b')
 

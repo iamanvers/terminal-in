@@ -61,6 +61,12 @@ class PaperBroker:
         bus.subscribe('trade.close_requested', self._on_close_requested)
         log.info('PaperBroker initialised (equity=%.2f, open=%d)', self._equity, len(self._positions))
 
+    @property
+    def initial_capital(self) -> float:
+        """The account's starting capital — the baseline for all-time returns.
+        equity = initial_capital + sum(realized net_pnl of every closed trade)."""
+        return float(self._config.initial_capital)
+
     # ── Session persistence ───────────────────────────────────────────────────
 
     def _restore_from_db(self):
