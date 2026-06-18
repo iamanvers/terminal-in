@@ -2,7 +2,7 @@
 
 # TERMINAL//IN
 
-![tests](https://img.shields.io/badge/tests-239_passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-242_passing-brightgreen)
 ![python](https://img.shields.io/badge/python-3.14-blue)
 ![mode](https://img.shields.io/badge/mode-paper_%7C_live-0094FB)
 ![license](https://img.shields.io/badge/license-personal_use-lightgrey)
@@ -123,7 +123,7 @@ Three feedback loops at three speeds — trade-by-trade control (supervisor), ba
 
 ## What's under the hood
 
-- **Strategy engine** — 8 rule strategies (ORB, 52-week breakout, RSI reversion, EMA pullback, pairs cointegration, VIX fade, Hawkes momentum) evaluated every 60s
+- **Strategy engine** — 7 active rule strategies (ORB, 52-week breakout, RSI reversion, EMA pullback, VIX fade, Hawkes momentum) evaluated every 60s; pairs cointegration is defined but **disabled** (single-leg/not fundable — see `engine.py`)
 - **Regime classifier** — 6-state HMM (heuristic fallback until trained; degraded mode reported, never hidden)
 - **DSA** — monthly capital allocation across strategies: `0.40×regime_fit + 0.30×Bayesian_WR + 0.30×Sharpe`
 - **Risk** — 17-check pre-trade gate (+ a non-blocking VIX size-reduce), sector concentration via full-universe sector map (with a small-book floor — see below), drawdown/daily-loss caps, kill switch, margin check that *rejects* unpriceable orders
@@ -200,7 +200,7 @@ cd terminal_ui ; npm run dev                          # UI :3000
 #   first launch runs an onboarding wizard (capital / risk tier / mode / keys)
 
 # Tests
-.venv\Scripts\pytest tests\ -v                        # 239 tests
+.venv\Scripts\pytest tests\ -v                        # 242 tests
 ```
 
 **Platforms:** macOS / Linux run the **browser-served** single process (`./start.sh` → `localhost:5000`) — Flask serves the static UI cross-platform, no Node needed at runtime. The **packaged Windows `.exe` is a self-serving desktop app**: backend on a private loopback port, UI in a native `TERMINAL//IN` window (WebView2), no browser, no visible URL. Hardware maximization (`hw.apply()` — all logical cores) runs everywhere.
@@ -259,7 +259,7 @@ terminal_in/            Python backend (threads + EventBus)
   api/                  Flask + SocketIO (threading mode), route blueprints
   (top-level)           main, config, app_settings, market_hours, hw, errors, bus, db
 terminal_ui/            Next.js 14 — MARKET / EQUITIES / F&O / AGENTS / TRAIN / BACKTEST
-tests/                  239 tests (gate, broker, persistence, filters, planner, supervisor,
+tests/                  242 tests (gate, broker, persistence, filters, planner, supervisor,
                         backtest, validation, m6, events, costs, F&O greeks, palette, onboarding)
 docs/PRD.md             Product requirements + multi-asset and low-latency roadmaps
 ```

@@ -3,7 +3,10 @@ SettlementService — manages the market open/close lifecycle.
 
 Schedule (IST):
   09:14  fire settlement.day_open  → resets daily counters on supervisor
-  15:29  close all open positions with exit_reason='eod_settlement'
+  15:29  square off ONLY MIS (intraday) positions with exit_reason='mis_square_off';
+         CNC (delivery) positions CARRY overnight and exit only on SL/target.
+         (The legacy 'eod_settlement' bulldozer that closed ALL positions — and
+         caused naked single-leg churn — was removed; that reason is now history-only.)
   15:30  record equity snapshot to DB, reset broker's daily_pnl
 
 In paper mode this still runs so that:

@@ -111,7 +111,7 @@ export default function HoldingsPanel({ segment }: { segment: 'EQ' | 'FNO' }) {
           }}>
             <Metric label="Equity" value={`₹${inr(stmt.equity)}`} />
             <Metric label="Cash" value={`₹${inr(stmt.cash)}`} />
-            <Metric label="Deployed" value={`₹${inr(stmt.deployed)}`} />
+            <Metric label="Locked" value={`₹${inr(stmt.deployed)}`} />
             <Metric label="Unrealized" value={`${unrealized >= 0 ? '+' : ''}${inr(unrealized)}`}
               color={unrealized >= 0 ? POS : NEG} />
             <Metric label="Realized today" value={`${stmt.realized_today >= 0 ? '+' : ''}${inr(stmt.realized_today)}`}
