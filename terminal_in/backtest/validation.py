@@ -970,7 +970,8 @@ def validate_longshort(db=None, days: int = 2470, horizon: int = 20, quantile: f
 
 
 def validate_longshort_directional(db=None, days: int = 2470, horizon: int = 21,
-                                   quantile: float = 0.2, seed: int = 7) -> dict:
+                                   quantile: float = 0.2, seed: int = 7,
+                                   wide: bool = False) -> dict:
     """#1 — directional long/short across OUR signals, with the honest benchmark
     baked in. For each cross-sectional signal (incl. the system's own lens score),
     rank names and report, per signal:
@@ -992,6 +993,9 @@ def validate_longshort_directional(db=None, days: int = 2470, horizon: int = 21,
     ppy = 252 / horizon
 
     eq_tokens = {t: s for s, t in KNOWN_TOKENS.items() if registry.sector(t) not in ('index',)}
+    if wide:
+        from terminal_in.data_ingest.index_membership import RESEARCH_BY_TOKEN
+        eq_tokens = {**eq_tokens, **RESEARCH_BY_TOKEN}
     nifty_tok, vix_tok = KNOWN_TOKENS.get('NIFTY 50'), KNOWN_TOKENS.get('INDIA VIX')
     all_1d = db.get_ohlcv_1d_all(list(eq_tokens) + [t for t in (nifty_tok, vix_tok) if t], limit=days + 320)
     regimes = engine._regime_series(all_1d.get(nifty_tok), all_1d.get(vix_tok))
@@ -1474,7 +1478,7 @@ if __name__ == '__main__':
     ap.add_argument('--json', action='store_true', help='dump full JSON instead of the report')
     args = ap.parse_args()
     if args.longshort_directional:
-        r = validate_longshort_directional(days=args.days, horizon=args.horizon)
+        r = validate_longshort_directional(days=args.days, horizon=args.horizon, wide=args.wide)
         print(json.dumps(r, indent=1, default=str)) if args.json else _print_longshort_directional(r)
     elif args.longshort and args.hard:
         r = validate_longshort_hardened(days=args.days, horizon=args.horizon,

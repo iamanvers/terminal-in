@@ -20,6 +20,15 @@ but still short, *and* flattered by survivorship (the wide universe is today's s
 The fenced *dynamic* variants don't rescue it. The bottleneck is **signal, not model or
 reasoning** — confirmed nine ways now.
 
+**One genuine open lead (not a negative): the FUNDABLE long-only momentum tilt.** The
+hardened deaths above are *market-neutral* books (futures short leg, unfundable on midcaps).
+The form a real account can trade — long-only momentum vs equal-weight — shows a **+0.63
+risk-adjusted excess at beta 1.06** on the wide universe (reversal's is exactly 0.00 = pure
+beta). That is *not* size/beta and is the strongest fundable result the program has produced.
+It is gated by **survivorship** (momentum's worst bias; the wide universe is today's survivors)
+and an un-deflated long-only significance test — so it's a LEAD pending the point-in-time
+midcap-membership fix, not an established edge. See "BUT the FUNDABLE form is not pure beta".
+
 The single most important number: over 10 years (67 symbols, 1,484 trades), the
 full decision stack returns **~3% CAGR net** while **buy-and-hold NIFTY returns
 ~11.6%** and **equal-weighting the same 67 names returns ~21%**. The machinery
@@ -204,10 +213,33 @@ five-horizon search still puts it **below the 0.95 bar**, and that is *with* sur
 on its side. So: the flip from large-cap reversal to wide momentum was a survivorship
 artifact exactly as predicted, and **no cross-sectional factor — reversal or momentum, in
 any fundable form, on either universe — survives the hardened gate.** Negative #9.
-**Consequence: the survivorship-correction data project is no longer on the critical path
-for *validating these price factors*** (the answer is already negative); it remains
-necessary only if/when fundamentals or relational features give a genuinely new signal to
-test on the wider universe. Hardening-before-data-work saved the build again.
+
+### BUT the FUNDABLE form is not pure beta (2026-06-19, correction to the over-reject)
+
+The hardened table above is the **market-neutral L/S book** — whose short leg is single-stock
+futures, **unfundable on midcaps** (most aren't F&O-eligible). The form a real ₹10L account
+*can* trade is **long-only momentum tilt** (no short leg). Running the directional probe on the
+wide universe (`--longshort-directional --wide`, long-only judged vs EQUAL-WEIGHT — the correct
+benchmark, not cap-weighted NIFTY):
+
+| Signal | IC-IR | long-only Sharpe | **LO − equal-weight Sharpe** | long beta | short-leg helps |
+|---|---|---|---|---|---|
+| reversal_1m | 1.13 | 0.93 | **0.00** (pure beta/size) | 1.22 | +0.0015 |
+| **mom_12_1** | 1.99 | 1.28 | **+0.63** | **1.06** | +0.0036 |
+
+This is the **one place I was over-rejecting.** Reversal's long-only excess over equal-weight is
+*exactly zero* (it's all beta/size, confirmed earlier). **Wide momentum's is +0.63 at beta only
+1.06** — i.e. it beats equal-weighting on a *risk-adjusted* basis without taking extra beta, so it
+is **not** explainable as size/beta. It's the strongest fundable lead the program has produced.
+Two threats keep it a LEAD, not an edge: (1) **survivorship** — the wide universe is today's
+surviving midcaps, and momentum is the factor *most* inflated by that bias (this is exactly how a
+spurious +0.63 would be manufactured); (2) the long-only tilt has **not** been deflated for
+multiple testing the way the L/S book was. **Consequence: the survivorship-correction data project
+goes BACK on the critical path — specifically for this fundable long-only-momentum tilt** (it
+stays correctly *off* for the unfundable market-neutral books, whose answer is already negative).
+The decisive next test: point-in-time midcap membership (incl. delisted) → re-run the long-only
+momentum tilt vs equal-weight + a deflated significance check. If +0.63 survives PIT membership,
+it is the first thing in the program worth a (long-only, risk-defined) sleeve.
 
 ## Why a "better LLM" would not help
 
