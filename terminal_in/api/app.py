@@ -175,6 +175,13 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
         except Exception:
             m6 = {'ev_source': 'heuristic', 'mode': 'unavailable'}
 
+        # Firm-knowledge RAG plane coverage (vector-less PIT firm-document store).
+        try:
+            from terminal_in.knowledge.firm_store import default_store as _fk
+            knowledge = _fk().coverage()
+        except Exception:
+            knowledge = {'rows': 0, 'note': 'firm-knowledge store unavailable'}
+
         return jsonify({
             'status': 'degraded' if degraded else 'ok',
             'degraded': degraded,
@@ -183,6 +190,7 @@ def create_app(components: dict) -> tuple[Flask, SocketIO]:
             'sentiment': sent,
             'ollama_online': ollama_online,
             'm6': m6,
+            'knowledge': knowledge,
             'last_daily_bar': data_fresh,
             'recent_errors': [
                 {k: e[k] for k in ('id', 'ts', 'source', 'message')} for e in recent_errors

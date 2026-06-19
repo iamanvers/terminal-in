@@ -4,6 +4,7 @@ Starts all threads: data ingest, news, strategy engine, risk, Flask/SocketIO.
 """
 
 import logging
+import os
 import signal
 import sys
 import time
@@ -189,6 +190,19 @@ def main():
     from terminal_in.reporting.daily_report import ReportScheduler
     report_scheduler = ReportScheduler(db=db)
     threads.append(Thread(target=report_scheduler.run, args=(_stop_event,), daemon=True, name='reports'))
+
+    # ── Firm-knowledge RAG ingestor (vector-less PIT firm-document store) ─────
+    # Periodically ingests real firm documents (NSE events today; news/BSE/IR as
+    # adapters land), then compacts to a rolling 5-year horizon. Grounds the analyst
+    # in firm reality — the orthogonal-signal substrate (see docs/ALPHA_FINDINGS.md).
+    if os.environ.get('KNOWLEDGE_INGEST_ENABLED', 'true').lower() != 'false':
+        try:
+            from terminal_in.bus import bus as _kbus
+            from terminal_in.knowledge.ingest import KnowledgeIngestor
+            _knowledge = KnowledgeIngestor(symbols=list(cfg.tracked_symbols), db=db, bus=_kbus)
+            threads.append(_knowledge)
+        except Exception:
+            log.exception('Failed to start knowledge ingestor')
 
     # ── Risk supervisor ───────────────────────────────────────────────────────
     from terminal_in.risk.gate import RiskSupervisor
