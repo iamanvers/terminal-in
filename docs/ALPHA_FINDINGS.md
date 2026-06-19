@@ -1,6 +1,6 @@
 # Alpha findings — does this system capture alpha? (honest record)
 
-> Status as of 2026-06-17. This document records what the validation harness
+> Status as of 2026-06-19. This document records what the validation harness
 > (`terminal_in/backtest/validation.py`) has actually proven, out-of-sample,
 > net of real Indian transaction costs. It is deliberately blunt: a clean
 > negative is a result, and chasing the numbers until they pass is the
@@ -9,16 +9,16 @@
 
 ## Headline
 
-**Nothing tested survives proper scrutiny.** Long-only directional signals are
-indistinguishable from passive (five negatives). The one apparent exception — a
-market-neutral 1-month cross-sectional **reversal** — looked like a pulse (IC-IR ≈ 2)
-but, when **hardened** (realistic futures+borrow cost, square-root market impact, and a
-**deflated Sharpe that corrects for searching 5 horizons**), **DIES: Deflated Sharpe
-0.72 < 0.95**, and the fenced *dynamic* variants (walk-forward horizon pick 0.24,
-regime-conditioning 0.28) are **worse** than the in-sample static pick (0.44). The
-reversal IC is marginally real, but the tradeable net-of-cost return is not
-statistically distinguishable from zero after multiple-testing. The bottleneck is
-**signal, not model or reasoning** — confirmed six ways now.
+**Nothing tested survives proper scrutiny** — nine independent negatives now. Long-only
+directional signals are indistinguishable from passive. The cross-sectional
+market-neutral frame (the right one for *selection* skill) gave two apparent pulses —
+1-month **reversal** (large-cap) and 12-1 **momentum** (wide large+midcap universe) — but
+**both DIE under hardening** (realistic futures+borrow cost, square-root market impact, and
+a **deflated Sharpe that corrects for the horizon search**): reversal large-cap DSR 0.605,
+reversal wide 0.290, and momentum wide **0.867 < 0.95** — the closest any factor has come,
+but still short, *and* flattered by survivorship (the wide universe is today's survivors).
+The fenced *dynamic* variants don't rescue it. The bottleneck is **signal, not model or
+reasoning** — confirmed nine ways now.
 
 The single most important number: over 10 years (67 symbols, 1,484 trades), the
 full decision stack returns **~3% CAGR net** while **buy-and-hold NIFTY returns
@@ -27,7 +27,7 @@ full decision stack returns **~3% CAGR net** while **buy-and-hold NIFTY returns
 low-turnover, cash-heavy filter that mostly keeps capital *out* of the market
 during the decade equities ran.
 
-## The five negatives
+## The negatives
 
 | # | Experiment | Harness | Result (OOS, net) |
 |---|-----------|---------|-------------------|
@@ -39,6 +39,8 @@ during the decade equities ran.
 | 5b | VIX-conditioned reaction matrix | `m6/reaction.py` | OOS dir-hit **0.515**, corr(expected, realized drift) **−0.0008**; no VIX pocket |
 | 6 | Cross-sectional market-neutral (A1 IC + A2 L/S) | `validation.py --longshort` | 12-1 momentum **null** (IC-IR 0.88, L/S −8%); 1-month **reversal = the first PULSE** — IC +0.039, **IC-IR +1.96**, market-neutral L/S net **+58% / Sharpe 0.39** over 10y (but fails hardening — see below) |
 | 7 | Directional long/short across OUR signals | `validation.py --longshort-directional` | **the system's own lens score has NEGATIVE cross-sectional IC (−1.35)** — lens-favoured names underperform equal-weight (excess Sharpe −1.20); shorting adds no edge (L/S Sharpes lens −0.81, reversal 0.39, mom 0.04; short-leg contribution ≈0 and sign-unstable) |
+| 8 | F&O variance-risk-premium harvester (monthly NIFTY iron condor) | `backtest/fno_engine.py` | 75% win but CAGR **+0.74% / Sharpe 0.13 / −25% DD** *theoretical* (BS premiums, upper bound) — worse than cash |
+| 9 | Cross-sectional factors HARDENED (reversal + 12-1 momentum, wide universe) | `validation.py --longshort --hard [--wide] [--mom]` | every fundable book DIES on Deflated Sharpe: reversal large **0.605**, reversal wide **0.290**, momentum wide **0.867** (< 0.95) — and momentum is survivorship-flattered |
 
 ## The one non-null: cross-sectional 1-month reversal (a lead, not an edge)
 
@@ -178,6 +180,34 @@ membership incl. delisted names removes the survivorship inflation and (b) it su
 hardened gate (impact/capacity + Deflated Sharpe). Recorded so the flip isn't mistaken for
 alpha. (Reversal weakening in the wider set is also consistent — more momentum-laden
 survivors dilute the large-cap reversal pulse.)
+
+### HARDENED IT (2026-06-19): the wide momentum "lead" DIES — negative #9
+
+The cheap, decisive test before doing any survivorship-data work: **survivorship can only
+flatter momentum**, so if the survivorship-INFLATED wide-momentum book already fails the
+hardened multiple-testing gate, the true point-in-time result is worse and the lead is
+dead without needing the reconstitution data. I generalized `validate_longshort_hardened`
+to run the **12-1 momentum** book (formation-horizon search [126,189,252,378,504]) and to
+honor `--wide`, then ran the full fundable matrix (long cash CNC + short single-stock
+futures + borrow + sqrt market-impact, Deflated Sharpe over the horizon search):
+
+| Book | Universe | best IC-IR | net Sharpe @₹1M | Deflated Sharpe | Verdict |
+|---|---|---|---|---|---|
+| Reversal | large-72 | 2.10 | 0.31 | 0.605 | **DIES** |
+| Reversal | wide-151 | 1.13 | 0.07 | 0.290 | **DIES** |
+| Momentum | wide-151 | 1.66 | 0.56 | **0.867** | **DIES** |
+
+Momentum on the wide universe is the **closest any factor has come** (DSR 0.867, raw
+net Sharpe ~0.56, +90% with healthy capacity to ₹1cr, and even the fenced dynamic /
+regime-conditioned variants hold up at ~0.56–0.63) — but the deflation for the
+five-horizon search still puts it **below the 0.95 bar**, and that is *with* survivorship
+on its side. So: the flip from large-cap reversal to wide momentum was a survivorship
+artifact exactly as predicted, and **no cross-sectional factor — reversal or momentum, in
+any fundable form, on either universe — survives the hardened gate.** Negative #9.
+**Consequence: the survivorship-correction data project is no longer on the critical path
+for *validating these price factors*** (the answer is already negative); it remains
+necessary only if/when fundamentals or relational features give a genuinely new signal to
+test on the wider universe. Hardening-before-data-work saved the build again.
 
 ## Why a "better LLM" would not help
 

@@ -119,6 +119,22 @@ def test_net_series_regime_filter_stands_aside():
     assert out[1] != 0.0                       # high_vol → traded
 
 
+def test_xs_signal_reversal_vs_momentum_sign():
+    import pandas as pd
+    # name UP: rose recently AND over the year; name DOWN: fell on both.
+    n = 300
+    up = np.linspace(100, 200, n)
+    down = np.linspace(200, 100, n)
+    M = pd.DataFrame({'UP': up, 'DOWN': down})
+    i = n - 1
+    # reversal (k=21): negative of recent return → UP (a recent winner) ranks LOWER
+    rev = V._xs_signal(M, i, 21, 'reversal_1m')
+    assert rev['UP'] < rev['DOWN']
+    # momentum 12-1 (k=252): formation return [i-252, i-21] → UP ranks HIGHER
+    mom = V._xs_signal(M, i, 252, 'mom_12_1')
+    assert mom['UP'] > mom['DOWN']
+
+
 def test_survivorship_separates_floor_from_late_listers():
     # OLD/OLD2 sit at the data floor (2015-01); NEW1/NEW2 list materially later.
     first = {'OLD': '2015-01-01', 'OLD2': '2015-01-05',

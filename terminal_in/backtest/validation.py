@@ -1110,18 +1110,30 @@ def _print_longshort_directional(r: dict):
 
 # ── hardened reversal book: realistic costs + impact + DSR + dynamic variants ──
 
-_REV_HORIZONS = [5, 10, 21, 42, 63]          # the search space (DSR deflates for it)
+_REV_HORIZONS = [5, 10, 21, 42, 63]          # reversal search space (DSR deflates for it)
+_MOM_HORIZONS = [126, 189, 252, 378, 504]    # momentum FORMATION search space (skip last 21d)
 _IMPACT_C = 0.5                              # square-root impact coefficient (~lit)
 _BORROW_FRAC = 0.0003                        # stock-futures roll/borrow per rebalance (est, flagged)
 _REVERSAL_REGIMES = ('sideways', 'high_vol', 'bear', 'strong_bear')  # a-priori: reversal favours non-(strong-)bull tape
+_MOMENTUM_REGIMES = ('strong_bull', 'bull', 'sideways')              # a-priori: momentum favours trending/low-vol tape
 
 
-def _ls_records(M, vol20, advM, regimes, dates, idx, k, q):
-    """Per-rebalance long/short book for a k-day reversal signal. Returns dicts
-    with the sets, gross spread, per-leg turnover, traded-name impact unit, regime."""
+def _xs_signal(M, i, k, kind):
+    """Cross-sectional signal at rebalance i over lookback k. reversal_1m = negative
+    k-day return; mom_12_1 = formation return over [i-k, i-21] (canonical skip-last-month).
+    The sign convention makes nlargest = the long leg for both."""
+    if kind == 'mom_12_1':
+        return M.iloc[i - 21] / M.iloc[i - k] - 1.0
+    return -(M.iloc[i] / M.iloc[i - k] - 1.0)
+
+
+def _ls_records(M, vol20, advM, regimes, dates, idx, k, q, kind='reversal_1m'):
+    """Per-rebalance long/short book for a k-lookback cross-sectional signal (reversal
+    or 12-1 momentum). Returns dicts with the sets, gross spread, per-leg turnover,
+    traded-name impact unit, regime."""
     recs, prev_l, prev_s = [], set(), set()
     for i in idx:
-        sig = -(M.iloc[i] / M.iloc[i - k] - 1.0)
+        sig = _xs_signal(M, i, k, kind)
         fwd = M.iloc[i + 21] / M.iloc[i] - 1.0      # fixed 21d hold (the book's cadence)
         ok = sig.notna() & fwd.notna()
         if ok.sum() < 10:
@@ -1193,21 +1205,28 @@ def _dsr_single(best_rets, all_srs, n_trials):
 
 
 def validate_longshort_hardened(db=None, days: int = 2470, horizon: int = 20,
-                                quantile: float = 0.2, seed: int = 7) -> dict:
-    """Step-1 hardening of the cross-sectional reversal book: does IC-IR ≈ 2
-    survive realistic costs + market impact (capacity) + multiple-testing
-    deflation, and do the fenced DYNAMIC variants help?"""
+                                quantile: float = 0.2, seed: int = 7,
+                                kind: str = 'reversal_1m', wide: bool = False) -> dict:
+    """Step-1 hardening of a cross-sectional book (reversal OR 12-1 momentum): does
+    the headline IC-IR survive realistic costs + market impact (capacity) +
+    multiple-testing deflation, and do the fenced DYNAMIC variants help? `wide` merges
+    the Nifty Midcap research universe (survivorship-flagged)."""
     from scipy.stats import spearmanr
     if db is None:
         from terminal_in.config import load_config
         from terminal_in.db import DB
         db = DB(load_config().sqlite_path)
-    from terminal_in.data_ingest.instruments import KNOWN_TOKENS, registry
-    registry.load_stubs()
     n_years = max(days / 252.0, 1e-9)
     ppy = 252 / horizon
+    horizons = _MOM_HORIZONS if kind == 'mom_12_1' else _REV_HORIZONS
+    fav_regimes = _MOMENTUM_REGIMES if kind == 'mom_12_1' else _REVERSAL_REGIMES
 
+    from terminal_in.data_ingest.instruments import KNOWN_TOKENS, registry
+    registry.load_stubs()
     eq_tokens = {t: s for s, t in KNOWN_TOKENS.items() if registry.sector(t) not in ('index',)}
+    if wide:
+        from terminal_in.data_ingest.index_membership import RESEARCH_BY_TOKEN
+        eq_tokens = {**eq_tokens, **RESEARCH_BY_TOKEN}
     nifty_tok, vix_tok = KNOWN_TOKENS.get('NIFTY 50'), KNOWN_TOKENS.get('INDIA VIX')
     all_1d = db.get_ohlcv_1d_all(list(eq_tokens) + [t for t in (nifty_tok, vix_tok) if t], limit=days + 320)
     regimes = engine._regime_series(all_1d.get(nifty_tok), all_1d.get(vix_tok))
@@ -1224,16 +1243,17 @@ def validate_longshort_hardened(db=None, days: int = 2470, horizon: int = 20,
     DV = pd.DataFrame({s: dollarvol[s].reindex(dates) for s in dollarvol}).astype(float)
     advM = DV.rolling(20, min_periods=5).mean()
     vol20 = np.log(M).diff().rolling(20, min_periods=5).std()
-    idx = list(range(252, len(M) - horizon, horizon))
+    warmup = max(252, max(horizons) + 1)
+    idx = list(range(warmup, len(M) - horizon, horizon))
 
     # per-horizon books + IC (for DSR cross-trial variance + the dynamic pick)
     per_h, srs = {}, []
-    for k in _REV_HORIZONS:
-        recs = _ls_records(M, vol20, advM, regimes, dates, idx, k, quantile)
+    for k in horizons:
+        recs = _ls_records(M, vol20, advM, regimes, dates, idx, k, quantile, kind)
         base = _net_series(recs, impact=False)            # explicit-cost only (per-period SR)
         ic = []
         for i in idx:
-            sig = -(M.iloc[i] / M.iloc[i - k] - 1.0); fwd = M.iloc[i + horizon] / M.iloc[i] - 1.0
+            sig = _xs_signal(M, i, k, kind); fwd = M.iloc[i + horizon] / M.iloc[i] - 1.0
             ok = sig.notna() & fwd.notna()
             if ok.sum() >= 10:
                 c = spearmanr(sig[ok], fwd[ok]).correlation
@@ -1244,7 +1264,7 @@ def validate_longshort_hardened(db=None, days: int = 2470, horizon: int = 20,
                     'ic_ir': round(float(np.mean([v for _, v in ic]) / np.std([v for _, v in ic]) * np.sqrt(len(ic))), 3) if len(ic) > 2 else 0.0}
         srs.append(per_h[k]['sr'])
 
-    best_k = max(_REV_HORIZONS, key=lambda k: per_h[k]['ic_ir'])
+    best_k = max(horizons, key=lambda k: per_h[k]['ic_ir'])
     best = per_h[best_k]
 
     # capacity curve: net Sharpe vs assumed AUM (sqrt impact)
@@ -1254,8 +1274,8 @@ def validate_longshort_hardened(db=None, days: int = 2470, horizon: int = 20,
         capacity[f'{cap:.0e}'] = {'net_sharpe': round(_sharpe(nets, ppy), 3),
                                   'total_return_pct': round((np.prod(1 + nets) - 1) * 100, 1)}
 
-    # deflated Sharpe for the best horizon (deflated for the 5-horizon search)
-    dsr = _dsr_single(best['net'], srs, n_trials=len(_REV_HORIZONS))
+    # deflated Sharpe for the best horizon (deflated for the horizon search)
+    dsr = _dsr_single(best['net'], srs, n_trials=len(horizons))
 
     # DYNAMIC 1 — walk-forward horizon selection (pick best IC-IR over prior years)
     rebal_dates = [str(dates[i])[:10] for i in idx]
@@ -1264,7 +1284,7 @@ def validate_longshort_hardened(db=None, days: int = 2470, horizon: int = 20,
         yr = d[:4]
         # train = horizons' IC over rebalances strictly before this year
         best_train, best_ir = best_k, -1e9
-        for k in _REV_HORIZONS:
+        for k in horizons:
             past = [v for dd, v in per_h[k]['ic'] if dd[:4] < yr]
             if len(past) > 3:
                 ir = np.mean(past) / (np.std(past) + 1e-9) * np.sqrt(len(past))
@@ -1273,13 +1293,17 @@ def validate_longshort_hardened(db=None, days: int = 2470, horizon: int = 20,
         dyn.append(per_h[best_train]['net'][j] if j < len(per_h[best_train]['net']) else 0.0)
     dyn = np.array(dyn[:len(best['net'])])
 
-    # DYNAMIC 2 — regime-conditioned (a-priori: trade only in non-strong-bull tape)
-    regime_nets = _net_series(best['recs'], impact=False, regime_filter=_REVERSAL_REGIMES)
-    traded = float(np.mean([1.0 if r['regime'] in _REVERSAL_REGIMES else 0.0 for r in best['recs']]))
+    # DYNAMIC 2 — regime-conditioned (a-priori favoured tape for this factor)
+    regime_nets = _net_series(best['recs'], impact=False, regime_filter=fav_regimes)
+    traded = float(np.mean([1.0 if r['regime'] in fav_regimes else 0.0 for r in best['recs']]))
 
     return {'ts': int(time.time() * 1000), 'days': days, 'n_years': round(n_years, 2),
+            'kind': kind, 'universe': 'wide_large72+midcap150' if wide else 'large72',
+            'survivorship_warning': ('WIDE universe is a CURRENT SNAPSHOT (today\'s '
+                                     'survivors back to 2016) — UPWARD-BIASED, esp. for '
+                                     'momentum, until dated reconstitution lands.') if wide else None,
             'n_symbols': int(M.shape[1]), 'horizon': horizon, 'best_horizon': best_k,
-            'per_horizon_ic_ir': {k: per_h[k]['ic_ir'] for k in _REV_HORIZONS},
+            'per_horizon_ic_ir': {k: per_h[k]['ic_ir'] for k in horizons},
             'costs': {'long_cnc_rt': round(_RT_FRAC, 5), 'short_fut_rt': _FUT_RT_FRAC,
                       'borrow_per_reb': _BORROW_FRAC, 'impact_c': _IMPACT_C},
             'base_net_sharpe_at_1M': round(_sharpe(_net_series(best['recs'], 1e6, impact=True), ppy), 3),
@@ -1291,15 +1315,18 @@ def validate_longshort_hardened(db=None, days: int = 2470, horizon: int = 20,
                                    'total_return_pct': round((np.prod(1 + regime_nets) - 1) * 100, 1),
                                    'fraction_in_market': round(traded, 2)},
             'note': 'Long cash CNC + short single-stock futures (+borrow). Impact = '
-                    '0.5·σ·√(notional/ADV). Benchmark = 0. DSR deflates for the 5-horizon search.'}
+                    '0.5·σ·√(notional/ADV). Benchmark = 0. DSR deflates for the horizon search.'}
 
 
 def _print_longshort_hardened(r: dict):
     P = print
     P('\n' + '=' * 78)
-    P(f'REVERSAL BOOK — HARDENED ({r["days"]}d / {r["n_years"]}y / {r["n_symbols"]} names, '
-      f'best horizon {r["best_horizon"]}d)')
+    label = {'mom_12_1': '12-1 MOMENTUM', 'reversal_1m': 'REVERSAL'}.get(r.get('kind', 'reversal_1m'), r.get('kind'))
+    P(f'{label} BOOK — HARDENED ({r["days"]}d / {r["n_years"]}y / {r["n_symbols"]} names, '
+      f'{r.get("universe", "large72")}, best horizon {r["best_horizon"]}d)')
     P('=' * 78)
+    if r.get('survivorship_warning'):
+        P(f'  ⚠ {r["survivorship_warning"]}')
     P(f'  costs: long {r["costs"]["long_cnc_rt"]*100:.3f}%/rt · short {r["costs"]["short_fut_rt"]*100:.3f}%'
       f'+borrow {r["costs"]["borrow_per_reb"]*100:.3f}%/reb · impact c={r["costs"]["impact_c"]}')
     P(f'  per-horizon IC-IR: ' + '  '.join(f'{k}d:{v:+.2f}' for k, v in r['per_horizon_ic_ir'].items()))
@@ -1440,6 +1467,7 @@ if __name__ == '__main__':
     ap.add_argument('--longshort', action='store_true', help='run the cross-sectional market-neutral test (A1 IC + A2 L/S)')
     ap.add_argument('--hard', action='store_true', help='with --longshort: hardened costs + impact/capacity + DSR + dynamic variants')
     ap.add_argument('--wide', action='store_true', help='with --longshort: include the Nifty Midcap 150 research universe (survivorship-flagged)')
+    ap.add_argument('--mom', action='store_true', help='with --longshort --hard: harden the 12-1 MOMENTUM book instead of reversal')
     ap.add_argument('--longshort-directional', action='store_true', help='directional L/S across our signals (incl. lens score) vs equal-weight + beta')
     ap.add_argument('--horizon', type=int, default=20, help='m6 label horizon (trading days)')
     ap.add_argument('--competence-mode', choices=['veto', 'weight'], default='veto')
@@ -1449,7 +1477,9 @@ if __name__ == '__main__':
         r = validate_longshort_directional(days=args.days, horizon=args.horizon)
         print(json.dumps(r, indent=1, default=str)) if args.json else _print_longshort_directional(r)
     elif args.longshort and args.hard:
-        r = validate_longshort_hardened(days=args.days, horizon=args.horizon)
+        r = validate_longshort_hardened(days=args.days, horizon=args.horizon,
+                                        kind='mom_12_1' if args.mom else 'reversal_1m',
+                                        wide=args.wide)
         print(json.dumps(r, indent=1, default=str)) if args.json else _print_longshort_hardened(r)
     elif args.longshort:
         r = validate_longshort(days=args.days, horizon=args.horizon, wide=args.wide)
