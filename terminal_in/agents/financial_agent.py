@@ -45,6 +45,11 @@ portfolio, and answer questions about how TERMINAL//IN works.
 Use tools for any price/indicator/fundamental claim — never fabricate numbers.
 A LIVE CONTEXT block accompanies each question with the current regime, VIX, portfolio \
 and recent system activity — use it; do not re-fetch what it already tells you.
+When the question names a firm, a FIRM CONTEXT block may follow with that firm's real \
+filings/announcements/news, each tagged [n] date · type · source · confidence \
+(filed/reported/unverified). Ground firm claims in it and cite the [n]; weight 'filed' \
+over 'reported'/'unverified'; if it is absent or empty, say what you do/don't know rather \
+than inventing firm facts.
 In this system "EV" ALWAYS means Expected Value (avg_conf x reward:risk x volume x \
 convergence — a trade-quality score, typically ~1-3), NEVER Enterprise Value. "@EV1.8" \
 means that signal's expected-value score is 1.8.
@@ -76,6 +81,36 @@ def _live_context() -> str:
     except Exception:
         pass
     return ('LIVE CONTEXT: ' + ' | '.join(lines)) if lines else ''
+
+
+def _firm_context(user_text: str, max_symbols: int = 2, budget_chars: int = 1200) -> str:
+    """Grounding from the firm-knowledge RAG: if the question names NSE symbols, pull
+    a compact, citation-tagged block of that firm's real filings/announcements/news.
+    Honest-empty when nothing is on file (the store starts empty and fills via the
+    KnowledgeIngestor) — adds nothing rather than hallucinated filler. Not as-of
+    bounded here: the live analyst answers about NOW, so it sees everything on file."""
+    try:
+        from terminal_in.knowledge import rag
+        words = {w.strip('.,?!:;()').upper() for w in user_text.split()}
+        all_sym = set(get_all_symbols())
+        syms = [w for w in words if w in all_sym][:max_symbols]
+        if not syms:
+            return ''
+        blocks = []
+        per = max(400, budget_chars // len(syms))
+        for s in syms:
+            ctx = rag.build_context(s, user_text, k=4, budget_chars=per)
+            if ctx.get('context'):
+                blocks.append(ctx['context'])
+        return '\n\n'.join(blocks)
+    except Exception:
+        log.debug('firm_context unavailable', exc_info=True)
+        return ''
+
+
+def _compose_context(user_text: str) -> str:
+    """Combine the live app-state context with firm-knowledge RAG grounding."""
+    return '\n\n'.join(b for b in (_live_context(), _firm_context(user_text)) if b)
 
 # ── Tool definitions (OpenAI-compatible schema for Ollama) ─────────────────
 
@@ -312,7 +347,7 @@ class FinancialAgent:
                 'online':     False,
             }
 
-        ctx = _live_context()
+        ctx = _compose_context(user_text)
         messages: list[dict] = [{'role': 'system', 'content': _SYSTEM_PROMPT}]
         if history:
             messages.extend(history[-10:])  # keep last 10 turns for context
@@ -389,7 +424,7 @@ class FinancialAgent:
             yield {'type': 'done', 'model': 'rule-based', 'tool_calls': []}
             return
 
-        ctx = _live_context()
+        ctx = _compose_context(user_text)
         messages: list[dict] = [{'role': 'system', 'content': _SYSTEM_PROMPT}]
         if history:
             messages.extend(history[-10:])

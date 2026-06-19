@@ -138,3 +138,19 @@ def test_events_adapter_maps_archive_rows(monkeypatch, store):
 def test_forward_accumulate_stub_returns_nothing(store):
     # the bot-hostile sources never fabricate history
     assert BseXbrlAdapter().fetch(['RELIANCE']) == []
+
+
+def test_analyst_injects_firm_context(monkeypatch, store):
+    """The AI analyst grounds firm questions in the RAG block, and stays silent
+    (no block) when nothing matches — without calling Ollama."""
+    from terminal_in.knowledge import rag
+    from terminal_in.agents import financial_agent as fa
+    store.record_documents([_doc('RELIANCE', '2024-05-01', 'Q4 results',
+                                  'consolidated revenue grew on jio and retail')])
+    monkeypatch.setattr(rag, 'default_store', lambda: store)
+    monkeypatch.setattr(fa, 'get_all_symbols', lambda: ['RELIANCE', 'TCS'])
+
+    block = fa._firm_context('what is the revenue outlook for RELIANCE?')
+    assert 'FIRM CONTEXT' in block and 'RELIANCE' in block and 'revenue' in block.lower()
+    # no firm named → no firm block
+    assert fa._firm_context('how does the regime classifier work?') == ''
