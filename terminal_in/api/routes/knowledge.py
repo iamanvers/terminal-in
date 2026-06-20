@@ -46,6 +46,58 @@ def search():
     return jsonify(build_context(symbol or '', q, as_of=as_of, k=k))
 
 
+@bp.route('/research', methods=['POST'])
+def research():
+    """PROFILE phase — map a firm's site once and do the initial ingest. Crawls the whole
+    sitemap, ranks URLs against the collection spec, persists the per-ticker profile, and
+    ingests the most relevant documents across all categories. Heavy; run periodically.
+    Body: {"symbol": "HINDUNILVR"} or {"symbols": [...], "max_docs": 16}."""
+    body = request.get_json(silent=True) or {}
+    syms = body.get('symbols') or ([body['symbol']] if body.get('symbol') else [])
+    if not syms:
+        return jsonify({'error': 'symbol or symbols required'}), 400
+    max_docs = int(body.get('max_docs', 16))
+    try:
+        from terminal_in.data_ingest.firm_research import profile_firm
+        return jsonify({'results': [profile_firm(s, max_docs=max_docs) for s in syms]})
+    except Exception as e:
+        log.error('knowledge research (profile) failed: %s', e, exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/research/refresh', methods=['POST'])
+def research_refresh():
+    """REFRESH phase — using each firm's stored profile, re-check only the volatile/periodic
+    links (news, updates, results, disclosures) and ingest just the deltas. Cheap; runs
+    automatically each session for profiled firms. Body optional: {"symbols": [...]}."""
+    body = request.get_json(silent=True) or {}
+    syms = body.get('symbols') or _symbols
+    try:
+        from terminal_in.data_ingest.firm_research import refresh_firm, load_profile
+        out = [refresh_firm(s) for s in syms if load_profile(s)]
+        return jsonify({'refreshed': out, 'count': len(out)})
+    except Exception as e:
+        log.error('knowledge research refresh failed: %s', e, exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/profile')
+def profile():
+    """The stored per-ticker site profile (URL→category map + ingest state)."""
+    sym = (request.args.get('symbol') or '').strip()
+    if not sym:
+        return jsonify({'error': 'symbol required'}), 400
+    from terminal_in.data_ingest.firm_research import load_profile
+    return jsonify(load_profile(sym) or {'symbol': sym.upper(), 'profiled': False})
+
+
+@bp.route('/spec')
+def spec():
+    """The collection instruction set (categories, priorities, signals)."""
+    from terminal_in.data_ingest.firm_research import collection_spec
+    return jsonify(collection_spec())
+
+
 @bp.route('/ingest', methods=['POST'])
 def ingest():
     """Run the firm-knowledge ingest adapters once, now. Returns the per-adapter +

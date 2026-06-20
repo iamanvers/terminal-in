@@ -34,6 +34,7 @@ requests>=2.31.0
 
 # ── Knowledge plane (firm-document RAG) ───────────────────────────────────────
 pypdf>=4.0.0              # extract text from firm IR / filing PDFs (knowledge/pdf_extract.py)
+curl_cffi>=0.6.0         # browser-TLS impersonation to fetch WAF-protected firm sites (firm_research.py)
 
 # ── Utilities ────────────────────────────────────────────────────────────────
 python-dotenv>=1.0.1

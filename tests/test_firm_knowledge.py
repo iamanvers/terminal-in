@@ -33,6 +33,26 @@ def test_record_and_bm25_retrieval_ranks_relevance(store):
     assert hits and hits[0]['title'] == 'Q4 results'      # the revenue doc ranks first
 
 
+def test_long_document_is_chunked(store):
+    # a long heterogeneous body is split into overlapping chunks (one FTS row each),
+    # so retrieval returns the relevant chunk, not the whole report
+    body = (('Revenue analysis. ' * 60) + ('Margin commentary on guidance. ' * 60)
+            + ('Debt and capex outlook. ' * 60))
+    store.record_documents([_doc('RELIANCE', '2024-05-01', 'FY24 annual report', body)],
+                           chunk_chars=400)
+    rows = store.retrieve('RELIANCE', 'capex debt outlook', k=10)
+    assert len(rows) >= 3                                   # chunked into several rows
+    assert all('[' in r['title'] and '/' in r['title'] for r in rows)   # 'title [i/n]'
+    # the chunk about capex/debt ranks at the top for that query
+    assert 'debt' in rows[0]['text'].lower() or 'capex' in rows[0]['text'].lower()
+
+
+def test_short_document_not_chunked(store):
+    store.record_documents([_doc('TCS', '2024-05-01', 'short', 'revenue grew on deal wins')])
+    rows = store.retrieve('TCS', 'revenue', k=5)
+    assert len(rows) == 1 and '[' not in rows[0]['title']   # single row, no chunk suffix
+
+
 def test_point_in_time_excludes_future_filings(store):
     store.record_documents([
         _doc('TCS', '2024-05-01', 'FY24 results', 'revenue up deal wins'),

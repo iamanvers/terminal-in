@@ -31,6 +31,8 @@ DEFAULT_DB = Path('./data/knowledge/firm_knowledge.db')
 RAW_DAYS = int(os.environ.get('KNOWLEDGE_RAW_DAYS', '400'))          # full-text retention
 HORIZON_DAYS = int(os.environ.get('KNOWLEDGE_HORIZON_DAYS', '1826'))  # 5-year memory
 SUMMARY_CHARS = 320                                                  # compressed-band digest length
+CHUNK_CHARS = int(os.environ.get('KNOWLEDGE_CHUNK_CHARS', '1500'))   # RAG chunk size for long docs
+CHUNK_OVERLAP = 200                                                  # chunk overlap (context continuity)
 
 # document types we recognise (open set — unknown types stored as 'other')
 DOC_TYPES = frozenset({'results', 'guidance', 'corp_action', 'rating_change', 'regulatory',
@@ -105,11 +107,14 @@ class FirmStore:
             c.execute(f'CREATE VIRTUAL TABLE IF NOT EXISTS firm_docs USING fts5({cols})')
 
     # ── ingest ────────────────────────────────────────────────────────────────
-    def record_documents(self, rows: list[dict]) -> dict:
+    def record_documents(self, rows: list[dict], chunk_chars: int | None = CHUNK_CHARS) -> dict:
         """Append firm documents. Each row needs symbol, filing_date, title (and ideally
         body/source/doc_type/url/confidence). FAIL-CLOSED: rows without a parseable
         filing_date or without symbol+title are DROPPED and counted. Idempotent on
-        doc_id (re-ingesting a filing replaces it). Returns honesty counts."""
+        doc_id (re-ingesting a filing replaces it). Long bodies are CHUNKED into
+        overlapping segments (one FTS row each) so heterogeneous firm documents — which
+        don't fit a key/value shape — are stored and retrieved at chunk granularity (the
+        RAG pattern); pass chunk_chars=None to disable. Returns honesty counts."""
         kept, dropped = [], 0
         now = datetime.now(UTC).date().isoformat()
         for r in rows:
@@ -123,21 +128,28 @@ class FirmStore:
             dtype = str(r.get('doc_type', 'other')).lower()
             if dtype not in DOC_TYPES:
                 dtype = 'other'
-            summary = str(r.get('summary', '') or '').strip() or _digest(title, body)
             conf = r.get('confidence', 1.0)
             try:
                 conf = max(0.0, min(1.0, float(conf)))
             except (TypeError, ValueError):
                 conf = 1.0
-            did = _doc_id(sym, str(r.get('source', 'unknown')), fd.isoformat(), title)
-            kept.append({
-                'doc_id': did, 'symbol': sym, 'doc_type': dtype,
-                'source': str(r.get('source', 'unknown')), 'url': str(r.get('url', '') or ''),
-                'filing_date': fd.isoformat(), 'period_end': (_parse_date(r.get('period_end')).isoformat()
-                                                              if _parse_date(r.get('period_end')) else ''),
-                'ingested_at': now, 'confidence': conf, 'compacted': 0,
-                'title': title, 'body': body, 'summary': summary,
-            })
+            source = str(r.get('source', 'unknown'))
+            url = str(r.get('url', '') or '')
+            pe = _parse_date(r.get('period_end'))
+            provided_summary = str(r.get('summary', '') or '').strip()
+            pieces = (_chunk(body, chunk_chars, CHUNK_OVERLAP)
+                      if (chunk_chars and body and len(body) > chunk_chars) else [body])
+            n = len(pieces)
+            for ci, piece in enumerate(pieces):
+                ctitle = title if n == 1 else f'{title} [{ci + 1}/{n}]'
+                csumm = provided_summary if (n == 1 and provided_summary) else _digest(ctitle, piece)
+                kept.append({
+                    'doc_id': _doc_id(sym, source, fd.isoformat(), ctitle), 'symbol': sym,
+                    'doc_type': dtype, 'source': source, 'url': url,
+                    'filing_date': fd.isoformat(), 'period_end': pe.isoformat() if pe else '',
+                    'ingested_at': now, 'confidence': conf, 'compacted': 0,
+                    'title': ctitle, 'body': piece, 'summary': csumm,
+                })
         if kept:
             with self._write_lock, self._conn() as c:
                 for d in kept:
@@ -221,6 +233,28 @@ class FirmStore:
         return {'rows': n, 'symbols': syms, 'compressed_rows': comp,
                 'earliest_filing': earliest, 'latest_filing': latest, 'by_source': by_src,
                 'horizon_days': HORIZON_DAYS, 'raw_days': RAW_DAYS}
+
+
+def _chunk(text: str, size: int, overlap: int) -> list[str]:
+    """Split long text into overlapping chunks on word boundaries — the RAG unit. Firm
+    documents are heterogeneous free text (not key/value), so we retrieve at chunk
+    granularity rather than returning a whole report."""
+    text = re.sub(r'\s+', ' ', text).strip()
+    if len(text) <= size:
+        return [text] if text else []
+    step = max(1, size - overlap)
+    chunks, i = [], 0
+    while i < len(text):
+        end = min(i + size, len(text))
+        if end < len(text):                      # extend to the next space to avoid mid-word cuts
+            sp = text.rfind(' ', i + step, end)
+            if sp > i:
+                end = sp
+        chunks.append(text[i:end].strip())
+        if end >= len(text):
+            break
+        i = end - overlap if end - overlap > i else end
+    return [c for c in chunks if c]
 
 
 def _digest(title: str, body: str) -> str:

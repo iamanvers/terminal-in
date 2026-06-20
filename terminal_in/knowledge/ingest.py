@@ -253,9 +253,28 @@ def run_ingest(symbols: list[str], store: FirmStore | None = None,
                                'dropped': res['dropped_unverifiable']}
         total_in += res['ingested']
         total_drop += res['dropped_unverifiable']
+    # Firm-research REFRESH phase: for firms already PROFILED (via POST /api/knowledge/
+    # research), re-check only their volatile/periodic links for deltas and ingest them.
+    # Inert until a firm is profiled, so it adds no load by default. Profiling itself is
+    # on-demand/weekly (heavy full crawl), not run here.
+    research = {}
+    if os.environ.get('KNOWLEDGE_RESEARCH_ENABLED', 'true').lower() != 'false':
+        try:
+            from terminal_in.data_ingest import firm_research as fr
+            for s in symbols:
+                if fr.load_profile(s):
+                    try:
+                        research[s] = fr.refresh_firm(s, store=store)
+                    except Exception:
+                        log.warning('knowledge: firm-research refresh failed for %s', s, exc_info=True)
+        except Exception:
+            log.debug('knowledge: firm_research unavailable', exc_info=True)
+
     comp = store.compact() if compact else {'compressed': 0, 'purged': 0}
     return {'ts': int(time.time() * 1000), 'ingested': total_in, 'dropped': total_drop,
-            'compaction': comp, 'per_adapter': per_adapter, 'coverage': store.coverage()}
+            'compaction': comp, 'per_adapter': per_adapter,
+            'research_refresh': {k: v.get('documents', 0) for k, v in research.items()},
+            'coverage': store.coverage()}
 
 
 class KnowledgeIngestor(threading.Thread):
