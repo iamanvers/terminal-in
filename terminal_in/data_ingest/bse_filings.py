@@ -143,6 +143,34 @@ def map_row(row: dict, symbol: str) -> dict | None:
     }
 
 
+def enrich_with_pdf(docs: list[dict], session=None, max_chars: int = 12000) -> list[dict]:
+    """Optional DEPTH: for filing docs that carry a PDF attachment URL, fetch the PDF and
+    append its extracted text to the body (so the RAG sees the actual results/MD&A, not
+    just the subject line). Best-effort + fail-soft — a blocked/oversized/garbled PDF
+    leaves the doc unchanged. Requires pypdf (else no-op). Mutates docs in place."""
+    from terminal_in.knowledge import pdf_extract
+    if not pdf_extract.available():
+        return docs
+    try:
+        import requests
+    except ImportError:
+        return docs
+    sess = session or requests
+    for d in docs:
+        url = d.get('url') or ''
+        if not url.lower().endswith('.pdf'):
+            continue
+        try:
+            r = sess.get(url, headers=_HEADERS, timeout=20)
+            r.raise_for_status()
+            text = pdf_extract.extract_text(r.content, max_chars=max_chars)
+            if text:
+                d['body'] = (d.get('body', '') + '\n\n' + text).strip()[:max_chars]
+        except Exception:
+            log.debug('bse_filings: attachment fetch/parse failed for %s', url)
+    return docs
+
+
 def fetch_announcements(symbol: str, days: int = 30, session=None) -> list[dict]:
     """Fetch recent BSE corporate filings for `symbol` as point-in-time documents.
     Returns [] (graceful) for an unmapped symbol or any fetch/parse failure — the

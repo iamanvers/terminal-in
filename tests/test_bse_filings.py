@@ -73,3 +73,42 @@ def test_fetch_unmapped_symbol_never_queries():
     sess = _FakeSession({'Table': []})
     assert bse.fetch_announcements('NOSUCHSYMBOL', session=sess) == []
     assert sess.calls == []                              # no scrip code → no request made
+
+
+def _make_pdf(text: str) -> bytes:
+    import io
+    from reportlab.pdfgen import canvas
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    c.drawString(72, 740, text)
+    c.save()
+    return buf.getvalue()
+
+
+class _PdfResp:
+    def __init__(self, content):
+        self.content = content
+    def raise_for_status(self):
+        pass
+
+
+class _PdfSession:
+    def __init__(self, content):
+        self._c = content
+    def get(self, url, headers=None, timeout=None):
+        return _PdfResp(self._c)
+
+
+def test_enrich_with_pdf_appends_attachment_text():
+    docs = [{'symbol': 'RELIANCE', 'filing_date': '2024-05-01', 'doc_type': 'results',
+             'source': 'bse_filings', 'url': 'https://x/AttachLive/r.pdf',
+             'title': 'Q4 Results', 'body': 'subject line', 'confidence': 1.0}]
+    sess = _PdfSession(_make_pdf('detailed revenue and margin commentary'))
+    bse.enrich_with_pdf(docs, session=sess)
+    assert 'subject line' in docs[0]['body'] and 'revenue and margin' in docs[0]['body'].lower()
+
+
+def test_enrich_skips_non_pdf_urls():
+    docs = [{'url': 'https://x/page.html', 'body': 'unchanged'}]
+    bse.enrich_with_pdf(docs, session=_PdfSession(b''))
+    assert docs[0]['body'] == 'unchanged'

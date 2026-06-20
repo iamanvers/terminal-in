@@ -135,11 +135,53 @@ def test_events_adapter_maps_archive_rows(monkeypatch, store):
     assert store.retrieve('RELIANCE', 'dividend', k=5)
 
 
-def test_adapters_degrade_gracefully_without_data(store):
+def test_adapters_degrade_gracefully_without_data(store, tmp_path, monkeypatch):
     # unmapped symbol → BSE adapter never queries (no scrip code), returns nothing
     assert BseFilingsAdapter().fetch(['NOSUCHSYMBOL']) == []
-    # IR-PDF adapter is config-driven; with no ir_sources.json it no-ops
+    # IR-PDF adapter is config/folder-driven; with neither present it no-ops
+    monkeypatch.setattr(IrPdfAdapter, 'LOCAL_DIR', str(tmp_path / 'empty'))
+    monkeypatch.setattr(IrPdfAdapter, 'CONFIG', str(tmp_path / 'none.json'))
     assert IrPdfAdapter().fetch(['RELIANCE']) == []
+
+
+def _make_pdf(text: str) -> bytes:
+    import io
+    from reportlab.pdfgen import canvas
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    for i, line in enumerate(text.split('\n')):
+        c.drawString(72, 740 - i * 16, line)
+    c.save()
+    return buf.getvalue()
+
+
+def test_pdf_extract_roundtrip():
+    from terminal_in.knowledge import pdf_extract
+    assert pdf_extract.available()
+    txt = pdf_extract.extract_text(_make_pdf('Quarterly revenue grew on retail and telecom'))
+    assert 'revenue grew' in txt.lower()
+
+
+def test_ir_pdf_local_folder_ingest(tmp_path, monkeypatch, store):
+    """Turnkey firm-specific ingest: a real PDF dropped in the local folder is
+    extracted, dated from its filename (fail-closed), classified, and stored/retrievable."""
+    docs = tmp_path / 'ir_docs'
+    docs.mkdir()
+    (docs / 'RELIANCE__2024-05-06__Q4-results.pdf').write_bytes(
+        _make_pdf('Consolidated net profit rose; Jio and retail drove revenue growth'))
+    (docs / 'UNDATABLE_noformat.pdf').write_bytes(_make_pdf('no date in name'))  # fail-closed skip
+    monkeypatch.setattr(IrPdfAdapter, 'LOCAL_DIR', str(docs))
+    monkeypatch.setattr(IrPdfAdapter, 'CONFIG', str(tmp_path / 'none.json'))
+
+    rows = IrPdfAdapter().fetch(['RELIANCE'])
+    assert len(rows) == 1
+    d = rows[0]
+    assert d['symbol'] == 'RELIANCE' and d['filing_date'] == '2024-05-06'
+    assert d['doc_type'] == 'results' and 'profit' in d['body'].lower()
+    # end-to-end: store + RAG retrieval
+    res = run_ingest(['RELIANCE'], store=store, adapters=[IrPdfAdapter()])
+    assert res['ingested'] == 1
+    assert store.retrieve('RELIANCE', 'jio retail revenue', k=3)
 
 
 def test_analyst_injects_firm_context(monkeypatch, store):

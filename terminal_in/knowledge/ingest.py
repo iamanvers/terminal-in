@@ -108,8 +108,12 @@ class BseFilingsAdapter:
 
     name = 'bse_filings'
 
-    def __init__(self, days: int = 30, max_symbols: int | None = None, delay_s: float = 0.4):
+    def __init__(self, days: int = 30, max_symbols: int | None = None, delay_s: float = 0.4,
+                 fetch_pdf: bool | None = None):
         self.days, self.max_symbols, self.delay_s = days, max_symbols, delay_s
+        # opt-in attachment depth (slow + hits the hostile host harder) — default off
+        self.fetch_pdf = (os.environ.get('KNOWLEDGE_FETCH_PDF', 'false').lower() == 'true'
+                          if fetch_pdf is None else fetch_pdf)
 
     def fetch(self, symbols: list[str]) -> list[dict]:
         from terminal_in.data_ingest import bse_filings as bse
@@ -123,47 +127,87 @@ class BseFilingsAdapter:
                 break
             if self.delay_s:
                 time.sleep(self.delay_s)       # be polite to BSE
+        if self.fetch_pdf and out:
+            bse.enrich_with_pdf(out)           # append attachment text (DEPTH)
         return out
 
 
 class IrPdfAdapter:
     """REAL source (depth): firm investor-relations PDFs (MD&A, segments, guidance).
-    Config-driven and forward-accumulating — reads `data/knowledge/ir_sources.json`
-    ({symbol: [pdf_url, ...]}); fetches each, extracts text via pypdf IF INSTALLED (else
-    skips, logged — optional dep), and dates fail-closed from the HTTP Last-Modified
-    header (a PDF we can't date is dropped, never guessed). With no config it no-ops, so
-    it ships inert and lights up once IR sources are supplied."""
+    Two real, offline-capable inputs (no bot-hostile API):
+      (1) LOCAL FOLDER `data/knowledge/ir_docs/` — drop firm PDFs named
+          `SYMBOL__YYYY-MM-DD__title.pdf` (or place them under `ir_docs/SYMBOL/...`).
+          The turnkey path: download annual reports / results / concall decks and
+          ingest them directly. This is the recommended way to add firm depth today.
+      (2) `data/knowledge/ir_sources.json` `{symbol: [pdf_url, ...]}` — fetched when the
+          URL is reachable; dated from the HTTP Last-Modified header.
+    Text via pypdf (optional dep — `knowledge/pdf_extract.py`). Dates are FAIL-CLOSED:
+    a PDF we cannot date (no filename date, no /CreationDate, no Last-Modified) is
+    dropped, never guessed. doc_type is inferred from the title. With neither input it
+    no-ops, so it ships inert and lights up the moment firm PDFs are supplied."""
 
     name = 'ir_pdf'
+    LOCAL_DIR = 'data/knowledge/ir_docs'
     CONFIG = 'data/knowledge/ir_sources.json'
 
-    def _sources(self) -> dict:
+    def fetch(self, symbols: list[str]) -> list[dict]:
+        from terminal_in.knowledge import pdf_extract
+        wanted = {s.upper() for s in symbols}
+        out = self._local(wanted, pdf_extract)
+        out += self._urls(wanted, pdf_extract)
+        if not out:
+            log.info('ir_pdf: no firm PDFs (drop files in %s/ or configure %s)',
+                     self.LOCAL_DIR, self.CONFIG)
+        return out
+
+    def _doc(self, sym: str, fd: str, title: str, text: str, url: str = '') -> dict:
+        from terminal_in.data_ingest.bse_filings import doc_type_for
+        return {'symbol': sym, 'filing_date': fd, 'doc_type': doc_type_for('', title) or 'business_profile',
+                'source': self.name, 'url': url, 'title': title[:240], 'body': text, 'confidence': 0.9}
+
+    def _local(self, wanted: set, pdf_extract) -> list[dict]:
         from pathlib import Path
+        from terminal_in.data_ingest.bse_filings import _parse_dt
+        base = Path(self.LOCAL_DIR)
+        if not base.exists():
+            return []
+        out = []
+        for p in sorted(base.rglob('*.pdf')):
+            parts = p.stem.split('__')
+            sym = (parts[0] or '').upper()
+            if sym not in wanted and p.parent.name.upper() in wanted:
+                sym = p.parent.name.upper()           # ir_docs/SYMBOL/file.pdf layout
+            if sym not in wanted:
+                continue
+            title = parts[2].replace('-', ' ') if len(parts) >= 3 else p.stem.replace('_', ' ')
+            data = p.read_bytes()
+            fd = _parse_dt(parts[1]).isoformat() if len(parts) >= 2 and _parse_dt(parts[1]) else None
+            if fd is None:
+                fd = pdf_extract.pdf_creation_date(data)
+            if not fd:                                # fail-closed: undatable → skip
+                log.info('ir_pdf: skip undatable %s (name SYMBOL__YYYY-MM-DD__title.pdf)', p.name)
+                continue
+            text = pdf_extract.extract_text(data)
+            if text:
+                out.append(self._doc(sym, fd, title, text, url=p.as_uri()))
+        return out
+
+    def _urls(self, wanted: set, pdf_extract) -> list[dict]:
+        from pathlib import Path
+        import email.utils
         import json as _json
-        p = Path(self.CONFIG)
-        if not p.exists():
-            return {}
+        cfg = Path(self.CONFIG)
+        if not cfg.exists():
+            return []
         try:
-            return {str(k).upper(): v for k, v in _json.loads(p.read_text()).items()}
+            sources = {str(k).upper(): v for k, v in _json.loads(cfg.read_text()).items()}
         except Exception:
             log.warning('ir_pdf: failed to read %s', self.CONFIG)
-            return {}
-
-    def fetch(self, symbols: list[str]) -> list[dict]:
-        sources = self._sources()
-        if not sources:
-            log.info('ir_pdf: no %s — forward-accumulate, supply IR PDF URLs to enable',
-                     self.CONFIG)
             return []
         try:
             import requests
-            from pypdf import PdfReader   # optional dep
         except ImportError:
-            log.info('ir_pdf: pypdf not installed — skipping PDF depth (pip install pypdf)')
             return []
-        import email.utils
-        import io
-        wanted = {s.upper() for s in symbols}
         out = []
         for sym, urls in sources.items():
             if sym not in wanted:
@@ -173,17 +217,13 @@ class IrPdfAdapter:
                     r = requests.get(url, timeout=20)
                     r.raise_for_status()
                     lm = r.headers.get('Last-Modified')
-                    fd = email.utils.parsedate_to_datetime(lm).date().isoformat() if lm else None
-                    if not fd:                    # fail-closed: undatable PDF dropped
+                    fd = email.utils.parsedate_to_datetime(lm).date().isoformat() if lm else \
+                        pdf_extract.pdf_creation_date(r.content)
+                    if not fd:                        # fail-closed: undatable → skip
                         continue
-                    reader = PdfReader(io.BytesIO(r.content))
-                    text = ' '.join((pg.extract_text() or '') for pg in reader.pages)[:8000]
-                    if not text.strip():
-                        continue
-                    out.append({'symbol': sym, 'filing_date': fd, 'doc_type': 'business_profile',
-                                'source': self.name, 'url': url,
-                                'title': f'{sym} IR document ({fd})', 'body': text,
-                                'confidence': 0.9})
+                    text = pdf_extract.extract_text(r.content)
+                    if text:
+                        out.append(self._doc(sym, fd, f'{sym} IR document ({fd})', text, url=url))
                 except Exception:
                     log.debug('ir_pdf: fetch/parse failed for %s %s', sym, url, exc_info=True)
         return out

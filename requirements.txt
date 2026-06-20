@@ -32,6 +32,9 @@ lightgbm>=4.6.0            # M6 Phase D₀ forward-EV head (universal wheel, 3.1
 # ── News ─────────────────────────────────────────────────────────────────────
 requests>=2.31.0
 
+# ── Knowledge plane (firm-document RAG) ───────────────────────────────────────
+pypdf>=4.0.0              # extract text from firm IR / filing PDFs (knowledge/pdf_extract.py)
+
 # ── Utilities ────────────────────────────────────────────────────────────────
 python-dotenv>=1.0.1
 
