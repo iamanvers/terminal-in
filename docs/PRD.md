@@ -1,8 +1,8 @@
 # TERMINAL//IN — Product Requirements Document
 
-**Version:** 1.2 · **Date:** 2026-06-18 · **Owner:** Anmol Verma · **Status:** Living document
+**Version:** 1.3 · **Date:** 2026-06-20 · **Status:** Living document
 
-> **Positioning (honest framing).** This is a **research + execution terminal, not an alpha engine** — and it says so on the strength of its own evidence. A built-in falsification harness (`backtest/validation.py`) has tested every claimed edge out-of-sample, net of real Indian costs, walk-forward-fenced: **eight independent negatives, nothing beats buy-and-hold NIFTY** (see §6b). The delivered value is the cockpit, the agentic plumbing, the cost/data honesty, and a validation discipline that refuses to tune signals until they pass. The forward bet (§4 fundamentals plane) is **data, not model**: orthogonal point-in-time information we don't yet have.
+> **Positioning.** TERMINAL//IN is a research and execution terminal, not an alpha engine, and the distinction is grounded in its own evidence. A built-in falsification harness (`backtest/validation.py`) tests every claimed edge out-of-sample, net of real Indian transaction costs and walk-forward-fenced; the record stands at nine independent negatives, with no long-only configuration beating buy-and-hold NIFTY (see §6b). The delivered value lies in the cockpit, the agentic decision plumbing, the cost and data discipline, and a validation gate that declines to tune signals until they pass. The forward bet (§4, fundamentals plane) is one of data rather than model: orthogonal, point-in-time information that no free source currently provides for this universe.
 
 ---
 
@@ -384,25 +384,33 @@ Gate for adoption (per model, on the eval set from §P2 training): ≥10% better
 - **Commit convention:** `Change_N: summary` on `main`.
 - **Docs:** README (operator-facing), CLAUDE.md (agent/dev-facing), this PRD (product). Update all three at every phase boundary; session context persists to Claude memory.
 
-## 6b. Alpha validation — results to date (2026-06-18, honest record)
+## 6b. Alpha Validation — Results to Date (2026-06-20)
 
-A falsification-first harness (`terminal_in/backtest/validation.py`) is now the promotion
-gate for any edge claim: benchmarks (buy-hold NIFTY / equal-weight / 1,000× random-symbol
-null), Deflated Sharpe + White Reality Check, per-strategy significance, planner isolation,
-±20% robustness, regime/time concentration, survivorship — all net of the shared cost model
-(`execution/costs.py`) and walk-forward-fenced. Full detail: **[ALPHA_FINDINGS.md](ALPHA_FINDINGS.md)**.
+A falsification-first harness (`terminal_in/backtest/validation.py`) serves as the promotion
+gate for any edge claim: benchmarks (buy-hold NIFTY, equal-weight, a 1,000× random-symbol
+null), Deflated Sharpe and White Reality Check, per-strategy significance, planner isolation,
+±20% robustness, regime and time concentration, and survivorship — all net of the shared cost
+model (`execution/costs.py`) and walk-forward-fenced. Full detail: **[ALPHA_FINDINGS.md](ALPHA_FINDINGS.md)**.
 
-**Verdict: no configuration tested beats buy-and-hold NIFTY net of costs** — **eight
-independent fenced negatives**: (1) price-only technicals; (2) LLM/planner marginal value;
-(3) the Module-6 D₀ forward-EV head; (4) directional competence weighting; (5) the
-event/PEAD + VIX-reaction planes; (6) cross-sectional 1-month reversal (looked like a pulse,
-**dies on hardening — Deflated Sharpe 0.72 < 0.95**, and decomposes to beta not alpha); (7)
-directional long/short across our own signals (**the lens score has NEGATIVE cross-sectional
-IC −1.35** — lens-favoured names underperform equal-weight, which is *why* long-only loses to
-passive); (8) the F&O variance-risk-premium harvester (monthly NIFTY iron condor, theoretical
-Sharpe 0.13 / CAGR +0.74%, and theoretical pricing *flatters* short-premium). Net ~3% CAGR vs
-index ~11.6% vs equal-weight ~21%. The bottleneck is **signal/data, not model capacity** — a
-better LLM does not help (planner adds ~0; ~54% literature direction-accuracy ceiling).
+**Verdict: no long-only configuration tested beats buy-and-hold NIFTY net of costs** —
+**nine independent fenced negatives**: (1) price-only technicals; (2) LLM/planner marginal
+value; (3) the Module-6 D₀ forward-EV head; (4) directional-competence weighting; (5) the
+event/PEAD and VIX-reaction planes; (6) cross-sectional 1-month reversal (an apparent pulse
+that dies on hardening — Deflated Sharpe 0.72 < 0.95 — and decomposes to beta, not alpha);
+(7) directional long/short across the system's own signals (the lens score carries a negative
+cross-sectional IC of −1.35, i.e. lens-favoured names underperform equal-weight, which is why
+long-only trails passive); (8) the F&O variance-risk-premium harvester (monthly NIFTY iron
+condor, theoretical Sharpe 0.13 / CAGR +0.74%, where theoretical pricing flatters short
+premium); and (9) hardened cross-sectional reversal and momentum books (best Deflated Sharpe
+0.867 < 0.95). Net return is ~3% CAGR versus ~11.6% for the index and ~21% for equal-weighting
+the same names. The bottleneck is signal and data, not model capacity — a larger LLM does not
+help (the planner adds approximately zero; the literature direction-accuracy ceiling is ~54%).
+
+**One genuine open lead.** On the wider large-plus-mid-cap universe, a fundable long-only
+12-1 momentum tilt beats an equal-weight benchmark by ~0.63 risk-adjusted Sharpe at the same
+beta — unlike reversal, whose excess is pure beta. It is survivorship-suspect (the wider
+universe is a current snapshot) and not yet multiple-testing-deflated, so it remains a lead
+pending point-in-time index membership including delisted names, not an established edge.
 
 **Implications for this roadmap:**
 - Module 6 Phases C + D₀ are BUILT and FAILED their gate (not promoted; `terminal_in/m6/`).

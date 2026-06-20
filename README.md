@@ -1,13 +1,22 @@
-<img src="terminal_ui/app/icon.svg" alt="TERMINAL//IN" width="56" align="left" />
+<div align="center">
 
-# TERMINAL//IN
+<img src="docs/banner.svg" alt="TERMINAL//IN — agentic algorithmic trading terminal for Indian markets" width="760" />
 
-![tests](https://img.shields.io/badge/tests-276_passing-brightgreen)
+<br/>
+
+![tests](https://img.shields.io/badge/tests-301_passing-brightgreen)
 ![python](https://img.shields.io/badge/python-3.14-blue)
+![frontend](https://img.shields.io/badge/frontend-Next.js_14-black)
 ![mode](https://img.shields.io/badge/mode-paper_%7C_live-0094FB)
+![data](https://img.shields.io/badge/data-real--only-0094FB)
 ![license](https://img.shields.io/badge/license-personal_use-lightgrey)
 
-**An agentic algorithmic trading terminal for Indian markets (NSE).** Runs entirely on a single machine — Python, SQLite, and a statically served Next.js interface — with a local language model embedded in the trade-decision loop. No cloud dependencies.
+**An agentic algorithmic trading terminal for Indian markets (NSE)** — a single-machine stack
+(Python · SQLite · statically served Next.js) with a local language model embedded in the
+trade-decision loop, and a falsification-first backtest harness that refuses to ship an edge
+it cannot prove. No cloud dependencies.
+
+</div>
 
 > Paper-trading first; live execution via Zerodha Kite Connect when enabled. The system operates exclusively on real market data and observes real NSE market hours, products (MIS/CNC), and settlement mechanics — including in simulation.
 
@@ -15,7 +24,7 @@
 
 ## Positioning
 
-This is a **research and execution terminal**, not an alpha engine — and it says so on the strength of its own evidence. A built-in falsification harness (`backtest/validation.py`) tests every claimed edge out-of-sample, net of real Indian transaction costs, with walk-forward fences and multiple-testing corrections. The honest result, recorded in [`docs/ALPHA_FINDINGS.md`](docs/ALPHA_FINDINGS.md): **no long-only configuration in this 67-name large-cap universe beats buy-and-hold NIFTY net of costs** — seven independent, walk-forward-fenced negatives, including a learned forward-EV head, an LLM planner, and an event/PEAD plane.
+This is a **research and execution terminal**, not an alpha engine — and it says so on the strength of its own evidence. A built-in falsification harness (`backtest/validation.py`) tests every claimed edge out-of-sample, net of real Indian transaction costs, with walk-forward fences and multiple-testing corrections. The honest result, recorded in [`docs/ALPHA_FINDINGS.md`](docs/ALPHA_FINDINGS.md): **no long-only configuration in the large-cap universe beats buy-and-hold NIFTY net of costs** — nine independent, walk-forward-fenced negatives, including a learned forward-EV head, an LLM planner, an event/PEAD plane, and an F&O variance-premium harvester. One genuine open lead survives: a fundable long-only momentum tilt on the wider mid-cap universe that beats equal-weight on a risk-adjusted basis — pending a point-in-time survivorship correction before it can be trusted.
 
 What this terminal actually delivers is **engineering you can trust**: a single-process, fully-local stack (no cloud, no Redis, no Docker); real-data-only ingestion with explicit degraded-mode surfacing; a 17-check pre-trade risk gate; product-aware paper settlement; a shared, audited Indian transaction-cost model; and an agentic decision loop with a local LLM judge that can veto or shrink — but never bypass — the risk gate. The value is the cockpit, the plumbing, the cost honesty, and a validation discipline that refuses to tune signals until they pass.
 
@@ -103,7 +112,7 @@ A single multi-threaded Python process. Every component communicates through the
                        Ollama down → STRICTER deterministic bar, flagged amber, never silent
                                         │  approved signals
                                         ▼
-                       M2 RISK GATE — 13 deterministic checks (planner can veto, never bypass)
+                       M2 RISK GATE — 17 deterministic checks (planner can veto, never bypass)
                                         │
                                         ▼
                        broker (paper fill sim / Kite REST) → settlement → P&L
@@ -127,7 +136,8 @@ Three feedback loops at three speeds — trade-by-trade control (supervisor), ba
 - **Regime classifier** — 6-state HMM (heuristic fallback until trained; degraded mode reported, never hidden)
 - **DSA** — monthly capital allocation across strategies: `0.40×regime_fit + 0.30×Bayesian_WR + 0.30×Sharpe`
 - **Risk** — 17-check pre-trade gate (+ a non-blocking VIX size-reduce), sector concentration via full-universe sector map (with a small-book floor — see below), drawdown/daily-loss caps, kill switch, margin check that *rejects* unpriceable orders
-- **Data** — real NSE OHLCV via yfinance (~10y daily back to 2016 + 60d 5m, gap-aware forward + backward backfill, 24h refresh), live quotes, FinBERT news sentiment
+- **Data** — real NSE OHLCV via yfinance (~10y daily back to 2016 + 60d 5m, gap-aware forward + backward backfill, 24h refresh), live quotes, and FinBERT news sentiment corrected by an India-context macro layer (a weaker rupee or a fuel-price drop carry the correct broad-market sign, where generic sentiment reads them backwards)
+- **Firm knowledge** — a vector-less, point-in-time RAG (SQLite FTS5/BM25, no embeddings) over real firm filings, announcements, and news on a rolling five-year horizon; grounds the AI analyst with citation-tagged context and is the substrate for orthogonal, fundamentals-driven signals
 - **Health** — `/api/health` reports every degraded subsystem; the UI badges them. No silent fallbacks anywhere in the signal path.
 - **Design system** — layered cool-dark surfaces under an embossed dot-matrix mesh (cursor acts as a soft lamp; the grid never moves), frosted-glass chrome, electric-blue accent ramp (gold strictly = warning), Geist Mono for data / Georgia for display. Single palette source: `terminal_ui/lib/theme.ts` + `styles/globals.css`.
 
@@ -140,21 +150,25 @@ benchmarks (buy-hold NIFTY, equal-weight, a 1,000× random-symbol null) with
 multiple-testing correction (Deflated Sharpe / White Reality Check), walk-forward fencing,
 and robustness/concentration/survivorship checks.
 
-Verdict across **five directional, walk-forward-fenced experiments** — price-only
+Verdict across **nine independent, walk-forward-fenced experiments** — price-only
 technicals, the LLM planner, a learned gradient-boosted forward-EV head (Module 6 / D₀),
-directional-competence weighting, and a point-in-time event/PEAD plane: **none beats
-buy-and-hold NIFTY net of costs.** The full stack returns ~3% CAGR net vs ~11.6% for the
-index and ~21% for equal-weighting the same names. The bottleneck is **signal/data, not
-the model** (a bigger LLM does not help — the planner adds nothing beyond noise).
+directional-competence weighting, a point-in-time event/PEAD plane, a VIX-conditioned
+reaction matrix, an F&O variance-premium harvester, and hardened cross-sectional
+reversal/momentum books: **none beats buy-and-hold NIFTY net of costs.** The full stack
+returns ~3% CAGR net vs ~11.6% for the index and ~21% for equal-weighting the same names.
+The bottleneck is **signal/data, not the model** (a bigger LLM does not help — the planner
+adds nothing beyond noise).
 
-The **one non-null** (a lead, not an edge): reframing to **cross-sectional market-neutral**
-— rank names against each other rather than chase the index — a **1-month reversal**
-long/short book (short leg via single-stock futures, the only way to hold a short in Indian
-cash markets) shows a borderline pulse: IC-IR ≈ 2, market-neutral net Sharpe ~0.4 over 10y
-— but with a −31% drawdown and 80% turnover, so it is cost-sensitive and not deployable as
-measured. This is the structure the published work actually exploits (cross-sectional +
-market-neutral + orthogonal data), and it's where development now points. Full record:
-**[docs/ALPHA_FINDINGS.md](docs/ALPHA_FINDINGS.md)**.
+The **one genuine open lead** (not yet an edge): reframing to **cross-sectional**
+selection — rank names against each other rather than chase the index. On the wider
+large-plus-mid-cap universe, a **fundable long-only 12-1 momentum tilt** beats an
+equal-weight benchmark by ~0.63 risk-adjusted Sharpe *at the same beta* — unlike reversal,
+whose excess is pure beta/size. It is the strongest fundable result the harness has
+produced, but it is gated by two threats: the wider universe is a current-snapshot
+(survivorship-biased, and momentum is the factor most inflated by that), and the long-only
+tilt has not yet been multiple-testing-deflated. Confirming or killing it requires
+point-in-time index membership including delisted names — a data-acquisition task, now the
+top research priority. Full record: **[docs/ALPHA_FINDINGS.md](docs/ALPHA_FINDINGS.md)**.
 
 What this terminal *is*, then: a **risk-managed execution + research cockpit with an honest
 eval gate** — real-data-only, cost-accurate, walk-forward-validated, no silent fallbacks.
@@ -200,7 +214,7 @@ cd terminal_ui ; npm run dev                          # UI :3000
 #   first launch runs an onboarding wizard (capital / risk tier / mode / keys)
 
 # Tests
-.venv\Scripts\pytest tests\ -v                        # 276 tests
+.venv\Scripts\pytest tests\ -v                        # 301 tests
 ```
 
 **Platforms:** macOS / Linux run the **browser-served** single process (`./start.sh` → `localhost:5000`) — Flask serves the static UI cross-platform, no Node needed at runtime. The **packaged Windows `.exe` is a self-serving desktop app**: backend on a private loopback port, UI in a native `TERMINAL//IN` window (WebView2), no browser, no visible URL. Hardware maximization (`hw.apply()` — all logical cores) runs everywhere.
@@ -259,11 +273,12 @@ terminal_in/            Python backend (threads + EventBus)
   api/                  Flask + SocketIO (threading mode), route blueprints
   (top-level)           main, config, app_settings, market_hours, hw, errors, bus, db
 terminal_ui/            Next.js 14 — MARKET / EQUITIES / F&O / AGENTS / TRAIN / BACKTEST
-tests/                  276 tests (gate, broker, persistence, filters, planner, supervisor,
-                        backtest, validation, m6, events, costs, F&O greeks, palette, onboarding)
+tests/                  301 tests (gate, broker, persistence, filters, planner, supervisor,
+                        backtest, validation, m6, events, costs, F&O greeks, news macro,
+                        firm-knowledge RAG, palette, onboarding)
 docs/PRD.md             Product requirements + multi-asset and low-latency roadmaps
 ```
 
 ---
 
-*Single user, single laptop, ₹10L paper capital, NSE market hours. Built with Claude Code.*
+*Single-machine, local-first, real-data-only. NSE market hours. Built with Claude Code.*

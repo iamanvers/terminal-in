@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 220" width="900" height="220" font-family="ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace">
+  <!-- TERMINAL//IN banner — mark + wordmark + tagline, design-system palette
+       (cool-dark surface, electric-blue candle ramp, double-slash brand glyph). -->
+  <rect width="900" height="220" rx="20" fill="#0A0B0D"/>
+  <rect x="1.5" y="1.5" width="897" height="217" rx="18.5" fill="none" stroke="#23272E" stroke-width="3"/>
+
+  <!-- brand mark (scaled from app/icon.svg) -->
+  <g transform="translate(56,52) scale(1.8)">
+    <rect x="6" y="30" width="7" height="16" rx="1.5" fill="#004AF8"/>
+    <rect x="9" y="25" width="1.6" height="21" fill="#004AF8"/>
+    <rect x="20" y="20" width="7" height="20" rx="1.5" fill="#0094FB"/>
+    <rect x="23" y="14" width="1.6" height="26" fill="#0094FB"/>
+    <rect x="34" y="12" width="7" height="16" rx="1.5" fill="#00B9FC"/>
+    <rect x="37" y="7"  width="1.6" height="28" fill="#00B9FC"/>
+    <path d="M30 56 L38 40" stroke="#ECEEF1" stroke-width="3.4" stroke-linecap="round"/>
+    <path d="M39 56 L47 40" stroke="#ECEEF1" stroke-width="3.4" stroke-linecap="round"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="210" y="104" font-size="58" font-weight="700" letter-spacing="1">
+    <tspan fill="#ECEEF1">TERMINAL</tspan><tspan fill="#00B9FC">//</tspan><tspan fill="#ECEEF1">IN</tspan>
+  </text>
+  <rect x="212" y="124" width="132" height="4" rx="2" fill="#0094FB"/>
+
+  <!-- tagline + meta -->
+  <text x="212" y="158" font-size="20" fill="#9aa0a8" letter-spacing="0.4">Agentic algorithmic trading terminal for Indian markets</text>
+  <text x="212" y="186" font-size="14" fill="#5b616b" letter-spacing="1.5">NSE · LOCAL-FIRST · PAPER + LIVE · REAL-DATA-ONLY · LOCAL LLM IN THE LOOP</text>
+</svg>

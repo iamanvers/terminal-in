@@ -1,17 +1,18 @@
-# Module 6 — World-Model Decisioning Core (design)
+# Module 6 — World-Model Decisioning Core (Design)
 
-> Status: **DESIGN doc. Phases C + D₀ are now BUILT and EVAL-GATED — and FAILED
-> the gate (clean negatives, not promoted).** See
-> [ALPHA_FINDINGS.md](ALPHA_FINDINGS.md) for the full out-of-sample record. In
-> short: the gradient-boosted forward EV head (D₀), the directional-competence
-> layer (C), the event/PEAD plane, and the VIX-conditioned reaction matrix were
-> all built, walk-forward-fenced, and **none beat the heuristic or buy-and-hold
-> net of costs.** The code lives in `terminal_in/m6/` and is exercised by
-> `validation.py --m6 / --events`; it is NOT wired into the live judge (promotion
-> is earned on OOS, and none earned it). The remaining phases (A/B/D/E — JEPA +
-> world model) are unbuilt; given five negatives the honest read is that the
-> bottleneck is signal/data, not model capacity — build those only against
-> genuinely orthogonal point-in-time data, not more price-derived features.
+> **Status: design document. Phases C and D₀ are built, eval-gated, and failed the
+> gate** (clean negatives; not promoted). See
+> [ALPHA_FINDINGS.md](ALPHA_FINDINGS.md) for the full out-of-sample record. In summary:
+> the gradient-boosted forward-EV head (D₀), the directional-competence layer (C), the
+> event/PEAD plane, and the VIX-conditioned reaction matrix were all built,
+> walk-forward-fenced, and none beat the heuristic or buy-and-hold net of costs. The
+> code lives in `terminal_in/m6/` and is exercised by `validation.py --m6 / --events`; it
+> is not wired into the live judge, since promotion is earned on out-of-sample
+> performance and none qualified. The remaining phases (A/B/D/E — JEPA plus world model)
+> are unbuilt. Across the negatives recorded to date, the evidence indicates the
+> bottleneck is signal and data rather than model capacity; those phases should be
+> pursued only against genuinely orthogonal, point-in-time data, not further
+> price-derived features.
 >
 > This document plans a forward-looking replacement for the heart of the decision
 > pipeline. It is staged so each phase ships and is eval-gated independently;

@@ -247,7 +247,7 @@ Python 3.14 on Windows 11. Interpreter: `.venv/Scripts/python.exe`.
 **Complete:**
 - Modules: MARKET, EQUITIES (cash cockpit), F&O (view+signals + chain + lot-based paper execution), AGENTS (full agentic layer: planner/supervisor/memory/filters), TRAIN (recursive training pipeline), BACKTEST (walk-forward eval over 10y real OHLCV)
 - F&O execution Stages 1–5 shipped: contract model + Black-Scholes theoretical chain (`data_ingest/fno_instruments.py`, `execution/options_pricing.py`, `/api/fno/*`), OPTION CHAIN UI + order ticket + positions, lot-based paper execution (`execution/fno_paper_broker.py` — premium P&L, expiry square-off, shared account), scenario-based **SPAN-approx margin** (`risk/span_margin.py`), and S1/S8 index→ATM-option routing (`execution/fno_signal_router.py`), plus portfolio greek caps + event-day limits (`_risk_check`). Remaining: live-mode Kite chain ingestion.
-- 72-symbol universe with full sector coverage; real-data-only ingest; degraded-mode surfacing; 276 tests passing
+- 72-symbol universe with full sector coverage; real-data-only ingest; degraded-mode surfacing; 301 tests passing
 - Low-latency Tier 1: vectorized indicators (72-symbol pass ≈ 67 ms), LOW_LATENCY priority flag, PYTHON_JIT opt-in (see PRD §5)
 
 **Remaining (see docs/PRD.md for full detail):**

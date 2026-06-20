@@ -1,11 +1,11 @@
-# Alpha findings — does this system capture alpha? (honest record)
+# Alpha Findings — Does the System Capture Alpha?
 
-> Status as of 2026-06-19. This document records what the validation harness
-> (`terminal_in/backtest/validation.py`) has actually proven, out-of-sample,
-> net of real Indian transaction costs. It is deliberately blunt: a clean
-> negative is a result, and chasing the numbers until they pass is the
-> overfitting trap (WORLD_MODEL.md §8). Every number here is walk-forward-fenced
-> unless explicitly labelled in-sample.
+> **Status as of 2026-06-20.** This document records what the validation harness
+> (`terminal_in/backtest/validation.py`) has established out-of-sample, net of real
+> Indian transaction costs. It states results plainly: a clean negative is a result in
+> its own right, and tuning a configuration until it passes is the overfitting trap
+> (`WORLD_MODEL.md` §8). Every figure is walk-forward-fenced unless explicitly labelled
+> in-sample.
 
 ## Headline
 
