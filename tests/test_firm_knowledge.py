@@ -10,7 +10,7 @@ import pytest
 
 from terminal_in.knowledge.firm_store import FirmStore
 from terminal_in.knowledge import rag
-from terminal_in.knowledge.ingest import EventsAdapter, run_ingest, BseXbrlAdapter
+from terminal_in.knowledge.ingest import EventsAdapter, run_ingest, BseFilingsAdapter, IrPdfAdapter
 
 
 @pytest.fixture
@@ -135,9 +135,11 @@ def test_events_adapter_maps_archive_rows(monkeypatch, store):
     assert store.retrieve('RELIANCE', 'dividend', k=5)
 
 
-def test_forward_accumulate_stub_returns_nothing(store):
-    # the bot-hostile sources never fabricate history
-    assert BseXbrlAdapter().fetch(['RELIANCE']) == []
+def test_adapters_degrade_gracefully_without_data(store):
+    # unmapped symbol → BSE adapter never queries (no scrip code), returns nothing
+    assert BseFilingsAdapter().fetch(['NOSUCHSYMBOL']) == []
+    # IR-PDF adapter is config-driven; with no ir_sources.json it no-ops
+    assert IrPdfAdapter().fetch(['RELIANCE']) == []
 
 
 def test_analyst_injects_firm_context(monkeypatch, store):

@@ -100,34 +100,97 @@ class NewsAdapter:
         return out
 
 
-class _ForwardAccumulateAdapter:
-    """Base for the bot-hostile external sources. Returns [] until real fetching is
-    wired — NEVER a synthesised/restated history (BSE/NSE programmatic access blocks
-    bots; a trustworthy 10y archive must be accumulated forward or licensed). The
-    interface is here so wiring a real fetch later is a drop-in."""
+class BseFilingsAdapter:
+    """REAL source (breadth): BSE corporate filings via `data_ingest/bse_filings.py`.
+    Polite, browser-headered, fail-closed; the bot-hostile API may block, in which case
+    it returns nothing rather than fabricating. Forward-accumulating: each run adds the
+    last `days` of filings for symbols with a known BSE scrip code (others are skipped)."""
 
-    name = 'external'
-    note = 'forward-accumulate stub — no historical fetch wired'
+    name = 'bse_filings'
+
+    def __init__(self, days: int = 30, max_symbols: int | None = None, delay_s: float = 0.4):
+        self.days, self.max_symbols, self.delay_s = days, max_symbols, delay_s
 
     def fetch(self, symbols: list[str]) -> list[dict]:
-        log.info('%s adapter: %s', self.name, self.note)
-        return []
+        from terminal_in.data_ingest import bse_filings as bse
+        out, n = [], 0
+        for s in symbols:
+            if not bse.scrip_code(s):          # unmapped → never queried against a guess
+                continue
+            out.extend(bse.fetch_announcements(s, self.days))
+            n += 1
+            if self.max_symbols and n >= self.max_symbols:
+                break
+            if self.delay_s:
+                time.sleep(self.delay_s)       # be polite to BSE
+        return out
 
 
-class BseXbrlAdapter(_ForwardAccumulateAdapter):
-    name = 'bse_xbrl'
-    note = ('forward-accumulate: BSE XBRL gives breadth (structured financials) but the '
-            'API is bot-hostile — wire a polite, robots-respecting fetch, accumulate forward')
+class IrPdfAdapter:
+    """REAL source (depth): firm investor-relations PDFs (MD&A, segments, guidance).
+    Config-driven and forward-accumulating — reads `data/knowledge/ir_sources.json`
+    ({symbol: [pdf_url, ...]}); fetches each, extracts text via pypdf IF INSTALLED (else
+    skips, logged — optional dep), and dates fail-closed from the HTTP Last-Modified
+    header (a PDF we can't date is dropped, never guessed). With no config it no-ops, so
+    it ships inert and lights up once IR sources are supplied."""
 
-
-class IrPdfAdapter(_ForwardAccumulateAdapter):
     name = 'ir_pdf'
-    note = ('forward-accumulate: firm investor-relations PDFs give depth (MD&A, segments, '
-            'guidance) — fetch per firm IR page, extract text, date by publication')
+    CONFIG = 'data/knowledge/ir_sources.json'
+
+    def _sources(self) -> dict:
+        from pathlib import Path
+        import json as _json
+        p = Path(self.CONFIG)
+        if not p.exists():
+            return {}
+        try:
+            return {str(k).upper(): v for k, v in _json.loads(p.read_text()).items()}
+        except Exception:
+            log.warning('ir_pdf: failed to read %s', self.CONFIG)
+            return {}
+
+    def fetch(self, symbols: list[str]) -> list[dict]:
+        sources = self._sources()
+        if not sources:
+            log.info('ir_pdf: no %s — forward-accumulate, supply IR PDF URLs to enable',
+                     self.CONFIG)
+            return []
+        try:
+            import requests
+            from pypdf import PdfReader   # optional dep
+        except ImportError:
+            log.info('ir_pdf: pypdf not installed — skipping PDF depth (pip install pypdf)')
+            return []
+        import email.utils
+        import io
+        wanted = {s.upper() for s in symbols}
+        out = []
+        for sym, urls in sources.items():
+            if sym not in wanted:
+                continue
+            for url in (urls if isinstance(urls, list) else [urls]):
+                try:
+                    r = requests.get(url, timeout=20)
+                    r.raise_for_status()
+                    lm = r.headers.get('Last-Modified')
+                    fd = email.utils.parsedate_to_datetime(lm).date().isoformat() if lm else None
+                    if not fd:                    # fail-closed: undatable PDF dropped
+                        continue
+                    reader = PdfReader(io.BytesIO(r.content))
+                    text = ' '.join((pg.extract_text() or '') for pg in reader.pages)[:8000]
+                    if not text.strip():
+                        continue
+                    out.append({'symbol': sym, 'filing_date': fd, 'doc_type': 'business_profile',
+                                'source': self.name, 'url': url,
+                                'title': f'{sym} IR document ({fd})', 'body': text,
+                                'confidence': 0.9})
+                except Exception:
+                    log.debug('ir_pdf: fetch/parse failed for %s %s', sym, url, exc_info=True)
+        return out
 
 
 def default_adapters(db=None) -> list[KnowledgeAdapter]:
-    return [EventsAdapter(), NewsAdapter(db), BseXbrlAdapter(), IrPdfAdapter()]
+    return [EventsAdapter(), NewsAdapter(db), BseFilingsAdapter(), IrPdfAdapter()]
 
 
 def run_ingest(symbols: list[str], store: FirmStore | None = None,
