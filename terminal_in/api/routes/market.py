@@ -141,10 +141,14 @@ def ohlcv(symbol):
 
 @bp.route('/closes')
 def last_closes():
-    """Return the most recent daily close price for every registered instrument.
+    """Return the most recent daily close price for every registered instrument,
+    plus the day's change vs the prior close.
 
-    Used by the UI as a fallback when live ticks are unavailable (market closed).
-    Response: { "<token>": { "close": float, "date": "YYYY-MM-DD" }, ... }
+    Used by the UI as a fallback when live ticks are unavailable (market closed) — the
+    `change` lets the ticker tape keep showing the LAST SESSION's % move after close
+    instead of resetting to 0.00%.
+    Response: { "<token>": { "close": float, "date": "YYYY-MM-DD", "change": float }, ... }
+    where `change` is the percent move of the last close over the prior close.
     """
     if _db is None:
         return jsonify({})
@@ -155,9 +159,13 @@ def last_closes():
         try:
             df = _db.get_ohlcv_1d(token=token, limit=2)
             if not df.empty:
+                last = float(df['close'].iloc[-1])
+                prev = float(df['close'].iloc[-2]) if len(df) >= 2 else last
+                change = ((last - prev) / prev * 100.0) if prev else 0.0
                 result[str(token)] = {
-                    'close': float(df['close'].iloc[-1]),
+                    'close': last,
                     'date': str(df.index[-1].date()),
+                    'change': round(change, 2),
                 }
         except Exception:
             pass

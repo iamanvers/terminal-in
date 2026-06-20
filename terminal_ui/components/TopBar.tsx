@@ -108,7 +108,8 @@ function TickerTape() {
         for (const { token } of TICKER_TOKENS) {
           const rec = closes[String(token)]
           if (rec && rec.close > 0 && !next[token]) {
-            next[token] = { price: rec.close, chg: 0 }
+            // After close, keep showing the last session's % move (not 0.00%)
+            next[token] = { price: rec.close, chg: rec.change ?? 0 }
           }
         }
         return next

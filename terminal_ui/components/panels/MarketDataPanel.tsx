@@ -104,13 +104,19 @@ const SHIMMER_CSS = `
 }
 `
 
+// Sparkline history persists across tab switches. The panel unmounts on nav, so
+// component-local state would reset the trend line to blank on every return; a
+// module-level cache keeps the series for the app session and seeds the next mount.
+const _historyCache: Record<number, number[]> = {}
+const _prevPriceCache: Record<number, number> = {}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (idx: number) => void }) {
   const ticks = useTickMap()
   const [tab, setTab] = usePersistedState<Tab>('tin.market.watchlistTab', 'NSE')
   const [prices, setPrices]           = useState<PriceMap>({})   // REST-seeded + WS updated
-  const [prevPrices, setPrevPrices]   = useState<Record<number, number>>({})
-  const [priceHistory, setPriceHistory] = useState<Record<number, number[]>>({})
+  const [prevPrices, setPrevPrices]   = useState<Record<number, number>>(() => ({ ..._prevPriceCache }))
+  const [priceHistory, setPriceHistory] = useState<Record<number, number[]>>(() => ({ ..._historyCache }))
   const [loading, setLoading]         = useState(true)           // initial REST load
   const [globalQuotes, setGlobalQuotes] = useState<GlobalQuote[]>([])
   const [globalLoading, setGlobalLoading] = useState(false)
@@ -182,6 +188,7 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
           if (p && prevTicksRef.current[token] !== p) next[token] = prevTicksRef.current[token] ?? p
           if (p) prevTicksRef.current[token] = p
         }
+        Object.assign(_prevPriceCache, next)   // survive tab switch
         return next
       })
       setPriceHistory(prev => {
@@ -191,6 +198,7 @@ export default function MarketDataPanel({ onChartSelect }: { onChartSelect?: (id
           if (!p) continue
           next[token] = [...(next[token] ?? []), p].slice(-50)
         }
+        Object.assign(_historyCache, next)     // survive tab switch
         return next
       })
     }, 5000)
