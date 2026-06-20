@@ -23,7 +23,7 @@ shared yf_fetcher (SYMBOL.NS) into ohlcv_1d under its research token — run on 
 
 import logging
 import zlib
-from datetime import date
+from datetime import date, datetime
 
 log = logging.getLogger(__name__)
 
@@ -94,6 +94,84 @@ def members_as_of(index: str, as_of: str) -> set[str]:
     correctly include/exclude names by date (and `SURVIVORSHIP_CORRECTED` flips)."""
     rows = _MEMBERSHIP.get(index.upper(), [])
     return {sym for sym, frm, to in rows if frm <= as_of and (to is None or as_of < to)}
+
+
+def load_reconstitution(rows: list[dict], index: str = 'NIFTY MIDCAP 150') -> dict:
+    """Load DATED index-membership history (incl. delisted/relegated names) — the
+    survivorship fix. Each row: {symbol, effective_from, effective_to|None, sector?}.
+    `effective_to=None` means still a member. This REPLACES the current-snapshot seed
+    for `index` with real point-in-time spans and flips SURVIVORSHIP_CORRECTED to True,
+    so `members_as_of` becomes honest and the cross-sectional backtest stops being
+    upward-biased.
+
+    FAIL-CLOSED (mirrors fundamentals.py/events.py): a row without a parseable
+    effective_from or a symbol is DROPPED, never guessed — a wrongly-dated membership
+    span would leak survivorship back in. Newly-seen symbols (delisted names absent from
+    the live snapshot) get a STABLE crc32 research token so their OHLCV maps correctly
+    once backfilled. Returns ingest honesty counts.
+
+    NOTE: this only LOADS membership; the dated reconstitution data itself is a separate
+    acquisition (NSE semi-annual index press releases incl. removed names — bot-hostile,
+    so forward-accumulate or license). Until called with real data the store stays on the
+    flagged current snapshot."""
+    global SURVIVORSHIP_CORRECTED
+    kept, dropped, new_syms = [], 0, []
+    for r in rows:
+        sym = str(r.get('symbol', '')).upper().strip()
+        frm = _norm_date(r.get('effective_from'))
+        to = _norm_date(r.get('effective_to')) if r.get('effective_to') else None
+        if not sym or frm is None:
+            dropped += 1                       # no symbol / unparseable date ⇒ never guess
+            continue
+        kept.append((sym, frm, to))
+        if sym not in MIDCAP_SECTORS:
+            MIDCAP_SECTORS[sym] = str(r.get('sector', 'other')).lower()
+            tok = _stable_token(sym)
+            RESEARCH_TOKENS[sym] = tok
+            RESEARCH_BY_TOKEN[tok] = sym
+            new_syms.append(sym)
+    if kept:
+        _MEMBERSHIP[index.upper()] = kept
+        SURVIVORSHIP_CORRECTED = True
+    log.info('index membership: loaded %d dated spans for %s (%d new/delisted names), '
+             'dropped %d unverifiable; survivorship_corrected=%s',
+             len(kept), index, len(new_syms), dropped, SURVIVORSHIP_CORRECTED)
+    return {'loaded': len(kept), 'dropped_unverifiable': dropped,
+            'new_symbols': new_syms, 'survivorship_corrected': SURVIVORSHIP_CORRECTED}
+
+
+def load_reconstitution_file(path: str, index: str = 'NIFTY MIDCAP 150') -> dict:
+    """Load dated membership from a CSV or JSON file. CSV header:
+    symbol,effective_from,effective_to[,sector] (blank effective_to = current member)."""
+    import csv
+    import json as _json
+    from pathlib import Path
+    p = Path(path)
+    if not p.exists():
+        log.warning('index membership: reconstitution file not found: %s', path)
+        return {'loaded': 0, 'dropped_unverifiable': 0, 'new_symbols': [],
+                'survivorship_corrected': SURVIVORSHIP_CORRECTED}
+    if p.suffix.lower() == '.json':
+        rows = _json.loads(p.read_text())
+    else:
+        with p.open(newline='') as f:
+            rows = [{k: (v or None) for k, v in row.items()} for row in csv.DictReader(f)]
+    return load_reconstitution(rows, index=index)
+
+
+def _norm_date(v) -> str | None:
+    """Parse a membership date FAIL-CLOSED to ISO 'YYYY-MM-DD' (None if unparseable)."""
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%Y/%m/%d', '%d-%b-%Y', '%d %b %Y'):
+        try:
+            return datetime.strptime(s, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return None
 
 
 def research_symbols() -> list[str]:

@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="docs/banner.svg" alt="TERMINAL//IN — agentic algorithmic trading terminal for Indian markets" width="760" />
+<img src="docs/banner.svg" alt="TERMINAL//IN" width="440" />
 
-<br/>
+### Agentic algorithmic trading terminal for Indian markets
 
 ![tests](https://img.shields.io/badge/tests-301_passing-brightgreen)
 ![python](https://img.shields.io/badge/python-3.14-blue)
@@ -11,10 +11,9 @@
 ![data](https://img.shields.io/badge/data-real--only-0094FB)
 ![license](https://img.shields.io/badge/license-personal_use-lightgrey)
 
-**An agentic algorithmic trading terminal for Indian markets (NSE)** — a single-machine stack
-(Python · SQLite · statically served Next.js) with a local language model embedded in the
-trade-decision loop, and a falsification-first backtest harness that refuses to ship an edge
-it cannot prove. No cloud dependencies.
+A single-machine stack (Python · SQLite · statically served Next.js) with a local language
+model embedded in the trade-decision loop, and a falsification-first backtest harness that
+refuses to ship an edge it cannot prove. No cloud dependencies.
 
 </div>
 
