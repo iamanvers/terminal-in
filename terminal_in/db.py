@@ -105,6 +105,8 @@ class DB:
             # (clean existing dupes first or the unique index creation no-ops)
             'DELETE FROM news_log WHERE id NOT IN (SELECT MIN(id) FROM news_log GROUP BY url)',
             'CREATE UNIQUE INDEX IF NOT EXISTS idx_news_url ON news_log(url)',
+            # India-macro sentiment override (which prior, if any, corrected FinBERT)
+            'ALTER TABLE news_log ADD COLUMN macro_rule TEXT',
         ]
         with sqlite3.connect(str(self.path)) as conn:
             for stmt in migrations:
@@ -979,14 +981,14 @@ class DB:
             c.execute(
                 '''INSERT OR IGNORE INTO news_log
                    (published_at, fetched_at, headline, source, url,
-                    sentiment, score, instruments_json, impact)
-                   VALUES (?,?,?,?,?,?,?,?,?)''',
+                    sentiment, score, instruments_json, impact, macro_rule)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)''',
                 (
                     article['published_at'], article['fetched_at'],
                     article['headline'], article.get('source'), article.get('url'),
                     article['sentiment'], article['score'],
                     json.dumps(article.get('instruments', [])),
-                    article['impact'],
+                    article['impact'], article.get('macro_rule'),
                 ),
             )
 

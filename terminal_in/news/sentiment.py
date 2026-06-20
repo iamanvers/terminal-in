@@ -9,6 +9,8 @@ import time
 from threading import Lock
 from typing import Optional
 
+from terminal_in.news import macro as _macro
+
 log = logging.getLogger(__name__)
 
 _model = None
@@ -65,11 +67,8 @@ def _load():
 LABEL_MAP = {0: 'positive', 1: 'negative', 2: 'neutral'}
 
 
-def score(text: str) -> dict:
-    """
-    Returns {'sentiment': 'positive'|'negative'|'neutral', 'score': float}
-    Falls back to neutral with score 0.0 if model unavailable.
-    """
+def _finbert_score(text: str) -> dict:
+    """Raw FinBERT label+confidence; neutral/0.0 when the model is unavailable."""
     if not _available:
         _warn_degraded()
         return {'sentiment': 'neutral', 'score': 0.0}
@@ -99,3 +98,21 @@ def score(text: str) -> dict:
     except Exception:
         log.exception('FinBERT inference failed for text: %.80s', text)
         return {'sentiment': 'neutral', 'score': 0.0}
+
+
+def score(text: str) -> dict:
+    """Sentiment for a headline+body, India-context aware.
+
+    Returns {'sentiment': 'positive'|'negative'|'neutral', 'score': float} plus, when an
+    India-macro prior overrides FinBERT, 'macro_rule' (the rule name) and 'finbert' (what
+    FinBERT alone said) — so the override is transparent (data honesty), never silent.
+
+    FinBERT alone misreads macro direction for Indian equities (a weaker rupee or a fuel-
+    price drop carry the OPPOSITE sign of their surface verb). The macro layer corrects
+    those well-established cases and runs even when FinBERT is offline (pure rules)."""
+    base = _finbert_score(text)
+    macro = _macro.adjust(text)
+    if macro is not None:
+        return {'sentiment': macro['sentiment'], 'score': macro['score'],
+                'macro_rule': macro['rule'], 'finbert': base['sentiment']}
+    return base

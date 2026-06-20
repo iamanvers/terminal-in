@@ -173,6 +173,7 @@ class NewsFetcher:
             'url': url,
             'sentiment': result['sentiment'],
             'score': result['score'],
+            'macro_rule': result.get('macro_rule'),   # India-macro override, if any (else None)
             'instruments': instruments,
             'impact': impact,
         }
